@@ -6,14 +6,12 @@ recompute). No business logic lives here beyond extracting the raw @everyone
 overwrite ints discord.py's channel/category objects hold.
 """
 
-from dataclasses import dataclass
-
 import discord
 
 from threadbare.sync_worker import repository
 from threadbare.sync_worker.backfill import RepositoryBackfillSink
 from threadbare.sync_worker.discord_types import MessageLike
-from threadbare.sync_worker.permissions import refresh_channel_public_status
+from threadbare.sync_worker.permissions import everyone_overwrite, refresh_channel_public_status
 
 
 async def handle_message_create(
@@ -40,26 +38,14 @@ async def handle_bulk_message_delete(conn, message_ids: list[int]) -> None:
     await repository.delete_messages(conn, message_ids)
 
 
-@dataclass(frozen=True)
-class _RawOverwrite:
-    allow: int
-    deny: int
-
-
-def _everyone_overwrite(target: discord.abc.GuildChannel) -> _RawOverwrite:
-    overwrite = target.overwrites_for(target.guild.default_role)
-    allow, deny = overwrite.pair()
-    return _RawOverwrite(allow=allow.value, deny=deny.value)
-
-
 async def handle_channel_permissions_changed(conn, channel: discord.abc.GuildChannel) -> None:
-    category_overwrite = _everyone_overwrite(channel.category) if channel.category else None
+    category_overwrite = everyone_overwrite(channel.category) if channel.category else None
     await refresh_channel_public_status(
         conn,
         channel_id=channel.id,
         default_role_permissions=channel.guild.default_role.permissions.value,
         category_overwrite=category_overwrite,
-        channel_overwrite=_everyone_overwrite(channel),
+        channel_overwrite=everyone_overwrite(channel),
     )
 
 
@@ -73,11 +59,11 @@ async def handle_role_permissions_changed(conn, guild: discord.Guild) -> None:
     for channel in guild.channels:
         if channel.type is discord.ChannelType.category:
             continue
-        category_overwrite = _everyone_overwrite(channel.category) if channel.category else None
+        category_overwrite = everyone_overwrite(channel.category) if channel.category else None
         await refresh_channel_public_status(
             conn,
             channel_id=channel.id,
             default_role_permissions=default_role_permissions,
             category_overwrite=category_overwrite,
-            channel_overwrite=_everyone_overwrite(channel),
+            channel_overwrite=everyone_overwrite(channel),
         )

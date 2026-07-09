@@ -1,3 +1,6 @@
+from dataclasses import dataclass
+
+import discord
 import psycopg
 
 from threadbare.sync_worker import repository
@@ -55,6 +58,24 @@ async def refresh_channel_public_status(
 
     await repository.set_channel_is_public(conn, channel_id, is_public)
     return is_public
+
+
+@dataclass(frozen=True)
+class _RawOverwrite:
+    allow: int
+    deny: int
+
+
+def everyone_overwrite(target: discord.abc.GuildChannel) -> _RawOverwrite:
+    """Extract the @everyone role's raw allow/deny overwrite ints off a
+    live discord.py channel or category object — the adapter that bridges
+    real Discord objects into compute_is_public()'s OverwriteLike inputs.
+    Shared by events.py (live CHANNEL_UPDATE/role events) and discovery.py
+    (initial channel discovery), so it lives here rather than in either.
+    """
+    overwrite = target.overwrites_for(target.guild.default_role)
+    allow, deny = overwrite.pair()
+    return _RawOverwrite(allow=allow.value, deny=deny.value)
 
 
 def should_sync(*, is_public: bool, indexed: bool) -> bool:

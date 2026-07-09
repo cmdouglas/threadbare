@@ -14,6 +14,9 @@ import discord
 from threadbare.sync_worker import repository, transform
 from threadbare.sync_worker.checkpoints import advance_backfill_progress
 from threadbare.sync_worker.discord_types import MessageLike
+from threadbare.sync_worker.permissions import should_sync
+
+SKIPPED_CHANNEL_TYPES = (discord.ChannelType.category, discord.ChannelType.forum)
 
 logger = logging.getLogger(__name__)
 
@@ -204,3 +207,44 @@ async def backfill_channel(
             break
 
     return total_written
+
+
+async def backfill_guild(
+    client: discord.Client,
+    pool,
+    *,
+    guild_id: int,
+    max_channel_concurrency: int = DEFAULT_MAX_CONCURRENCY,
+    batch_size: int = DEFAULT_BATCH_SIZE,
+    fetcher: HistoryFetcher | None = None,
+) -> None:
+    """Backfill every in-scope channel in a guild, concurrently. Each
+    channel holds its own pool connection for the duration of its backfill
+    (a RepositoryBackfillSink holds its connection the whole time, not just
+    one batch), bounded by max_channel_concurrency — a different resource
+    than the Discord-call concurrency BoundedHistoryFetcher caps, which is
+    why both exist. Skips categories and forum channels (no top-level
+    history; ROADMAP-flagged, not handled here) and anything not currently
+    is_public+indexed.
+
+    `fetcher` defaults to the real hardened chain
+    (Retrying(Bounded(Discord))) built once and shared across all channels,
+    so the concurrency cap is real across the whole guild, not per-channel.
+    Injectable for testing without a live gateway connection.
+    """
+    guild = client.get_guild(guild_id) or await client.fetch_guild(guild_id)
+    channels = await guild.fetch_channels()
+    if fetcher is None:
+        fetcher = RetryingHistoryFetcher(BoundedHistoryFetcher(DiscordHistoryFetcher(client)))
+    semaphore = asyncio.Semaphore(max_channel_concurrency)
+
+    async def _backfill_one(channel_id: int) -> None:
+        async with semaphore, pool.connection() as conn:
+            flags = await repository.get_channel_sync_flags(conn, channel_id)
+            if flags is None or not should_sync(is_public=flags[0], indexed=flags[1]):
+                return
+            sink = RepositoryBackfillSink(conn)
+            await backfill_channel(fetcher, sink, channel_id=channel_id, batch_size=batch_size)
+
+    candidates = [channel.id for channel in channels if channel.type not in SKIPPED_CHANNEL_TYPES]
+    await asyncio.gather(*(_backfill_one(channel_id) for channel_id in candidates))

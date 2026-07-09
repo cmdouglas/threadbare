@@ -3,8 +3,7 @@ import os
 import pytest
 
 from threadbare.sync_worker.bot import ThreadbareClient
-from threadbare.sync_worker.events import _everyone_overwrite
-from threadbare.sync_worker.permissions import compute_is_public
+from threadbare.sync_worker.permissions import compute_is_public, everyone_overwrite
 
 pytestmark = pytest.mark.live_discord
 
@@ -23,11 +22,11 @@ async def test_real_general_channel_overwrites_resolve_to_public():
             channels = await guild.fetch_channels()
             general = next(c for c in channels if c.name == "general")
 
-            category_overwrite = _everyone_overwrite(general.category) if general.category else None
+            category_overwrite = everyone_overwrite(general.category) if general.category else None
             result["is_public"] = compute_is_public(
                 guild.default_role.permissions.value,
                 category_overwrite,
-                _everyone_overwrite(general),
+                everyone_overwrite(general),
             )
         finally:
             await client.close()
@@ -35,7 +34,7 @@ async def test_real_general_channel_overwrites_resolve_to_public():
     await client.start(token)
 
     # #general is @everyone-readable in our test server by construction —
-    # this proves the discord_types.py Protocols / _everyone_overwrite
+    # this proves the discord_types.py Protocols / everyone_overwrite
     # extraction actually match discord.py's real object shapes, which the
     # fake-object integration tests in test_events.py can't verify alone.
     assert result["is_public"] is True

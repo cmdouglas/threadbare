@@ -5,6 +5,8 @@ import discord
 from psycopg_pool import AsyncConnectionPool
 
 from threadbare.sync_worker import events
+from threadbare.sync_worker.backfill import backfill_guild
+from threadbare.sync_worker.discovery import discover_channels
 from threadbare.sync_worker.heartbeat import heartbeat_loop
 from threadbare.sync_worker.reconciliation import reconciliation_loop
 
@@ -36,14 +38,28 @@ class ThreadbareClient(discord.Client):
         self.guild_id = guild_id
         self.pool = pool
         self.last_gateway_event_at: datetime | None = None
+        self._backfill_task: asyncio.Task | None = None
         self._reconciliation_task: asyncio.Task | None = None
         self._heartbeat_task: asyncio.Task | None = None
 
     async def on_ready(self) -> None:
-        # Guard against re-firing on gateway reconnects — the loops already
-        # run forever once started.
         if self.pool is None:
             return
+
+        # Runs every time (including reconnects), not guarded — cheap (one
+        # fetch_channels() call plus a few upserts) and self-healing for
+        # channels created while briefly disconnected. Reconciliation's
+        # first pass needs these rows to already exist, so this is awaited
+        # directly rather than backgrounded.
+        async with self.pool.connection() as conn:
+            await discover_channels(self, conn, guild_id=self.guild_id)
+
+        # The rest are guarded against re-firing on reconnects — these loops
+        # already run forever once started.
+        if self._backfill_task is None:
+            self._backfill_task = asyncio.create_task(
+                backfill_guild(self, self.pool, guild_id=self.guild_id)
+            )
         if self._reconciliation_task is None:
             self._reconciliation_task = asyncio.create_task(
                 reconciliation_loop(self, self.pool, guild_id=self.guild_id)

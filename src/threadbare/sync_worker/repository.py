@@ -8,6 +8,40 @@ per-test isolation for free via rollback, without truncating tables.
 import psycopg
 
 
+async def upsert_guild(conn: psycopg.AsyncConnection, row: dict) -> None:
+    await conn.execute(
+        """
+        INSERT INTO guilds (id, name, icon)
+        VALUES (%(id)s, %(name)s, %(icon)s)
+        ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, icon = EXCLUDED.icon
+        """,
+        row,
+    )
+
+
+async def upsert_channel(conn: psycopg.AsyncConnection, row: dict) -> None:
+    """Insert a channel, or update its metadata if already known. Never
+    touches is_public or indexed on conflict — is_public is owned exclusively
+    by refresh_channel_public_status, indexed by the future admin page. On
+    a fresh INSERT, both take their schema defaults (is_public=false,
+    indexed=true) and the caller is expected to compute is_public separately
+    (see discovery.discover_channels).
+    """
+    await conn.execute(
+        """
+        INSERT INTO channels (id, guild_id, parent_id, type, name, position, topic)
+        VALUES (%(id)s, %(guild_id)s, %(parent_id)s, %(type)s, %(name)s, %(position)s, %(topic)s)
+        ON CONFLICT (id) DO UPDATE SET
+            parent_id = EXCLUDED.parent_id,
+            type = EXCLUDED.type,
+            name = EXCLUDED.name,
+            position = EXCLUDED.position,
+            topic = EXCLUDED.topic
+        """,
+        row,
+    )
+
+
 async def get_channel_is_public(conn: psycopg.AsyncConnection, channel_id: int) -> bool | None:
     async with conn.cursor() as cur:
         await cur.execute("SELECT is_public FROM channels WHERE id = %s", (channel_id,))
