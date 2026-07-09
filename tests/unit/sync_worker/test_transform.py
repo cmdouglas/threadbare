@@ -5,10 +5,15 @@ from threadbare.sync_worker.transform import attachment_to_row, message_to_row, 
 
 
 @dataclass
+class FakeAsset:
+    key: str
+
+
+@dataclass
 class FakeUser:
     id: int
     display_name: str
-    avatar_key: str | None = None
+    avatar: FakeAsset | None = None
 
 
 @dataclass
@@ -110,9 +115,15 @@ def test_message_to_row_captures_edited_at():
 
 
 def test_user_to_row():
-    user = FakeUser(id=1, display_name="alice", avatar_key="abc123")
+    user = FakeUser(id=1, display_name="alice", avatar=FakeAsset(key="abc123"))
 
     assert user_to_row(user) == {"id": 1, "display_name": "alice", "avatar_hash": "abc123"}
+
+
+def test_user_to_row_handles_no_avatar():
+    user = FakeUser(id=1, display_name="alice", avatar=None)
+
+    assert user_to_row(user)["avatar_hash"] is None
 
 
 def test_attachment_to_row():

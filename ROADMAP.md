@@ -16,7 +16,10 @@ Everything here targets a single Discord server, public (`@everyone`-readable) c
   - [ ] Thread lifecycle (create/update/delete) — deferred until reconciliation (Phase E) exists as a backstop; discord.py's thread-delete event coverage is unreliable for threads not already cached, per the sync worker plan's risk notes, so this needs the reconciliation sweep to be trustworthy rather than a live-event-only implementation
 - [x] Public-channel computation: `channels.is_public` derived from role/channel overwrites, recomputed on `CHANNEL_UPDATE` and role events; content removed from index if a channel stops being public
   - Core logic (`compute_is_public()`, `refresh_channel_public_status()`) and live wiring (`on_guild_channel_update`, `on_guild_role_update`, `on_guild_role_delete`) both done, unit/integration/live tested
-- [ ] Nightly reconciliation sweep re-walking recent history to repair missed events
+- [x] Nightly reconciliation sweep re-walking recent history to repair missed events
+  - `reconcile_channel()` re-walks a lookback window and converges local state (upserts repair missed creates/edits, a diff against what's still on Discord repairs missed deletes) — unit, integration (including the exact "kill worker for an hour, restart" drift scenario against real Postgres), and live tested
+  - `reconciliation_loop()` runs it immediately on startup (catch-up) then nightly; only touches channels already `is_public`+`indexed`, so it can't accidentally re-add content to a channel that's supposed to be gated
+  - Thread reconciliation deferred alongside thread backfill/lifecycle (§1 above) — same scope boundary, not yet built
 - [ ] Rate-limit-aware backfill (honors headers, backs off)
 - [ ] `sync_state` checkpoints + heartbeat row for monitoring
 

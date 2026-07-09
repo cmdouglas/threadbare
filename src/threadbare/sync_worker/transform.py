@@ -27,7 +27,7 @@ def user_to_row(user: UserLike) -> dict:
     return {
         "id": user.id,
         "display_name": user.display_name,
-        "avatar_hash": user.avatar_key,
+        "avatar_hash": user.avatar.key if user.avatar else None,
     }
 
 

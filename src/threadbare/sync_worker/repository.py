@@ -73,6 +73,20 @@ async def upsert_attachment(conn: psycopg.AsyncConnection, row: dict) -> None:
     )
 
 
+async def get_channel_sync_flags(
+    conn: psycopg.AsyncConnection, channel_id: int
+) -> tuple[bool, bool] | None:
+    """(is_public, indexed) for a known channel, or None if we've never seen
+    it (e.g. backfill hasn't run for it yet) — nothing to reconcile then.
+    """
+    async with conn.cursor() as cur:
+        await cur.execute("SELECT is_public, indexed FROM channels WHERE id = %s", (channel_id,))
+        row = await cur.fetchone()
+    if row is None:
+        return None
+    return row["is_public"], row["indexed"]
+
+
 async def get_backfill_checkpoint(conn: psycopg.AsyncConnection, channel_id: int) -> int | None:
     async with conn.cursor() as cur:
         await cur.execute(
@@ -111,6 +125,28 @@ async def delete_message(conn: psycopg.AsyncConnection, message_id: int) -> None
 
 async def delete_messages(conn: psycopg.AsyncConnection, message_ids: list[int]) -> None:
     await conn.execute("DELETE FROM messages WHERE id = ANY(%s)", (message_ids,))
+
+
+async def get_message_ids_since(
+    conn: psycopg.AsyncConnection, channel_id: int, after: int
+) -> set[int]:
+    async with conn.cursor() as cur:
+        await cur.execute(
+            "SELECT id FROM messages WHERE channel_id = %s AND id > %s", (channel_id, after)
+        )
+        rows = await cur.fetchall()
+    return {row["id"] for row in rows}
+
+
+async def mark_channel_reconciled(conn: psycopg.AsyncConnection, channel_id: int) -> None:
+    await conn.execute(
+        """
+        INSERT INTO sync_state (channel_id, last_reconciled_at)
+        VALUES (%s, now())
+        ON CONFLICT (channel_id) DO UPDATE SET last_reconciled_at = EXCLUDED.last_reconciled_at
+        """,
+        (channel_id,),
+    )
 
 
 async def purge_channel_content(conn: psycopg.AsyncConnection, channel_id: int) -> None:

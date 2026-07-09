@@ -58,6 +58,16 @@ async def test_delete_messages_removes_multiple_rows(db_conn):
     assert remaining == {1003}
 
 
+async def test_get_channel_sync_flags_returns_none_for_unknown_channel(db_conn):
+    assert await repository.get_channel_sync_flags(db_conn, 999) is None
+
+
+async def test_get_channel_sync_flags_returns_is_public_and_indexed(db_conn):
+    await _seed_guild_and_channel(db_conn, is_public=True)
+
+    assert await repository.get_channel_sync_flags(db_conn, 10) == (True, True)
+
+
 async def test_get_channel_is_public_returns_none_for_unknown_channel(db_conn):
     assert await repository.get_channel_is_public(db_conn, 999) is None
 

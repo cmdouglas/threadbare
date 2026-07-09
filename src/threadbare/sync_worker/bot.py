@@ -1,7 +1,10 @@
+import asyncio
+
 import discord
 from psycopg_pool import AsyncConnectionPool
 
 from threadbare.sync_worker import events
+from threadbare.sync_worker.reconciliation import reconciliation_loop
 
 
 def _container_ids(channel) -> tuple[int | None, int | None]:
@@ -30,6 +33,15 @@ class ThreadbareClient(discord.Client):
         super().__init__(intents=intents, **kwargs)
         self.guild_id = guild_id
         self.pool = pool
+        self._reconciliation_task: asyncio.Task | None = None
+
+    async def on_ready(self) -> None:
+        # Guard against re-firing on gateway reconnects — the loop already
+        # runs forever once started.
+        if self.pool is not None and self._reconciliation_task is None:
+            self._reconciliation_task = asyncio.create_task(
+                reconciliation_loop(self, self.pool, guild_id=self.guild_id)
+            )
 
     async def on_message(self, message: discord.Message) -> None:
         if self.pool is None or message.guild is None or message.guild.id != self.guild_id:

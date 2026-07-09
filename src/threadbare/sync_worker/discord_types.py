@@ -13,10 +13,18 @@ class OverwriteLike(Protocol):
     deny: int
 
 
+class AssetLike(Protocol):
+    key: str
+
+
 class UserLike(Protocol):
     id: int
     display_name: str
-    avatar_key: str | None
+    # discord.py's Member/User expose the avatar hash via an Asset object
+    # (.avatar.key), not a plain string attribute — this was wrong before
+    # and broke on first contact with a real discord.py object; verified
+    # against the real API now (see tests/live_discord).
+    avatar: AssetLike | None
 
 
 class AttachmentLike(Protocol):

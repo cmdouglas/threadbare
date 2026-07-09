@@ -13,7 +13,7 @@ BOTH_REQUIRED = VIEW_CHANNEL | READ_MESSAGE_HISTORY
 class FakeAuthor:
     id: int
     display_name: str = "someone"
-    avatar_key: str | None = None
+    avatar: object | None = None
 
 
 @dataclass

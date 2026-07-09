@@ -8,7 +8,7 @@ from threadbare.sync_worker.backfill import RepositoryBackfillSink, backfill_cha
 class FakeAuthor:
     id: int
     display_name: str = "someone"
-    avatar_key: str | None = None
+    avatar: object | None = None
 
 
 @dataclass
