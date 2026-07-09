@@ -1,0 +1,24 @@
+# Local Postgres for development and tests. Not the full deployment stack
+# (see DESIGN.md §8.4 / ROADMAP.md §8 for that, once the web app and sync
+# worker exist) — just the database, so `uv run pytest` and a locally-run
+# app have somewhere to point.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: threadbare
+      POSTGRES_PASSWORD: threadbare
+      POSTGRES_DB: threadbare_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - threadbare-dev-postgres:/var/lib/postgresql/data
+      - ./docker/init-test-db.sql:/docker-entrypoint-initdb.d/init-test-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U threadbare"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+
+volumes:
+  threadbare-dev-postgres:

@@ -1,0 +1,35 @@
+[project]
+name = "threadbare"
+version = "0.1.0"
+description = "A read-only, phpBB-style web interface for browsing the history of a Discord server."
+readme = "README.md"
+authors = [
+    { name = "Charlie", email = "cmdouglas@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4",
+    "pytest>=8",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=5",
+    "pytest-playwright>=0.5",
+    "ruff>=0.6",
+]
+
+[build-system]
+requires = ["uv_build>=0.11.28,<0.12.0"]
+build-backend = "uv_build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

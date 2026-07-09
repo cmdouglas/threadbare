@@ -38,7 +38,9 @@ Threadbare only ever talks to Discord as a bot, never as a user, and only access
 
 ## Getting started
 
-Not yet runnable — installation will be a guided setup wizard (`docker compose up` → wizard walks you through creating the Discord bot, running preflight checks, and choosing which channels to index). See [`DESIGN.md` §8](./DESIGN.md#8-onboarding-and-setup) for the full onboarding design.
+Not yet runnable as a product — installation will eventually be a guided setup wizard (`docker compose up` → wizard walks you through creating the Discord bot, running preflight checks, and choosing which channels to index; see [`DESIGN.md` §8](./DESIGN.md#8-onboarding-and-setup) for that design).
+
+To work on Threadbare itself, see [`DEVELOPMENT.md`](./DEVELOPMENT.md) for environment setup, running tests, and configuring a test Discord bot.
 
 ## License
 
