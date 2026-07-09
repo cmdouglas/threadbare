@@ -10,6 +10,8 @@ Everything here targets a single Discord server, public (`@everyone`-readable) c
 - [ ] Checkpointed initial backfill of in-scope channels and threads (resumable across restarts)
 - [ ] Live event handling: `MESSAGE_CREATE`, `MESSAGE_UPDATE`, `MESSAGE_DELETE`, `MESSAGE_DELETE_BULK`, thread lifecycle, channel updates
 - [ ] Public-channel computation: `channels.is_public` derived from role/channel overwrites, recomputed on `CHANNEL_UPDATE` and role events; content removed from index if a channel stops being public
+  - [x] Core logic: `compute_is_public()` (full overwrite-precedence matrix) + `refresh_channel_public_status()` (purges content on public → gated), unit + integration tested
+  - [ ] Wired to live `CHANNEL_UPDATE`/role events (Phase D)
 - [ ] Nightly reconciliation sweep re-walking recent history to repair missed events
 - [ ] Rate-limit-aware backfill (honors headers, backs off)
 - [ ] `sync_state` checkpoints + heartbeat row for monitoring

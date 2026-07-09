@@ -5,6 +5,7 @@ import sys
 import psycopg
 import pytest
 from dotenv import load_dotenv
+from psycopg.rows import dict_row
 
 load_dotenv()
 
@@ -40,7 +41,9 @@ async def db_conn():
     and never call commit()/rollback() themselves, so tests get per-test
     isolation for free without truncating tables between runs.
     """
-    conn = await psycopg.AsyncConnection.connect(TEST_DATABASE_URL, autocommit=False)
+    conn = await psycopg.AsyncConnection.connect(
+        TEST_DATABASE_URL, autocommit=False, row_factory=dict_row
+    )
     try:
         yield conn
     finally:
