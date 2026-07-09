@@ -8,6 +8,9 @@ Everything here targets a single Discord server, public (`@everyone`-readable) c
 
 - [x] Discord bot connection (discord.py or discord.js), gateway + REST
 - [ ] Checkpointed initial backfill of in-scope channels and threads (resumable across restarts)
+  - [x] Channel message backfill: paginated, checkpointed, idempotent (dedup on rerun), resumable across restarts — unit, integration, and live tested
+  - [ ] Thread backfill (threads have no permission overwrites of their own — visibility keys off the parent channel)
+  - [ ] Forum-channel branch (forum channels have no top-level history; everything lives in threads)
 - [ ] Live event handling: `MESSAGE_CREATE`, `MESSAGE_UPDATE`, `MESSAGE_DELETE`, `MESSAGE_DELETE_BULK`, thread lifecycle, channel updates
 - [ ] Public-channel computation: `channels.is_public` derived from role/channel overwrites, recomputed on `CHANNEL_UPDATE` and role events; content removed from index if a channel stops being public
   - [x] Core logic: `compute_is_public()` (full overwrite-precedence matrix) + `refresh_channel_public_status()` (purges content on public → gated), unit + integration tested

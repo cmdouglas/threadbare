@@ -55,3 +55,13 @@ async def refresh_channel_public_status(
 
     await repository.set_channel_is_public(conn, channel_id, is_public)
     return is_public
+
+
+def should_sync(*, is_public: bool, indexed: bool) -> bool:
+    """The one gating predicate used by both backfill and live-event
+    handlers to decide whether a channel's content belongs in the mirror.
+    is_public is sync-worker-computed (see compute_is_public); indexed is
+    mod-controlled (defaults true on first sight, otherwise owned exclusively
+    by the future admin page — the sync worker never mutates it).
+    """
+    return is_public and indexed

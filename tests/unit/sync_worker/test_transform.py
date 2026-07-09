@@ -1,0 +1,138 @@
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+
+from threadbare.sync_worker.transform import attachment_to_row, message_to_row, user_to_row
+
+
+@dataclass
+class FakeUser:
+    id: int
+    display_name: str
+    avatar_key: str | None = None
+
+
+@dataclass
+class FakeAttachment:
+    id: int
+    filename: str
+    size: int
+    url: str
+    content_type: str | None = None
+
+
+@dataclass
+class FakeReference:
+    message_id: int | None
+
+
+@dataclass
+class FakeMessage:
+    id: int
+    author: FakeUser
+    content: str
+    created_at: datetime
+    edited_at: datetime | None = None
+    reference: FakeReference | None = None
+    attachments: list = field(default_factory=list)
+
+
+NOW = datetime(2026, 1, 1, tzinfo=UTC)
+
+
+def test_message_to_row_maps_basic_fields_for_a_channel_message():
+    author = FakeUser(id=1, display_name="alice")
+    message = FakeMessage(id=100, author=author, content="hi", created_at=NOW)
+
+    row = message_to_row(message, channel_id=10, thread_id=None)
+
+    assert row == {
+        "id": 100,
+        "channel_id": 10,
+        "thread_id": None,
+        "author_id": 1,
+        "content": "hi",
+        "reply_to_id": None,
+        "posted_at": NOW,
+        "edited_at": None,
+        "flags": 0,
+    }
+
+
+def test_message_to_row_for_a_thread_message():
+    author = FakeUser(id=1, display_name="alice")
+    message = FakeMessage(id=100, author=author, content="hi", created_at=NOW)
+
+    row = message_to_row(message, channel_id=None, thread_id=99)
+
+    assert row["channel_id"] is None
+    assert row["thread_id"] == 99
+
+
+def test_message_to_row_captures_reply_reference():
+    author = FakeUser(id=1, display_name="alice")
+    message = FakeMessage(
+        id=100,
+        author=author,
+        content="hi",
+        created_at=NOW,
+        reference=FakeReference(message_id=42),
+    )
+
+    row = message_to_row(message, channel_id=10, thread_id=None)
+
+    assert row["reply_to_id"] == 42
+
+
+def test_message_to_row_handles_reference_with_no_message_id():
+    # e.g. a reference to a message in another (uncached) channel/thread
+    author = FakeUser(id=1, display_name="alice")
+    message = FakeMessage(
+        id=100,
+        author=author,
+        content="hi",
+        created_at=NOW,
+        reference=FakeReference(message_id=None),
+    )
+
+    row = message_to_row(message, channel_id=10, thread_id=None)
+
+    assert row["reply_to_id"] is None
+
+
+def test_message_to_row_captures_edited_at():
+    author = FakeUser(id=1, display_name="alice")
+    edited = datetime(2026, 1, 2, tzinfo=UTC)
+    message = FakeMessage(id=100, author=author, content="hi", created_at=NOW, edited_at=edited)
+
+    row = message_to_row(message, channel_id=10, thread_id=None)
+
+    assert row["edited_at"] == edited
+
+
+def test_user_to_row():
+    user = FakeUser(id=1, display_name="alice", avatar_key="abc123")
+
+    assert user_to_row(user) == {"id": 1, "display_name": "alice", "avatar_hash": "abc123"}
+
+
+def test_attachment_to_row():
+    attachment = FakeAttachment(
+        id=200,
+        filename="cat.png",
+        size=1024,
+        url="https://cdn.example/cat.png",
+        content_type="image/png",
+    )
+    expires_at = datetime(2026, 1, 2, tzinfo=UTC)
+
+    row = attachment_to_row(attachment, message_id=100, url_expires_at=expires_at)
+
+    assert row == {
+        "id": 200,
+        "message_id": 100,
+        "filename": "cat.png",
+        "content_type": "image/png",
+        "size": 1024,
+        "cached_url": "https://cdn.example/cat.png",
+        "url_expires_at": expires_at,
+    }
