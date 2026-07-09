@@ -4,6 +4,8 @@ directly, so the paging/checkpoint/resume logic is unit-testable with
 in-memory fakes — no live gateway connection or real database required.
 """
 
+import asyncio
+import logging
 from datetime import UTC, datetime, timedelta
 from typing import Protocol
 
@@ -13,8 +15,13 @@ from threadbare.sync_worker import repository, transform
 from threadbare.sync_worker.checkpoints import advance_backfill_progress
 from threadbare.sync_worker.discord_types import MessageLike
 
+logger = logging.getLogger(__name__)
+
 DEFAULT_BATCH_SIZE = 100
 ATTACHMENT_URL_TTL = timedelta(hours=24)
+DEFAULT_MAX_CONCURRENCY = 3
+DEFAULT_MAX_RETRIES = 3
+SLOW_WAIT_LOG_THRESHOLD_SECONDS = 1.0
 
 
 class HistoryFetcher(Protocol):
@@ -63,6 +70,64 @@ class DiscordHistoryFetcher:
             message
             async for message in channel.history(after=after_obj, limit=limit, oldest_first=True)
         ]
+
+
+class BoundedHistoryFetcher:
+    """Wraps any HistoryFetcher with a cap on concurrent in-flight fetch
+    calls. discord.py's HTTPClient already honors rate-limit headers and
+    backs off automatically — this is a different concern, bounding how
+    many requests we allow in flight at once so backfilling/reconciling many
+    channels concurrently (once a multi-channel orchestrator exists; see
+    ROADMAP.md) doesn't outpace discord.py's own bucket prediction.
+    """
+
+    def __init__(self, fetcher: HistoryFetcher, *, max_concurrency: int = DEFAULT_MAX_CONCURRENCY):
+        self._fetcher = fetcher
+        self._semaphore = asyncio.Semaphore(max_concurrency)
+
+    async def fetch_batch(
+        self, *, channel_id: int, after: int | None, limit: int
+    ) -> list[MessageLike]:
+        async with self._semaphore:
+            return await self._fetcher.fetch_batch(channel_id=channel_id, after=after, limit=limit)
+
+
+class RetryingHistoryFetcher:
+    """Wraps any HistoryFetcher, retrying with backoff specifically on
+    discord.RateLimited — raised only when discord.py's own internal wait
+    would exceed its configured max_ratelimit_timeout, so it gives up and
+    surfaces the error rather than blocking forever. Ordinary 429s are
+    already handled transparently inside discord.py's HTTPClient; this is
+    the fallback for the case it explicitly can't. Any other exception
+    propagates immediately, untouched.
+    """
+
+    def __init__(self, fetcher: HistoryFetcher, *, max_retries: int = DEFAULT_MAX_RETRIES):
+        self._fetcher = fetcher
+        self._max_retries = max_retries
+
+    async def fetch_batch(
+        self, *, channel_id: int, after: int | None, limit: int
+    ) -> list[MessageLike]:
+        attempt = 0
+        while True:
+            try:
+                return await self._fetcher.fetch_batch(
+                    channel_id=channel_id, after=after, limit=limit
+                )
+            except discord.RateLimited as e:
+                attempt += 1
+                if attempt > self._max_retries:
+                    raise
+                if e.retry_after > SLOW_WAIT_LOG_THRESHOLD_SECONDS:
+                    logger.warning(
+                        "Rate limited fetching channel %s, waiting %.1fs (attempt %d/%d)",
+                        channel_id,
+                        e.retry_after,
+                        attempt,
+                        self._max_retries,
+                    )
+                await asyncio.sleep(e.retry_after)
 
 
 class RepositoryBackfillSink:

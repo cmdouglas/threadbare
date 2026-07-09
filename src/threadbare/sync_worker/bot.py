@@ -1,9 +1,11 @@
 import asyncio
+from datetime import UTC, datetime
 
 import discord
 from psycopg_pool import AsyncConnectionPool
 
 from threadbare.sync_worker import events
+from threadbare.sync_worker.heartbeat import heartbeat_loop
 from threadbare.sync_worker.reconciliation import reconciliation_loop
 
 
@@ -33,15 +35,28 @@ class ThreadbareClient(discord.Client):
         super().__init__(intents=intents, **kwargs)
         self.guild_id = guild_id
         self.pool = pool
+        self.last_gateway_event_at: datetime | None = None
         self._reconciliation_task: asyncio.Task | None = None
+        self._heartbeat_task: asyncio.Task | None = None
 
     async def on_ready(self) -> None:
-        # Guard against re-firing on gateway reconnects — the loop already
-        # runs forever once started.
-        if self.pool is not None and self._reconciliation_task is None:
+        # Guard against re-firing on gateway reconnects — the loops already
+        # run forever once started.
+        if self.pool is None:
+            return
+        if self._reconciliation_task is None:
             self._reconciliation_task = asyncio.create_task(
                 reconciliation_loop(self, self.pool, guild_id=self.guild_id)
             )
+        if self._heartbeat_task is None:
+            self._heartbeat_task = asyncio.create_task(
+                heartbeat_loop(
+                    self.pool, get_last_gateway_event_at=lambda: self.last_gateway_event_at
+                )
+            )
+
+    async def on_socket_event_type(self, event_type: str) -> None:
+        self.last_gateway_event_at = datetime.now(UTC)
 
     async def on_message(self, message: discord.Message) -> None:
         if self.pool is None or message.guild is None or message.guild.id != self.guild_id:

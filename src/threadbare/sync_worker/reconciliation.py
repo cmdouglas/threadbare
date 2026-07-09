@@ -20,9 +20,11 @@ import discord
 from threadbare.sync_worker import repository
 from threadbare.sync_worker.backfill import (
     DEFAULT_BATCH_SIZE,
+    BoundedHistoryFetcher,
     DiscordHistoryFetcher,
     HistoryFetcher,
     RepositoryBackfillSink,
+    RetryingHistoryFetcher,
 )
 from threadbare.sync_worker.checkpoints import advance_backfill_progress
 from threadbare.sync_worker.discord_types import MessageLike
@@ -154,7 +156,7 @@ async def reconcile_guild(
     guild = client.get_guild(guild_id) or await client.fetch_guild(guild_id)
     channels = await guild.fetch_channels()
     after = lookback_cursor(now or datetime.now(UTC), lookback)
-    fetcher = DiscordHistoryFetcher(client)
+    fetcher = RetryingHistoryFetcher(BoundedHistoryFetcher(DiscordHistoryFetcher(client)))
 
     for channel in channels:
         if channel.type is discord.ChannelType.category:
