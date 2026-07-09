@@ -27,22 +27,28 @@ cp .env.example .env
 # Start local Postgres (dev + test databases)
 docker compose -f docker-compose.dev.yml up -d
 
+# Apply the database schema
+uv run threadbare-migrate
+
 # Confirm the harness works end-to-end
 uv run pytest
 ```
 
-`uv run pytest` should discover and pass a unit test and a Playwright end-to-end test. If both pass, the toolchain is working and you're ready to start building against a `ROADMAP.md` item.
+`uv run pytest` should discover and pass the unit and integration tests. If they pass, the toolchain is working and you're ready to start building against a `ROADMAP.md` item.
 
 ## Day-to-day commands
 
-- **Run all tests**: `uv run pytest`
-- **Run only unit tests**: `uv run pytest tests/unit`
-- **Run only end-to-end tests**: `uv run pytest tests/e2e`
+- **Run unit + integration tests** (the default, real Postgres required): `uv run pytest`
+- **Run only unit tests** (no Postgres needed): `uv run pytest tests/unit`
+- **Run only integration tests**: `uv run pytest tests/integration`
+- **Run end-to-end (Playwright) tests**: `uv run pytest tests/e2e` — **always run this separately**, never together with the other tiers in one `pytest` invocation. pytest-playwright's sync driver and pytest-asyncio's runner corrupt each other's event-loop state when collected into the same session (a real upstream friction point between the two plugins, not a bug in this codebase) — `tests/e2e` is deliberately excluded from the default `testpaths` in `pyproject.toml` for this reason.
+- **Run live-Discord tests** (opt-in, needs `.env` secrets): `uv run pytest tests/live_discord -m live_discord` — excluded by default via `addopts` so a plain `uv run pytest` never touches the network.
+- **Apply database migrations**: `uv run threadbare-migrate` (reads `DATABASE_URL`; the integration suite applies migrations to `TEST_DATABASE_URL` itself, automatically, before its tests run)
 - **Lint**: `uv run ruff check .`
 - **Format**: `uv run ruff format .`
 - **Pre-commit hooks** (ruff check + format, run automatically on `git commit` once installed): `uv run pre-commit install` (one-time), or run ad hoc with `uv run pre-commit run --all-files`
 
-Following `CLAUDE.md`: write the failing test first, then the implementation. Every feature needs both a unit test and, where it touches a user-facing flow, an end-to-end test — not one or the other.
+Following `CLAUDE.md`: write the failing test first, then the implementation. Every feature needs both a unit test and, where it touches a user-facing flow, an end-to-end test — not one or the other. For this project that spans four tiers: pure unit tests, DB-backed integration tests (`tests/integration`, real Postgres, isolated per-test via transaction rollback), live-Discord smoke tests (`tests/live_discord`, opt-in), and browser-driven Playwright tests (`tests/e2e`, for the future web app).
 
 ## Test Discord server & bot
 
@@ -67,5 +73,5 @@ Setup (one-time, manual — this lives outside the repo):
 
 - **`.env`** (gitignored, never committed) — your real local secrets: bot token, OAuth credentials, database URL, session secret.
 - **`.env.example`** (committed) — the template documenting every key the app needs, with placeholder values and comments. Keep this in sync whenever a new config value is introduced.
-- **`docker-compose.dev.yml`** — local Postgres only (not the full deployment stack — that's a `ROADMAP.md` §8 item, once the web app and sync worker exist). Creates two databases, `threadbare_dev` and `threadbare_test`, so the test suite never touches dev data. Reads credentials from `.env`.
+- **`docker-compose.dev.yml`** — local Postgres only (not the full deployment stack — that's a `ROADMAP.md` §8 item, once the web app and sync worker exist). Creates two databases, `threadbare_dev` (`DATABASE_URL`) and `threadbare_test` (`TEST_DATABASE_URL`), so the test suite never touches dev data.
 - **Production secrets** are a separate, later concern — each hosting option in `DESIGN.md` §8.4 already has its own secrets story (Compose `.env` for self-host/VPS, CDK-managed secrets for the cloud option). Nothing to set up for that yet.

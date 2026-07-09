@@ -7,7 +7,16 @@ authors = [
     { name = "Charlie", email = "cmdouglas@gmail.com" }
 ]
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "discord-py>=2.4",
+    "psycopg[binary]>=3.2",
+    "psycopg-pool>=3.2",
+    "python-dotenv>=1.0",
+]
+
+[project.scripts]
+threadbare-migrate = "threadbare.db.migrate:main"
+threadbare-sync-worker = "threadbare.sync_worker.cli:main"
 
 [dependency-groups]
 dev = [
@@ -24,8 +33,17 @@ requires = ["uv_build>=0.11.28,<0.12.0"]
 build-backend = "uv_build"
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+# tests/e2e (Playwright) is deliberately excluded from the default testpaths:
+# pytest-playwright's sync driver and pytest-asyncio's runner corrupt each
+# other's event-loop state when collected into the same session (a real
+# upstream friction point, not a project bug) — run it separately via
+# `uv run pytest tests/e2e`, as DEVELOPMENT.md documents.
+testpaths = ["tests/unit", "tests/integration", "tests/live_discord"]
 asyncio_mode = "auto"
+markers = [
+    "live_discord: requires a real Discord bot token + test guild (opt-in, see DEVELOPMENT.md)",
+]
+addopts = "-m 'not live_discord'"
 
 [tool.ruff]
 line-length = 100

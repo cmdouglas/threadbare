@@ -6,7 +6,7 @@ Everything here targets a single Discord server, public (`@everyone`-readable) c
 
 ## 1. Sync worker (~2–3 days)
 
-- [ ] Discord bot connection (discord.py or discord.js), gateway + REST
+- [x] Discord bot connection (discord.py or discord.js), gateway + REST
 - [ ] Checkpointed initial backfill of in-scope channels and threads (resumable across restarts)
 - [ ] Live event handling: `MESSAGE_CREATE`, `MESSAGE_UPDATE`, `MESSAGE_DELETE`, `MESSAGE_DELETE_BULK`, thread lifecycle, channel updates
 - [ ] Public-channel computation: `channels.is_public` derived from role/channel overwrites, recomputed on `CHANNEL_UPDATE` and role events; content removed from index if a channel stops being public
@@ -16,8 +16,8 @@ Everything here targets a single Discord server, public (`@everyone`-readable) c
 
 ## 2. Data model (Postgres)
 
-- [ ] Core tables: `guilds`, `channels`, `threads`, `users`, `messages`, `attachments`, `reactions`, `sync_state` (§4.1)
-- [ ] `tsvector`/GIN full-text index on `messages`
+- [x] Core tables: `guilds`, `channels`, `threads`, `users`, `messages`, `attachments`, `reactions`, `sync_state` (§4.1)
+- [x] `tsvector`/GIN full-text index on `messages`
 - [ ] Hard-delete semantics for messages/attachments/reactions (no soft-delete flags)
 
 ## 3. Rendering (~1–2 days)
