@@ -26,7 +26,9 @@ class HistoryFetcher(Protocol):
 class BackfillSink(Protocol):
     async def get_checkpoint(self, channel_id: int) -> int | None: ...
 
-    async def write_message(self, message: MessageLike, *, channel_id: int) -> None: ...
+    async def write_message(
+        self, message: MessageLike, *, channel_id: int | None = None, thread_id: int | None = None
+    ) -> None: ...
 
     async def set_checkpoint(
         self, channel_id: int, *, last_message_id: int | None, complete: bool
@@ -74,10 +76,13 @@ class RepositoryBackfillSink:
     async def get_checkpoint(self, channel_id: int) -> int | None:
         return await repository.get_backfill_checkpoint(self._conn, channel_id)
 
-    async def write_message(self, message: MessageLike, *, channel_id: int) -> None:
+    async def write_message(
+        self, message: MessageLike, *, channel_id: int | None = None, thread_id: int | None = None
+    ) -> None:
         await repository.upsert_user(self._conn, transform.user_to_row(message.author))
         await repository.upsert_message(
-            self._conn, transform.message_to_row(message, channel_id=channel_id, thread_id=None)
+            self._conn,
+            transform.message_to_row(message, channel_id=channel_id, thread_id=thread_id),
         )
         for attachment in message.attachments:
             await repository.upsert_attachment(

@@ -12,9 +12,10 @@ Everything here targets a single Discord server, public (`@everyone`-readable) c
   - [ ] Thread backfill (threads have no permission overwrites of their own — visibility keys off the parent channel)
   - [ ] Forum-channel branch (forum channels have no top-level history; everything lives in threads)
 - [ ] Live event handling: `MESSAGE_CREATE`, `MESSAGE_UPDATE`, `MESSAGE_DELETE`, `MESSAGE_DELETE_BULK`, thread lifecycle, channel updates
-- [ ] Public-channel computation: `channels.is_public` derived from role/channel overwrites, recomputed on `CHANNEL_UPDATE` and role events; content removed from index if a channel stops being public
-  - [x] Core logic: `compute_is_public()` (full overwrite-precedence matrix) + `refresh_channel_public_status()` (purges content on public → gated), unit + integration tested
-  - [ ] Wired to live `CHANNEL_UPDATE`/role events (Phase D)
+  - [x] Message create/edit/delete/bulk-delete — wired into `ThreadbareClient`, unit-equivalent + integration tested; edits reuse the same upsert path as create
+  - [ ] Thread lifecycle (create/update/delete) — deferred until reconciliation (Phase E) exists as a backstop; discord.py's thread-delete event coverage is unreliable for threads not already cached, per the sync worker plan's risk notes, so this needs the reconciliation sweep to be trustworthy rather than a live-event-only implementation
+- [x] Public-channel computation: `channels.is_public` derived from role/channel overwrites, recomputed on `CHANNEL_UPDATE` and role events; content removed from index if a channel stops being public
+  - Core logic (`compute_is_public()`, `refresh_channel_public_status()`) and live wiring (`on_guild_channel_update`, `on_guild_role_update`, `on_guild_role_delete`) both done, unit/integration/live tested
 - [ ] Nightly reconciliation sweep re-walking recent history to repair missed events
 - [ ] Rate-limit-aware backfill (honors headers, backs off)
 - [ ] `sync_state` checkpoints + heartbeat row for monitoring

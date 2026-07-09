@@ -102,6 +102,17 @@ async def set_backfill_checkpoint(
     )
 
 
+async def delete_message(conn: psycopg.AsyncConnection, message_id: int) -> None:
+    """Hard delete — attachments/reactions cascade. A no-op if the id is
+    unknown (e.g. a delete event for a message we never indexed).
+    """
+    await conn.execute("DELETE FROM messages WHERE id = %s", (message_id,))
+
+
+async def delete_messages(conn: psycopg.AsyncConnection, message_ids: list[int]) -> None:
+    await conn.execute("DELETE FROM messages WHERE id = ANY(%s)", (message_ids,))
+
+
 async def purge_channel_content(conn: psycopg.AsyncConnection, channel_id: int) -> None:
     """Remove everything under a channel — its threads (and their messages)
     and its own top-level messages — without deleting the channel row
