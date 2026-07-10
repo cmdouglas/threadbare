@@ -257,6 +257,7 @@ All three paths converge on the same first-run setup wizard (§8.1), so the host
 | Attachment URL expiry breaking old pages | On-demand proxy refresh (§4); no local mirroring |
 | Message Content intent friction | Non-issue below 75 servers (dashboard toggle); becomes an approval process only in Phase 5 |
 | Mod relations: "what exactly does this thing store?" | Deletion honoring by design, minimal user table, admin visibility into indexed channels, no message backups — delivered as the generated pitch kit (§8.3) |
+| Private archived threads invisible to the sync worker without `Manage Threads` | Documented limitation, not solved by requesting more permissions — consistent with the minimal-permissions design (§3/§8.2: `View Channels` + `Read Message History` only). Active threads and public archived threads are fully covered. |
 
 **Open questions**
 

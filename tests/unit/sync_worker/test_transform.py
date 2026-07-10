@@ -1,7 +1,14 @@
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
-from threadbare.sync_worker.transform import attachment_to_row, message_to_row, user_to_row
+import discord
+
+from threadbare.sync_worker.transform import (
+    attachment_to_row,
+    message_to_row,
+    thread_to_row,
+    user_to_row,
+)
 
 
 @dataclass
@@ -39,6 +46,16 @@ class FakeMessage:
     edited_at: datetime | None = None
     reference: FakeReference | None = None
     attachments: list = field(default_factory=list)
+
+
+@dataclass
+class FakeThread:
+    id: int
+    parent_id: int
+    name: str
+    archived: bool = False
+    created_at: datetime | None = None
+    message_count: int = 0
 
 
 NOW = datetime(2026, 1, 1, tzinfo=UTC)
@@ -147,3 +164,29 @@ def test_attachment_to_row():
         "cached_url": "https://cdn.example/cat.png",
         "url_expires_at": expires_at,
     }
+
+
+def test_thread_to_row_maps_basic_fields():
+    thread = FakeThread(id=99, parent_id=10, name="general chat", archived=True, created_at=NOW)
+
+    row = thread_to_row(thread)
+
+    assert row == {
+        "id": 99,
+        "parent_channel_id": 10,
+        "name": "general chat",
+        "archived": True,
+        "created_at": NOW,
+        "message_count": 0,
+    }
+
+
+def test_thread_to_row_falls_back_to_snowflake_time_when_created_at_is_none():
+    # discord.py leaves created_at as None for threads created before
+    # 2022-01-09; the threads.created_at column is NOT NULL, so we derive it
+    # from the id (a Discord snowflake always encodes its own creation time).
+    thread = FakeThread(id=99, parent_id=10, name="old thread", created_at=None)
+
+    row = thread_to_row(thread)
+
+    assert row["created_at"] == discord.utils.snowflake_time(99)

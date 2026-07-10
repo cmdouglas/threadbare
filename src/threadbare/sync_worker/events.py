@@ -8,26 +8,46 @@ overwrite ints discord.py's channel/category objects hold.
 
 import discord
 
-from threadbare.sync_worker import repository
+from threadbare.sync_worker import repository, transform
 from threadbare.sync_worker.backfill import RepositoryBackfillSink
-from threadbare.sync_worker.discord_types import MessageLike
+from threadbare.sync_worker.discord_types import MessageLike, ThreadLike
 from threadbare.sync_worker.permissions import everyone_overwrite, refresh_channel_public_status
 
 
 async def handle_message_create(
-    conn, message: MessageLike, *, channel_id: int | None = None, thread_id: int | None = None
+    conn,
+    message: MessageLike,
+    *,
+    channel_id: int | None = None,
+    thread_id: int | None = None,
+    thread: ThreadLike | None = None,
 ) -> None:
+    # A thread carries no permission overwrites of its own (visibility keys
+    # off the parent channel), so its row is just metadata — safe to upsert
+    # unconditionally before the message write, same self-healing shape as
+    # discover_channels(). Written first, same connection/transaction as the
+    # message write, so a crash between the two can't leave messages.thread_id
+    # dangling.
+    if thread is not None:
+        await repository.upsert_thread(conn, transform.thread_to_row(thread))
     await RepositoryBackfillSink(conn).write_message(
         message, channel_id=channel_id, thread_id=thread_id
     )
 
 
 async def handle_message_edit(
-    conn, message: MessageLike, *, channel_id: int | None = None, thread_id: int | None = None
+    conn,
+    message: MessageLike,
+    *,
+    channel_id: int | None = None,
+    thread_id: int | None = None,
+    thread: ThreadLike | None = None,
 ) -> None:
     # Upserts make this identical to create: the same write path updates
     # content/edited_at on conflict instead of inserting a duplicate.
-    await handle_message_create(conn, message, channel_id=channel_id, thread_id=thread_id)
+    await handle_message_create(
+        conn, message, channel_id=channel_id, thread_id=thread_id, thread=thread
+    )
 
 
 async def handle_message_delete(conn, message_id: int) -> None:

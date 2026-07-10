@@ -47,3 +47,14 @@ class MessageLike(Protocol):
     edited_at: datetime | None
     reference: MessageReferenceLike | None
     attachments: list[AttachmentLike]
+
+
+class ThreadLike(Protocol):
+    id: int
+    parent_id: int
+    name: str
+    archived: bool
+    # None for threads created before Discord introduced this field
+    # (2022-01-09) — discord.py leaves it unset rather than backfilling it.
+    created_at: datetime | None
+    message_count: int

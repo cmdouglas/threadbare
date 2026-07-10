@@ -27,6 +27,16 @@ class FakeMessage:
     attachments: list = field(default_factory=list)
 
 
+@dataclass
+class FakeThread:
+    id: int
+    parent_id: int
+    name: str = "a thread"
+    archived: bool = False
+    created_at: datetime | None = field(default_factory=lambda: datetime.now(UTC))
+    message_count: int = 0
+
+
 async def _seed_guild_and_channel(conn, *, guild_id=1, channel_id=10, is_public=False):
     await conn.execute("INSERT INTO guilds (id, name) VALUES (%s, %s)", (guild_id, "Test Guild"))
     await conn.execute(
@@ -62,6 +72,41 @@ async def test_handle_message_edit_updates_existing_content(db_conn):
         row = await cur.fetchone()
         assert row["content"] == "edited!"
         assert row["total"] == 1  # upsert, not a duplicate row
+
+
+async def test_handle_message_create_for_a_thread_upserts_the_thread_row_first(db_conn):
+    # Reproduces the live bug: a thread message arriving with no pre-existing
+    # threads row must not raise a ForeignKeyViolation on messages.thread_id.
+    await _seed_guild_and_channel(db_conn, channel_id=10, is_public=True)
+    thread = FakeThread(id=3000, parent_id=10, name="a thread")
+    message = FakeMessage(id=100, author=FakeAuthor(id=1))
+
+    await events.handle_message_create(db_conn, message, thread_id=3000, thread=thread)
+
+    async with db_conn.cursor() as cur:
+        await cur.execute("SELECT parent_channel_id, name FROM threads WHERE id = 3000")
+        thread_row = await cur.fetchone()
+        assert thread_row == {"parent_channel_id": 10, "name": "a thread"}
+
+        await cur.execute("SELECT channel_id, thread_id, content FROM messages WHERE id = 100")
+        message_row = await cur.fetchone()
+        assert message_row == {"channel_id": None, "thread_id": 3000, "content": "hello"}
+
+
+async def test_handle_message_edit_for_a_thread_reuses_existing_thread_row(db_conn):
+    await _seed_guild_and_channel(db_conn, channel_id=10, is_public=True)
+    thread = FakeThread(id=3000, parent_id=10, name="a thread")
+    author = FakeAuthor(id=1)
+    await events.handle_message_create(
+        db_conn, FakeMessage(id=100, author=author), thread_id=3000, thread=thread
+    )
+
+    edited = FakeMessage(id=100, author=author, content="edited!")
+    await events.handle_message_edit(db_conn, edited, thread_id=3000, thread=thread)
+
+    async with db_conn.cursor() as cur:
+        await cur.execute("SELECT content FROM messages WHERE id = 100")
+        assert (await cur.fetchone())["content"] == "edited!"
 
 
 async def test_handle_message_delete_removes_the_row(db_conn):

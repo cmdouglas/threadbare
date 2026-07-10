@@ -1,7 +1,10 @@
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+
 import discord
 
 from threadbare.sync_worker import repository
-from threadbare.sync_worker.discovery import discover_channels
+from threadbare.sync_worker.discovery import discover_active_threads, discover_channels
 from threadbare.sync_worker.permissions import READ_MESSAGE_HISTORY, VIEW_CHANNEL
 
 BOTH_REQUIRED = VIEW_CHANNEL | READ_MESSAGE_HISTORY
@@ -54,15 +57,29 @@ class FakeRole:
 
 
 class FakeGuild:
-    def __init__(self, *, id, name, default_role, channels, icon=None):
+    def __init__(self, *, id, name, default_role, channels, icon=None, threads=()):
         self.id = id
         self.name = name
         self.default_role = default_role
         self._channels = channels
         self.icon = icon
+        self._threads = list(threads)
 
     async def fetch_channels(self):
         return self._channels
+
+    async def active_threads(self):
+        return self._threads
+
+
+@dataclass
+class FakeThread:
+    id: int
+    parent_id: int
+    name: str = "a thread"
+    archived: bool = False
+    created_at: datetime | None = field(default_factory=lambda: datetime.now(UTC))
+    message_count: int = 0
 
 
 class FakeClient:
@@ -152,6 +169,28 @@ async def test_discover_channels_computes_is_public_per_channel(db_conn):
     assert await repository.get_channel_is_public(db_conn, 11) is False
 
 
+async def test_discover_channels_never_computes_is_public_for_forum_channels(db_conn):
+    # Forum channels have no top-level history (everything lives in threads,
+    # a separate roadmap item) — backfill.py already treats them as a
+    # skipped container type; discovery must not compute is_public for them
+    # either, or thread discovery couldn't tell "forum, skip" from "public
+    # text channel" just by reading is_public back.
+    role = FakeRole(BOTH_REQUIRED)  # would otherwise compute is_public=True
+    guild = FakeGuild(id=1, name="Test Guild", default_role=role, channels=[])
+    forum = FakeChannel(id=10, name="a-forum", guild=guild, type=discord.ChannelType.forum)
+    guild._channels = [forum]
+    client = FakeClient(guild)
+
+    discovered = await discover_channels(client, db_conn, guild_id=1)
+
+    assert discovered == []
+    async with db_conn.cursor() as cur:
+        await cur.execute("SELECT is_public FROM channels WHERE id = 10")
+        row = await cur.fetchone()
+    assert row is not None
+    assert row["is_public"] is False
+
+
 async def test_discover_channels_does_not_clobber_indexed_on_rediscovery(db_conn):
     role = FakeRole(BOTH_REQUIRED)
     guild = FakeGuild(id=1, name="Test Guild", default_role=role, channels=[])
@@ -170,3 +209,90 @@ async def test_discover_channels_does_not_clobber_indexed_on_rediscovery(db_conn
         row = await cur.fetchone()
     assert row["name"] == "general-renamed"
     assert row["indexed"] is False
+
+
+async def test_discover_active_threads_upserts_a_thread_of_a_public_indexed_channel(db_conn):
+    role = FakeRole(BOTH_REQUIRED)
+    guild = FakeGuild(id=1, name="Test Guild", default_role=role, channels=[])
+    channel = FakeChannel(id=10, name="general", guild=guild)
+    thread = FakeThread(id=3000, parent_id=10, name="a thread")
+    guild._channels = [channel]
+    guild._threads = [thread]
+    client = FakeClient(guild)
+    await discover_channels(client, db_conn, guild_id=1)
+
+    discovered = await discover_active_threads(client, db_conn, guild_id=1)
+
+    assert discovered == [3000]
+    async with db_conn.cursor() as cur:
+        await cur.execute("SELECT parent_channel_id, name FROM threads WHERE id = 3000")
+        row = await cur.fetchone()
+    assert row == {"parent_channel_id": 10, "name": "a thread"}
+
+
+async def test_discover_active_threads_skips_a_thread_of_a_non_public_channel(db_conn):
+    role = FakeRole(BOTH_REQUIRED)
+    guild = FakeGuild(id=1, name="Test Guild", default_role=role, channels=[])
+    channel = FakeChannel(id=10, name="mod-only", guild=guild, deny=VIEW_CHANNEL)
+    thread = FakeThread(id=3000, parent_id=10)
+    guild._channels = [channel]
+    guild._threads = [thread]
+    client = FakeClient(guild)
+    await discover_channels(client, db_conn, guild_id=1)
+
+    discovered = await discover_active_threads(client, db_conn, guild_id=1)
+
+    assert discovered == []
+    async with db_conn.cursor() as cur:
+        await cur.execute("SELECT count(*) AS n FROM threads WHERE id = 3000")
+        assert (await cur.fetchone())["n"] == 0
+
+
+async def test_discover_active_threads_skips_a_thread_of_a_non_indexed_channel(db_conn):
+    role = FakeRole(BOTH_REQUIRED)
+    guild = FakeGuild(id=1, name="Test Guild", default_role=role, channels=[])
+    channel = FakeChannel(id=10, name="general", guild=guild)
+    thread = FakeThread(id=3000, parent_id=10)
+    guild._channels = [channel]
+    guild._threads = [thread]
+    client = FakeClient(guild)
+    await discover_channels(client, db_conn, guild_id=1)
+    await db_conn.execute("UPDATE channels SET indexed = false WHERE id = 10")
+
+    discovered = await discover_active_threads(client, db_conn, guild_id=1)
+
+    assert discovered == []
+
+
+async def test_discover_active_threads_skips_a_thread_of_a_forum_channel(db_conn):
+    role = FakeRole(BOTH_REQUIRED)
+    guild = FakeGuild(id=1, name="Test Guild", default_role=role, channels=[])
+    forum = FakeChannel(id=10, name="a-forum", guild=guild, type=discord.ChannelType.forum)
+    thread = FakeThread(id=3000, parent_id=10)
+    guild._channels = [forum]
+    guild._threads = [thread]
+    client = FakeClient(guild)
+    await discover_channels(client, db_conn, guild_id=1)
+
+    discovered = await discover_active_threads(client, db_conn, guild_id=1)
+
+    assert discovered == []
+    async with db_conn.cursor() as cur:
+        await cur.execute("SELECT count(*) AS n FROM threads WHERE id = 3000")
+        assert (await cur.fetchone())["n"] == 0
+
+
+async def test_discover_active_threads_skips_a_thread_of_an_undiscovered_channel(db_conn):
+    # Defensive: shouldn't happen in practice (channel discovery runs first),
+    # but a thread whose parent has no channels row yet has nothing to key
+    # visibility off of.
+    role = FakeRole(BOTH_REQUIRED)
+    guild = FakeGuild(id=1, name="Test Guild", default_role=role, channels=[])
+    thread = FakeThread(id=3000, parent_id=999)
+    guild._threads = [thread]
+    client = FakeClient(guild)
+    await db_conn.execute("INSERT INTO guilds (id, name) VALUES (%s, %s)", (1, "Test Guild"))
+
+    discovered = await discover_active_threads(client, db_conn, guild_id=1)
+
+    assert discovered == []

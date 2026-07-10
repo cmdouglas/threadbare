@@ -23,6 +23,8 @@ async def test_discover_and_backfill_guild_populates_data_without_preseeding():
     await pool.open()
     async with pool.connection() as conn:
         await conn.execute("DELETE FROM messages")
+        await conn.execute("DELETE FROM thread_sync_state")
+        await conn.execute("DELETE FROM threads")
         await conn.execute("DELETE FROM sync_state")
         await conn.execute("DELETE FROM channels")
         await conn.execute("DELETE FROM guilds")
@@ -33,12 +35,15 @@ async def test_discover_and_backfill_guild_populates_data_without_preseeding():
     start_task = asyncio.create_task(client.start(token))
 
     try:
-        for _ in range(100):
+        # backfill_guild now also walks active/archived thread discovery and
+        # thread backfill (extra REST round-trips beyond plain channel
+        # backfill), so this needs more headroom than a channel-only backfill.
+        for _ in range(300):
             if client._backfill_task is not None and client._backfill_task.done():
                 break
             await asyncio.sleep(0.1)
         else:
-            pytest.fail("backfill_guild did not complete within 10s")
+            pytest.fail("backfill_guild did not complete within 30s")
 
         async with pool.connection() as conn:
             async with conn.cursor() as cur:
@@ -51,6 +56,8 @@ async def test_discover_and_backfill_guild_populates_data_without_preseeding():
         start_task.cancel()
         async with pool.connection() as conn:
             await conn.execute("DELETE FROM messages")
+            await conn.execute("DELETE FROM thread_sync_state")
+            await conn.execute("DELETE FROM threads")
             await conn.execute("DELETE FROM sync_state")
             await conn.execute("DELETE FROM channels")
             await conn.execute("DELETE FROM guilds")

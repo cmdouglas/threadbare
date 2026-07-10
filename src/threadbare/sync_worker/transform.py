@@ -5,7 +5,9 @@ dicts ready for repository.upsert_*.
 
 from datetime import datetime
 
-from threadbare.sync_worker.discord_types import AttachmentLike, MessageLike, UserLike
+import discord
+
+from threadbare.sync_worker.discord_types import AttachmentLike, MessageLike, ThreadLike, UserLike
 
 
 def message_to_row(message: MessageLike, *, channel_id: int | None, thread_id: int | None) -> dict:
@@ -28,6 +30,17 @@ def user_to_row(user: UserLike) -> dict:
         "id": user.id,
         "display_name": user.display_name,
         "avatar_hash": user.avatar.key if user.avatar else None,
+    }
+
+
+def thread_to_row(thread: ThreadLike) -> dict:
+    return {
+        "id": thread.id,
+        "parent_channel_id": thread.parent_id,
+        "name": thread.name,
+        "archived": thread.archived,
+        "created_at": thread.created_at or discord.utils.snowflake_time(thread.id),
+        "message_count": thread.message_count,
     }
 
 

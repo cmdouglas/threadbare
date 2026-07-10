@@ -6,15 +6,34 @@ from psycopg_pool import AsyncConnectionPool
 
 from threadbare.sync_worker import events
 from threadbare.sync_worker.backfill import backfill_guild
-from threadbare.sync_worker.discovery import discover_channels
+from threadbare.sync_worker.discovery import discover_active_threads, discover_channels
 from threadbare.sync_worker.heartbeat import heartbeat_loop
 from threadbare.sync_worker.reconciliation import reconciliation_loop
 
 
-def _container_ids(channel) -> tuple[int | None, int | None]:
+async def _resolve_container(
+    client: discord.Client, channel
+) -> tuple[int | None, int | None, discord.Thread | None]:
+    """Maps a discord.py channel/thread object to (channel_id, thread_id,
+    thread) for write_message/upsert_thread. Threads carry no permission
+    overwrites of their own — the Thread object is only needed for its
+    metadata (name/archived/created_at), not for any visibility computation.
+
+    A cold cache (the container was never seen via GUILD_CREATE/THREAD_CREATE)
+    hands back a bare PartialMessageable with type=None instead of a real
+    Thread/TextChannel — ambiguous as to which it actually is, since a plain
+    channel and an uncached thread look identical at that point. Resolved
+    with one REST call in that case; cheap in practice since it only hits the
+    genuinely-uncached path, not the common case.
+    """
     if isinstance(channel, discord.Thread):
-        return None, channel.id
-    return channel.id, None
+        return None, channel.id, channel
+    if getattr(channel, "type", None) is None:
+        resolved = await client.fetch_channel(channel.id)
+        if isinstance(resolved, discord.Thread):
+            return None, resolved.id, resolved
+        return resolved.id, None, None
+    return channel.id, None, None
 
 
 class ThreadbareClient(discord.Client):
@@ -53,6 +72,10 @@ class ThreadbareClient(discord.Client):
         # directly rather than backgrounded.
         async with self.pool.connection() as conn:
             await discover_channels(self, conn, guild_id=self.guild_id)
+            # Active-thread discovery needs channel rows to already exist
+            # (it looks up each thread's parent's sync flags), so it runs
+            # after, same connection/transaction.
+            await discover_active_threads(self, conn, guild_id=self.guild_id)
 
         # The rest are guarded against re-firing on reconnects — these loops
         # already run forever once started.
@@ -77,10 +100,10 @@ class ThreadbareClient(discord.Client):
     async def on_message(self, message: discord.Message) -> None:
         if self.pool is None or message.guild is None or message.guild.id != self.guild_id:
             return
-        channel_id, thread_id = _container_ids(message.channel)
+        channel_id, thread_id, thread = await _resolve_container(self, message.channel)
         async with self.pool.connection() as conn:
             await events.handle_message_create(
-                conn, message, channel_id=channel_id, thread_id=thread_id
+                conn, message, channel_id=channel_id, thread_id=thread_id, thread=thread
             )
 
     async def on_raw_message_edit(self, payload: discord.RawMessageUpdateEvent) -> None:
@@ -95,10 +118,10 @@ class ThreadbareClient(discord.Client):
                 message = await channel.fetch_message(payload.message_id)
             except discord.NotFound:
                 return
-        channel_id, thread_id = _container_ids(message.channel)
+        channel_id, thread_id, thread = await _resolve_container(self, message.channel)
         async with self.pool.connection() as conn:
             await events.handle_message_edit(
-                conn, message, channel_id=channel_id, thread_id=thread_id
+                conn, message, channel_id=channel_id, thread_id=thread_id, thread=thread
             )
 
     async def on_raw_message_delete(self, payload: discord.RawMessageDeleteEvent) -> None:

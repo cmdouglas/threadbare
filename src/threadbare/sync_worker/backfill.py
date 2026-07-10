@@ -14,6 +14,7 @@ import discord
 from threadbare.sync_worker import repository, transform
 from threadbare.sync_worker.checkpoints import advance_backfill_progress
 from threadbare.sync_worker.discord_types import MessageLike
+from threadbare.sync_worker.discovery import discover_active_threads
 from threadbare.sync_worker.permissions import should_sync
 
 SKIPPED_CHANNEL_TYPES = (discord.ChannelType.category, discord.ChannelType.forum)
@@ -42,6 +43,12 @@ class BackfillSink(Protocol):
 
     async def set_checkpoint(
         self, channel_id: int, *, last_message_id: int | None, complete: bool
+    ) -> None: ...
+
+    async def get_thread_checkpoint(self, thread_id: int) -> int | None: ...
+
+    async def set_thread_checkpoint(
+        self, thread_id: int, *, last_message_id: int | None, complete: bool
     ) -> None: ...
 
     async def commit(self) -> None: ...
@@ -171,6 +178,16 @@ class RepositoryBackfillSink:
             self._conn, channel_id, last_message_id=last_message_id, complete=complete
         )
 
+    async def get_thread_checkpoint(self, thread_id: int) -> int | None:
+        return await repository.get_thread_backfill_checkpoint(self._conn, thread_id)
+
+    async def set_thread_checkpoint(
+        self, thread_id: int, *, last_message_id: int | None, complete: bool
+    ) -> None:
+        await repository.set_thread_backfill_checkpoint(
+            self._conn, thread_id, last_message_id=last_message_id, complete=complete
+        )
+
     async def commit(self) -> None:
         await self._conn.commit()
 
@@ -205,6 +222,49 @@ async def backfill_channel(
         checkpoint = progress.last_message_id if progress.last_message_id is not None else after
         await sink.set_checkpoint(
             channel_id, last_message_id=checkpoint, complete=progress.complete
+        )
+        await sink.commit()
+        after = checkpoint
+
+        if progress.complete:
+            break
+
+    return total_written
+
+
+async def backfill_thread(
+    fetcher: HistoryFetcher,
+    sink: BackfillSink,
+    *,
+    thread_id: int,
+    batch_size: int = DEFAULT_BATCH_SIZE,
+) -> int:
+    """Structural twin of backfill_channel() for threads: same paging/
+    checkpoint loop, checkpointed against thread_sync_state instead of
+    sync_state. Kept as a separate function rather than folding a "kind"
+    parameter into backfill_channel() — matches the precedent
+    reconcile_channel() already set (a near-identical twin of
+    backfill_channel(), not a unified dispatching function). The fetcher's
+    channel_id= parameter works unmodified here: DiscordHistoryFetcher just
+    resolves whatever id it's given via get_channel/fetch_channel, and a
+    discord.py Thread supports .history() identically to a TextChannel.
+    """
+    after = await sink.get_thread_checkpoint(thread_id)
+    total_written = 0
+
+    while True:
+        batch = await fetcher.fetch_batch(channel_id=thread_id, after=after, limit=batch_size)
+
+        for message in batch:
+            await sink.write_message(message, thread_id=thread_id)
+            total_written += 1
+
+        progress = advance_backfill_progress(
+            batch_message_ids=[m.id for m in batch], requested_limit=batch_size
+        )
+        checkpoint = progress.last_message_id if progress.last_message_id is not None else after
+        await sink.set_thread_checkpoint(
+            thread_id, last_message_id=checkpoint, complete=progress.complete
         )
         await sink.commit()
         after = checkpoint
@@ -253,4 +313,69 @@ async def backfill_guild(
             await backfill_channel(fetcher, sink, channel_id=channel_id, batch_size=batch_size)
 
     candidates = [channel.id for channel in channels if channel.type not in SKIPPED_CHANNEL_TYPES]
-    await asyncio.gather(*(_backfill_one(channel_id) for channel_id in candidates))
+    await asyncio.gather(
+        *(_backfill_one(channel_id) for channel_id in candidates),
+        backfill_guild_threads(
+            client,
+            pool,
+            guild_id=guild_id,
+            channels=channels,
+            semaphore=semaphore,
+            fetcher=fetcher,
+            batch_size=batch_size,
+        ),
+    )
+
+
+async def backfill_guild_threads(
+    client: discord.Client,
+    pool,
+    *,
+    guild_id: int,
+    channels: list,
+    semaphore: asyncio.Semaphore,
+    fetcher: HistoryFetcher,
+    batch_size: int = DEFAULT_BATCH_SIZE,
+) -> None:
+    """Backfills every in-scope thread in a guild: active threads
+    (rediscovered here via discover_active_threads — not assumed
+    pre-populated by on_ready, so this is self-contained) plus archived
+    threads (discovered here, folded into the same walk as backfilling them
+    — no reason to separate "discover this archived thread" from "backfill
+    its messages" into two REST-call passes over the same generator).
+
+    Shares `semaphore` with channel backfill rather than a separate budget:
+    a guild can have far more threads than channels, and two independent
+    semaphores could jointly exceed the pool's connection limit at once.
+
+    Only public archived threads are discoverable here — private archived
+    threads the bot hasn't joined require Manage Threads, which the sync
+    worker deliberately doesn't request (minimal-permissions design,
+    DESIGN.md §3 / ROADMAP.md §7). This is a permanent completeness gap for
+    private threads, not a bug.
+    """
+    thread_ids: set[int] = set()
+
+    async with pool.connection() as conn:
+        thread_ids.update(await discover_active_threads(client, conn, guild_id=guild_id))
+
+    async def _collect_archived_threads_for(channel) -> None:
+        if channel.type in SKIPPED_CHANNEL_TYPES or not hasattr(channel, "archived_threads"):
+            return
+        async with pool.connection() as conn:
+            flags = await repository.get_channel_sync_flags(conn, channel.id)
+        if flags is None or not should_sync(is_public=flags[0], indexed=flags[1]):
+            return
+        async for thread in channel.archived_threads(private=False):
+            async with pool.connection() as conn:
+                await repository.upsert_thread(conn, transform.thread_to_row(thread))
+            thread_ids.add(thread.id)
+
+    await asyncio.gather(*(_collect_archived_threads_for(channel) for channel in channels))
+
+    async def _backfill_one(thread_id: int) -> None:
+        async with semaphore, pool.connection() as conn:
+            sink = RepositoryBackfillSink(conn)
+            await backfill_thread(fetcher, sink, thread_id=thread_id, batch_size=batch_size)
+
+    await asyncio.gather(*(_backfill_one(thread_id) for thread_id in thread_ids))

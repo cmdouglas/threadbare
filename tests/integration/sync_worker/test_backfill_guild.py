@@ -39,6 +39,11 @@ class FakeGuild:
     async def fetch_channels(self):
         return self._channels
 
+    async def active_threads(self):
+        # backfill_guild() also runs backfill_guild_threads(), which needs
+        # this — no threads are relevant to these channel-backfill tests.
+        return []
+
 
 class FakeClient:
     def __init__(self, guild):

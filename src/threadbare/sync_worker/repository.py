@@ -42,6 +42,26 @@ async def upsert_channel(conn: psycopg.AsyncConnection, row: dict) -> None:
     )
 
 
+async def upsert_thread(conn: psycopg.AsyncConnection, row: dict) -> None:
+    """Insert a thread, or update its metadata if already known. parent_channel_id
+    and created_at are immutable facts about a thread and are never
+    overwritten on conflict, matching upsert_channel's convention.
+    """
+    await conn.execute(
+        """
+        INSERT INTO threads (id, parent_channel_id, name, archived, created_at, message_count)
+        VALUES (
+            %(id)s, %(parent_channel_id)s, %(name)s, %(archived)s, %(created_at)s, %(message_count)s
+        )
+        ON CONFLICT (id) DO UPDATE SET
+            name = EXCLUDED.name,
+            archived = EXCLUDED.archived,
+            message_count = EXCLUDED.message_count
+        """,
+        row,
+    )
+
+
 async def get_channel_is_public(conn: psycopg.AsyncConnection, channel_id: int) -> bool | None:
     async with conn.cursor() as cur:
         await cur.execute("SELECT is_public FROM channels WHERE id = %s", (channel_id,))
@@ -121,6 +141,25 @@ async def get_channel_sync_flags(
     return row["is_public"], row["indexed"]
 
 
+async def get_channel_sync_flags_and_type(
+    conn: psycopg.AsyncConnection, channel_id: int
+) -> tuple[bool, bool, int] | None:
+    """(is_public, indexed, type) for a known channel, or None if unseen.
+    Separate from get_channel_sync_flags (used by channel backfill/
+    reconciliation) because only thread discovery/backfill needs the type,
+    to cheaply tell a forum-parented thread apart without a fresh Discord
+    fetch.
+    """
+    async with conn.cursor() as cur:
+        await cur.execute(
+            "SELECT is_public, indexed, type FROM channels WHERE id = %s", (channel_id,)
+        )
+        row = await cur.fetchone()
+    if row is None:
+        return None
+    return row["is_public"], row["indexed"], row["type"]
+
+
 async def get_backfill_checkpoint(conn: psycopg.AsyncConnection, channel_id: int) -> int | None:
     async with conn.cursor() as cur:
         await cur.execute(
@@ -147,6 +186,37 @@ async def set_backfill_checkpoint(
             backfill_complete = EXCLUDED.backfill_complete
         """,
         (channel_id, last_message_id, complete),
+    )
+
+
+async def get_thread_backfill_checkpoint(
+    conn: psycopg.AsyncConnection, thread_id: int
+) -> int | None:
+    async with conn.cursor() as cur:
+        await cur.execute(
+            "SELECT last_backfilled_message_id FROM thread_sync_state WHERE thread_id = %s",
+            (thread_id,),
+        )
+        row = await cur.fetchone()
+    return row["last_backfilled_message_id"] if row else None
+
+
+async def set_thread_backfill_checkpoint(
+    conn: psycopg.AsyncConnection,
+    thread_id: int,
+    *,
+    last_message_id: int | None,
+    complete: bool,
+) -> None:
+    await conn.execute(
+        """
+        INSERT INTO thread_sync_state (thread_id, last_backfilled_message_id, backfill_complete)
+        VALUES (%s, %s, %s)
+        ON CONFLICT (thread_id) DO UPDATE SET
+            last_backfilled_message_id = EXCLUDED.last_backfilled_message_id,
+            backfill_complete = EXCLUDED.backfill_complete
+        """,
+        (thread_id, last_message_id, complete),
     )
 
 
