@@ -1,0 +1,7 @@
+# Reverse proxy + automatic TLS (Let's Encrypt) for the web app container.
+# THREADBARE_DOMAIN comes from .env, passed through by docker-compose.yml's
+# `caddy` service. DNS must point at this box before first `docker compose
+# up`, or the ACME HTTP challenge on port 80 will fail.
+{$THREADBARE_DOMAIN} {
+	reverse_proxy web:5000
+}

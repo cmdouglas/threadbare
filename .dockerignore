@@ -1,0 +1,19 @@
+.git
+.github
+.venv
+__pycache__
+*.pyc
+.pytest_cache
+.ruff_cache
+tests/
+docker/
+docker-compose.dev.yml
+DEVELOPMENT.md
+DESIGN.md
+ROADMAP.md
+CLAUDE.md
+
+# Never bake secrets into an image layer -- .env is always a runtime
+# bind-mount/env_file, never COPY'd. Nothing currently does a bare
+# `COPY . .` that would pick this up, but this is belt-and-suspenders.
+.env

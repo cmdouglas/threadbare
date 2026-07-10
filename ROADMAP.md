@@ -223,11 +223,57 @@ Everything here targets a single Discord server, public (`@everyone`-readable) c
 
 ## 8. Deployment (~1–1.5 days, CDK severable as its own 0.5 day)
 
-- [ ] Docker Compose stack: web, sync worker, Postgres, Caddy (TLS via Let's Encrypt)
-- [ ] Option A docs: self-host (Tailscale / Cloudflare Tunnel guidance)
-- [ ] Option B docs: VPS (recommended default) — provision → Docker → DNS → done
-- [ ] Option C: `deploy/cdk/` TypeScript CDK app (Fargate ×2, ALB+ACM for web only, Postgres sidecar w/ EBS, RDS as commented-out alt)
-- [ ] Nightly dump of Threadbare-native tables only (mod config, setup state) — no message backups
+- [x] Docker Compose stack: web, sync worker, Postgres, Caddy (TLS via Let's Encrypt)
+  - Root `Dockerfile`: one shared multi-stage image (uv-based, `python:3.12-slim`) for
+    `migrate`/`web`/`sync-worker` — same package, different `command:` per service, no reason
+    for separate images. `docker-compose.yml` (distinct from the existing dev-only
+    `docker-compose.dev.yml`): `postgres` (no published port — internal network only, per
+    DESIGN.md §8.4's explicit gotcha), `migrate` (one-shot, `depends_on: service_healthy`),
+    `web`, `sync-worker` (both `depends_on: service_completed_successfully` on `migrate`),
+    `caddy` (`caddy:2-alpine`, ports 80/443, automatic Let's Encrypt via a root `Caddyfile`
+    reverse-proxying to `web:5000`).
+  - `web/cli.py` gained a `HOST` env var (default `127.0.0.1`, unchanged for bare local `uv run
+    threadbare-web`) — a real code fix, not just config: inside a container the app must bind
+    `0.0.0.0` or Caddy (a separate container) can never reach it. The compose file sets
+    `HOST=0.0.0.0` for the `web` service only. Unit tested.
+  - `web`'s compose service bind-mounts `./.env:/app/.env` **read-write** (not just
+    `env_file:`) — required because the setup wizard's `write_env_updates()` (§7) must persist
+    its writes back to the *host* filesystem so a later `docker compose restart sync-worker`
+    picks them up; `env_file:` alone only populates env vars at container start, it isn't a
+    live file the container can write through.
+  - Build and boot verified directly: image builds cleanly, both `threadbare-migrate` and the
+    other entrypoints import and run inside the container, `docker compose config` validates,
+    and a full local run (`postgres`/`migrate`/`web`/`sync-worker`, no real domain/Caddy needed
+    for this part) confirms the wizard serves `/intro` on a fresh, unconfigured `.env`, and —
+    using this project's own real test-bot credentials — the sync worker actually connects to
+    Discord's live gateway from inside the container.
+  - **Not exercised**: Caddy's real Let's Encrypt handshake, which needs a real domain + public
+    DNS. Flagged as an untested-in-practice gap rather than silently assumed to work, matching
+    this project's convention (see DESIGN.md §10's other flagged gaps).
+- [ ] Option A docs: self-host (Tailscale / Cloudflare Tunnel guidance) — **deferred**, by
+      explicit user choice, not discovered-late scope. Same compose stack as Option B; only the
+      reachability docs (Tailscale/Cloudflare Tunnel guidance) are missing.
+- [x] Option B docs: VPS (recommended default) — provision → Docker → DNS → done
+  - New `## Deployment` section in `README.md`: provision Ubuntu LTS → install Docker + Compose
+    → clone → `cp .env.example .env` (fill in `POSTGRES_PASSWORD`/`THREADBARE_DOMAIN` only —
+    everything Discord-specific comes from the wizard) → point DNS → `docker compose up -d` →
+    visit the domain. Gotchas called out explicitly per DESIGN.md §8.4: unattended security
+    upgrades, Postgres staying internal-only, a VPS snapshot as a stopgap for the (deferred)
+    config backup job, and updating the OAuth redirect URI if the domain ever changes.
+- [ ] Option C: `deploy/cdk/` TypeScript CDK app (Fargate ×2, ALB+ACM for web only, Postgres sidecar w/ EBS, RDS as commented-out alt) — **deferred**, by explicit user choice.
+- [ ] Nightly dump of Threadbare-native tables only (mod config, setup state) — no message
+      backups — **deferred**, by explicit user choice, as its own follow-up (backup script +
+      cron mechanism + retention pruning); the VPS docs note a manual VPS snapshot as a stopgap
+      in the meantime.
+- [ ] **New follow-up, not part of v1's original checklist**: revisit the production web-server
+      choice. The compose stack currently runs `web` via the same `threadbare-web` entrypoint
+      used everywhere else (Werkzeug's built-in server, single process) rather than a real
+      multi-worker WSGI server like gunicorn, because the setup wizard's `AppSwitcher` (§7)
+      hot-swaps the running Flask app in-process once `.env` is written — that only works
+      within a single long-running process. Introducing a multi-worker server would need
+      redesigning wizard completion first (e.g. a restart-on-finish model instead of the
+      in-process swap). Fine for a single small community on a 2GB VPS; worth revisiting if
+      traffic ever justifies it.
 
 ## v1 acceptance criteria
 

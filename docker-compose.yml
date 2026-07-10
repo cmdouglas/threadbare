@@ -1,0 +1,90 @@
+# The full production stack (DESIGN.md §8.4 Option B, ROADMAP.md §8): web,
+# sync worker, Postgres, Caddy for automatic TLS. Distinct from
+# docker-compose.dev.yml (Postgres-only, for local development/tests) --
+# this is the file `docker compose up` runs on a real deployment.
+#
+# Before first run: `cp .env.example .env` and fill in at least
+# POSTGRES_PASSWORD and THREADBARE_DOMAIN (everything Discord-specific is
+# collected by the first-run setup wizard once the stack is up -- see
+# README.md's Deployment section).
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: threadbare
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+      POSTGRES_DB: threadbare
+    # No published port -- internal Docker network only (DESIGN.md §8.4's
+    # explicit gotcha). Don't "fix" this.
+    volumes:
+      - threadbare-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U threadbare"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+    restart: unless-stopped
+
+  migrate:
+    build: .
+    command: threadbare-migrate
+    environment:
+      DATABASE_URL: postgresql://threadbare:${POSTGRES_PASSWORD}@postgres:5432/threadbare
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  web:
+    build: .
+    command: threadbare-web
+    environment:
+      HOST: 0.0.0.0
+      DATABASE_URL: postgresql://threadbare:${POSTGRES_PASSWORD}@postgres:5432/threadbare
+    env_file:
+      - .env
+    # Read-write: the first-run setup wizard writes Discord config directly
+    # into this file (wizard/env_file.py) once the mod finishes the guided
+    # flow, so the change is visible on the host and picked up by
+    # sync-worker on its next restart. Must exist as a real file before
+    # first `docker compose up` (`cp .env.example .env`) -- Docker creates a
+    # directory instead of a file at a bind-mount target that doesn't exist
+    # yet, which silently breaks this.
+    volumes:
+      - ./.env:/app/.env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  sync-worker:
+    build: .
+    command: threadbare-sync-worker
+    environment:
+      DATABASE_URL: postgresql://threadbare:${POSTGRES_PASSWORD}@postgres:5432/threadbare
+    env_file:
+      - .env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    environment:
+      THREADBARE_DOMAIN: ${THREADBARE_DOMAIN:?THREADBARE_DOMAIN must be set in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - web
+    restart: unless-stopped
+
+volumes:
+  threadbare-postgres:
+  caddy-data:
+  caddy-config:

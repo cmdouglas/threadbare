@@ -8,7 +8,11 @@ Threadbare is a **cache**, not an archive. Deletions on Discord propagate to Thr
 
 ## Status
 
-Pre-implementation. The design is written; see [`ROADMAP.md`](./ROADMAP.md) for what's being built for v1 and in what order.
+v1 is built: sync worker, forum web app, four themes, the Discord OAuth login gate + mod
+admin page, and a guided first-run setup wizard are all in place. Docker Compose deployment
+and VPS hosting docs (below) are done too. See [`ROADMAP.md`](./ROADMAP.md) for exactly
+what's shipped, what's left (self-host and cloud/CDK hosting docs, a nightly config-table
+backup job), and in what order it was built.
 
 ## Why
 
@@ -38,9 +42,60 @@ Threadbare only ever talks to Discord as a bot, never as a user, and only access
 
 ## Getting started
 
-Not yet runnable as a product — installation will eventually be a guided setup wizard (`docker compose up` → wizard walks you through creating the Discord bot, running preflight checks, and choosing which channels to index; see [`DESIGN.md` §8](./DESIGN.md#8-onboarding-and-setup) for that design).
+Runnable as a product now: `docker compose up` brings up the whole stack and serves a guided
+setup wizard that walks you through creating the Discord bot, running preflight checks, and
+choosing which channels to index (see [`DESIGN.md` §8](./DESIGN.md#8-onboarding-and-setup) for
+the full design). See **Deployment** below for the recommended path (a small VPS).
 
-To work on Threadbare itself, see [`DEVELOPMENT.md`](./DEVELOPMENT.md) for environment setup, running tests, and configuring a test Discord bot.
+To work on Threadbare itself, see [`DEVELOPMENT.md`](./DEVELOPMENT.md) for environment setup,
+running tests, and configuring a test Discord bot.
+
+## Deployment
+
+The stack is three always-on processes plus Postgres (see [How it works](#how-it-works)
+above) — the sync worker holds a persistent Discord gateway connection, so this isn't a
+serverless-friendly app; it needs a machine that stays on. `docker-compose.yml` runs the whole
+thing: web, sync worker, Postgres (internal-only, never exposed to the host), and
+[Caddy](https://caddyserver.com/) for automatic HTTPS via Let's Encrypt.
+
+### Option B — VPS (recommended)
+
+A $5–10/month instance (Hetzner, DigitalOcean, Vultr, etc.) is comfortable at 2GB RAM.
+
+1. Provision a box running Ubuntu LTS, and [install Docker + the Compose
+   plugin](https://docs.docker.com/engine/install/).
+2. Clone this repo onto the box, then `cp .env.example .env` and fill in **at minimum**
+   `POSTGRES_PASSWORD` (any strong random value) and `THREADBARE_DOMAIN` (the domain you're
+   pointing at this box). Everything Discord-specific is collected by the setup wizard once
+   the stack is up — don't fill those in by hand.
+3. Point a DNS `A` record for that domain at the box's public IP.
+4. `docker compose up -d`.
+5. Visit `https://<your-domain>` — the setup wizard takes it from there (bot creation,
+   preflight checks, the bot invite link, channel selection, then the OAuth login gate). When
+   it finishes, run `docker compose restart sync-worker` once — the web app already picks up
+   the new configuration in place with no restart, but the sync worker only reads config at
+   its own startup.
+
+Gotchas worth knowing before you go further:
+
+- Set up unattended security upgrades on the box — it's the internet-facing part of this
+  stack that isn't Threadbare's own code.
+- Postgres has no published port in `docker-compose.yml` on purpose (internal Docker network
+  only) — don't "fix" this by exposing it.
+- There's no automated backup job yet (see [`ROADMAP.md`](./ROADMAP.md) §8) — mirrored message
+  content is never backed up by design (Discord is the source of truth), but the small
+  Threadbare-native config isn't backed up automatically either yet. An occasional VPS
+  snapshot is a reasonable stopgap in the meantime.
+- If the domain ever changes, update `THREADBARE_DOMAIN` in `.env` **and** the OAuth redirect
+  URI registered in the Discord developer portal — they have to match exactly.
+
+### Options A and C
+
+Self-hosting on your own hardware (Tailscale/Cloudflare Tunnel guidance) and a cloud/CDK
+deployment path are both designed (see [`DESIGN.md` §8.4](./DESIGN.md#84-hosting-options)) but
+not yet documented here — tracked in [`ROADMAP.md`](./ROADMAP.md) §8. Option B's Docker Compose
+stack is the same stack either path would use; only the docs and (for Option C) an IaC template
+are missing.
 
 ## License
 

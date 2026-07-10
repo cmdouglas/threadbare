@@ -1,3 +1,4 @@
+import os
 import sys
 
 from werkzeug.serving import run_simple
@@ -9,16 +10,22 @@ from threadbare.web.db import PerRequestConnectionSource
 from threadbare.web.wizard_app import create_wizard_app
 
 DEFAULT_PORT = 5000
+# 127.0.0.1 is the safe default for a bare `uv run threadbare-web` on a dev
+# machine; the Docker Compose stack sets HOST=0.0.0.0 for the web service
+# so Caddy (a separate container) can reach it over the compose network.
+DEFAULT_HOST = "127.0.0.1"
 
 
 def main() -> None:
+    host = os.environ.get("HOST", DEFAULT_HOST)
+
     if config.is_configured():
         settings = config.load_settings()
         # Not db.pool.create_pool()'s AsyncConnectionPool -- it doesn't survive
         # Flask's async_to_sync bridge (see web/db.py's docstring).
         pool = PerRequestConnectionSource(settings.database_url)
         app = create_app(settings, pool)
-        app.run(port=DEFAULT_PORT)
+        app.run(host=host, port=DEFAULT_PORT)
         return
 
     # Unconfigured install: serve the first-run setup wizard instead of the
@@ -41,7 +48,7 @@ def main() -> None:
     wizard_app = create_wizard_app(pool, on_complete=on_complete)
     switcher = AppSwitcher(wizard_app)
 
-    run_simple("127.0.0.1", DEFAULT_PORT, switcher)
+    run_simple(host, DEFAULT_PORT, switcher)
 
 
 if __name__ == "__main__":
