@@ -81,6 +81,31 @@ async def handle_thread_delete(conn, thread_id: int) -> None:
     await repository.delete_thread(conn, thread_id)
 
 
+async def handle_reaction_add(conn, *, message_id: int, emoji: str) -> None:
+    """No per-reactor identity is ever read off the payload or stored here —
+    aggregate counts only (DESIGN.md §3/§10). Gated on the message already
+    being stored, to avoid ForeignKeyViolation for a message this instance
+    never saw (outside reconciliation's lookback, or never backfilled).
+    """
+    if not await repository.message_exists(conn, message_id):
+        return
+    await repository.increment_reaction(conn, message_id=message_id, emoji=emoji)
+
+
+async def handle_reaction_remove(conn, *, message_id: int, emoji: str) -> None:
+    if not await repository.message_exists(conn, message_id):
+        return
+    await repository.decrement_reaction(conn, message_id=message_id, emoji=emoji)
+
+
+async def handle_reaction_clear(conn, message_id: int) -> None:
+    await repository.clear_reactions(conn, message_id)
+
+
+async def handle_reaction_clear_emoji(conn, *, message_id: int, emoji: str) -> None:
+    await repository.clear_reaction_emoji(conn, message_id=message_id, emoji=emoji)
+
+
 async def handle_channel_permissions_changed(conn, channel: discord.abc.GuildChannel) -> None:
     category_overwrite = everyone_overwrite(channel.category) if channel.category else None
     await refresh_channel_public_status(

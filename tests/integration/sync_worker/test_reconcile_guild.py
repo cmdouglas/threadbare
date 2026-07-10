@@ -23,6 +23,7 @@ class FakeMessage:
     edited_at: datetime | None = None
     reference: object | None = None
     attachments: list = field(default_factory=list)
+    reactions: list = field(default_factory=list)
 
 
 class FakeChannel:

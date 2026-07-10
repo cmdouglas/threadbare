@@ -258,6 +258,7 @@ All three paths converge on the same first-run setup wizard (§8.1), so the host
 | Message Content intent friction | Non-issue below 75 servers (dashboard toggle); becomes an approval process only in Phase 5 |
 | Mod relations: "what exactly does this thing store?" | Deletion honoring by design, minimal user table, admin visibility into indexed channels, no message backups — delivered as the generated pitch kit (§8.3) |
 | Private archived threads invisible to the sync worker without `Manage Threads` | Documented limitation, not solved by requesting more permissions — consistent with the minimal-permissions design (§3/§8.2: `View Channels` + `Read Message History` only). Active threads and public archived threads are fully covered. |
+| Reaction add/remove/clear/clear-emoji have no live-gateway test coverage | Webhooks (used for every other live test) can't react to messages at all — no such API exists. A live test would need the bot's own token plus a new `Add Reactions` permission, the first widening of the minimal-permissions design; deferred rather than granted. Covered instead by integration tests (fakes against real Postgres) for all four gateway paths plus the backfill/reconciliation reaction-sync path. |
 
 **Open questions**
 

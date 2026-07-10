@@ -237,6 +237,89 @@ async def delete_message(conn: psycopg.AsyncConnection, message_id: int) -> None
     await conn.execute("DELETE FROM messages WHERE id = %s", (message_id,))
 
 
+async def message_exists(conn: psycopg.AsyncConnection, message_id: int) -> bool:
+    """The gate live reaction handlers use before writing: a reaction event
+    for a message we never stored (outside reconciliation's lookback, or
+    never backfilled) would otherwise raise ForeignKeyViolation on
+    reactions.message_id.
+    """
+    async with conn.cursor() as cur:
+        await cur.execute("SELECT 1 FROM messages WHERE id = %s", (message_id,))
+        return await cur.fetchone() is not None
+
+
+async def increment_reaction(conn: psycopg.AsyncConnection, *, message_id: int, emoji: str) -> None:
+    await conn.execute(
+        """
+        INSERT INTO reactions (message_id, emoji, count)
+        VALUES (%s, %s, 1)
+        ON CONFLICT (message_id, emoji) DO UPDATE SET count = reactions.count + 1
+        """,
+        (message_id, emoji),
+    )
+
+
+async def decrement_reaction(conn: psycopg.AsyncConnection, *, message_id: int, emoji: str) -> None:
+    """Decrements an existing (message_id, emoji) row, deleting it once the
+    count would reach zero. A no-op if the row doesn't exist (e.g. a REMOVE
+    event for a reaction this instance never saw ADDed, after a gateway
+    gap) — matches delete_message's no-op-for-unknown-id convention.
+
+    The delete-if-would-reach-zero-or-below runs first, against the
+    pre-decrement count (hence <= 1), so only rows with count >= 2 survive
+    to be decremented by the second statement.
+    """
+    await conn.execute(
+        "DELETE FROM reactions WHERE message_id = %s AND emoji = %s AND count <= 1",
+        (message_id, emoji),
+    )
+    await conn.execute(
+        "UPDATE reactions SET count = count - 1 WHERE message_id = %s AND emoji = %s",
+        (message_id, emoji),
+    )
+
+
+async def clear_reactions(conn: psycopg.AsyncConnection, message_id: int) -> None:
+    await conn.execute("DELETE FROM reactions WHERE message_id = %s", (message_id,))
+
+
+async def clear_reaction_emoji(
+    conn: psycopg.AsyncConnection, *, message_id: int, emoji: str
+) -> None:
+    await conn.execute(
+        "DELETE FROM reactions WHERE message_id = %s AND emoji = %s", (message_id, emoji)
+    )
+
+
+async def sync_message_reactions(
+    conn: psycopg.AsyncConnection, message_id: int, reactions: list[tuple[str, int]]
+) -> None:
+    """Makes the reactions table match `reactions` exactly for this message
+    — upserts every (emoji, count) pair given, then deletes any existing row
+    for this message whose emoji isn't in the given set. The same
+    "re-fetch and overwrite" self-healing shape write_message() already uses
+    for message content, called on every backfill pass, reconciliation
+    sweep, and live create/edit with whatever message.reactions the Message
+    object at hand carries. An empty `reactions` list correctly clears every
+    existing row for the message (emoji = ANY('{}') is false for all rows,
+    so the NOT below matches everything).
+    """
+    emojis = [emoji for emoji, _ in reactions]
+    for emoji, count in reactions:
+        await conn.execute(
+            """
+            INSERT INTO reactions (message_id, emoji, count)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (message_id, emoji) DO UPDATE SET count = EXCLUDED.count
+            """,
+            (message_id, emoji, count),
+        )
+    await conn.execute(
+        "DELETE FROM reactions WHERE message_id = %s AND NOT (emoji = ANY(%s))",
+        (message_id, emojis),
+    )
+
+
 async def delete_messages(conn: psycopg.AsyncConnection, message_ids: list[int]) -> None:
     await conn.execute("DELETE FROM messages WHERE id = ANY(%s)", (message_ids,))
 

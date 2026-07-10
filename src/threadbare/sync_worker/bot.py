@@ -53,6 +53,7 @@ class ThreadbareClient(discord.Client):
         intents.guilds = True
         intents.guild_messages = True
         intents.message_content = True
+        intents.guild_reactions = True
         super().__init__(intents=intents, **kwargs)
         self.guild_id = guild_id
         self.pool = pool
@@ -166,6 +167,38 @@ class ThreadbareClient(discord.Client):
             return
         async with self.pool.connection() as conn:
             await events.handle_thread_delete(conn, payload.thread_id)
+
+    async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent) -> None:
+        if self.pool is None or payload.guild_id != self.guild_id:
+            return
+        async with self.pool.connection() as conn:
+            await events.handle_reaction_add(
+                conn, message_id=payload.message_id, emoji=str(payload.emoji)
+            )
+
+    async def on_raw_reaction_remove(self, payload: discord.RawReactionActionEvent) -> None:
+        if self.pool is None or payload.guild_id != self.guild_id:
+            return
+        async with self.pool.connection() as conn:
+            await events.handle_reaction_remove(
+                conn, message_id=payload.message_id, emoji=str(payload.emoji)
+            )
+
+    async def on_raw_reaction_clear(self, payload: discord.RawReactionClearEvent) -> None:
+        if self.pool is None or payload.guild_id != self.guild_id:
+            return
+        async with self.pool.connection() as conn:
+            await events.handle_reaction_clear(conn, payload.message_id)
+
+    async def on_raw_reaction_clear_emoji(
+        self, payload: discord.RawReactionClearEmojiEvent
+    ) -> None:
+        if self.pool is None or payload.guild_id != self.guild_id:
+            return
+        async with self.pool.connection() as conn:
+            await events.handle_reaction_clear_emoji(
+                conn, message_id=payload.message_id, emoji=str(payload.emoji)
+            )
 
     async def on_guild_channel_update(
         self, before: discord.abc.GuildChannel, after: discord.abc.GuildChannel

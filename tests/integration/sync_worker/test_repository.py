@@ -280,3 +280,168 @@ async def test_purge_channel_content_removes_messages_and_cascades(db_conn):
         # The channel row itself is untouched — only its content is purged.
         await cur.execute("SELECT count(*) AS n FROM channels WHERE id = 10")
         assert (await cur.fetchone())["n"] == 1
+
+
+async def test_message_exists_returns_false_for_unknown_message(db_conn):
+    assert await repository.message_exists(db_conn, 999999) is False
+
+
+async def test_message_exists_returns_true_for_known_message(db_conn):
+    await _seed_guild_and_channel(db_conn, is_public=True)
+    await _seed_message(db_conn, message_id=1000, channel_id=10)
+
+    assert await repository.message_exists(db_conn, 1000) is True
+
+
+async def test_increment_reaction_inserts_a_new_row_at_count_1(db_conn):
+    await _seed_guild_and_channel(db_conn, is_public=True)
+    await _seed_message(db_conn, message_id=1000, channel_id=10)
+
+    await repository.increment_reaction(db_conn, message_id=1000, emoji="👍")
+
+    async with db_conn.cursor() as cur:
+        await cur.execute(
+            "SELECT count FROM reactions WHERE message_id = 1000 AND emoji = %s", ("👍",)
+        )
+        assert (await cur.fetchone())["count"] == 1
+
+
+async def test_increment_reaction_increments_an_existing_row(db_conn):
+    await _seed_guild_and_channel(db_conn, is_public=True)
+    await _seed_message(db_conn, message_id=1000, channel_id=10)
+    await repository.increment_reaction(db_conn, message_id=1000, emoji="👍")
+
+    await repository.increment_reaction(db_conn, message_id=1000, emoji="👍")
+
+    async with db_conn.cursor() as cur:
+        await cur.execute(
+            "SELECT count FROM reactions WHERE message_id = 1000 AND emoji = %s", ("👍",)
+        )
+        assert (await cur.fetchone())["count"] == 2
+
+
+async def test_decrement_reaction_decrements_an_existing_row(db_conn):
+    await _seed_guild_and_channel(db_conn, is_public=True)
+    await _seed_message(db_conn, message_id=1000, channel_id=10)
+    await repository.increment_reaction(db_conn, message_id=1000, emoji="👍")
+    await repository.increment_reaction(db_conn, message_id=1000, emoji="👍")
+
+    await repository.decrement_reaction(db_conn, message_id=1000, emoji="👍")
+
+    async with db_conn.cursor() as cur:
+        await cur.execute(
+            "SELECT count FROM reactions WHERE message_id = 1000 AND emoji = %s", ("👍",)
+        )
+        assert (await cur.fetchone())["count"] == 1
+
+
+async def test_decrement_reaction_deletes_the_row_when_count_reaches_zero(db_conn):
+    await _seed_guild_and_channel(db_conn, is_public=True)
+    await _seed_message(db_conn, message_id=1000, channel_id=10)
+    await repository.increment_reaction(db_conn, message_id=1000, emoji="👍")
+
+    await repository.decrement_reaction(db_conn, message_id=1000, emoji="👍")
+
+    async with db_conn.cursor() as cur:
+        await cur.execute(
+            "SELECT count(*) AS n FROM reactions WHERE message_id = 1000 AND emoji = %s", ("👍",)
+        )
+        assert (await cur.fetchone())["n"] == 0
+
+
+async def test_decrement_reaction_is_a_no_op_for_an_unknown_row(db_conn):
+    await _seed_guild_and_channel(db_conn, is_public=True)
+    await _seed_message(db_conn, message_id=1000, channel_id=10)
+
+    await repository.decrement_reaction(db_conn, message_id=1000, emoji="👍")  # should not raise
+
+    async with db_conn.cursor() as cur:
+        await cur.execute("SELECT count(*) AS n FROM reactions WHERE message_id = 1000")
+        assert (await cur.fetchone())["n"] == 0
+
+
+async def test_clear_reactions_removes_all_rows_for_a_message(db_conn):
+    await _seed_guild_and_channel(db_conn, is_public=True)
+    await _seed_message(db_conn, message_id=1000, channel_id=10)
+    await repository.increment_reaction(db_conn, message_id=1000, emoji="👍")
+    await repository.increment_reaction(db_conn, message_id=1000, emoji="🎉")
+
+    await repository.clear_reactions(db_conn, 1000)
+
+    async with db_conn.cursor() as cur:
+        await cur.execute("SELECT count(*) AS n FROM reactions WHERE message_id = 1000")
+        assert (await cur.fetchone())["n"] == 0
+
+
+async def test_clear_reactions_is_a_no_op_for_a_message_with_no_reactions(db_conn):
+    await _seed_guild_and_channel(db_conn, is_public=True)
+    await _seed_message(db_conn, message_id=1000, channel_id=10)
+
+    await repository.clear_reactions(db_conn, 1000)  # should not raise
+
+
+async def test_clear_reaction_emoji_removes_only_the_given_emoji(db_conn):
+    await _seed_guild_and_channel(db_conn, is_public=True)
+    await _seed_message(db_conn, message_id=1000, channel_id=10)
+    await repository.increment_reaction(db_conn, message_id=1000, emoji="👍")
+    await repository.increment_reaction(db_conn, message_id=1000, emoji="🎉")
+
+    await repository.clear_reaction_emoji(db_conn, message_id=1000, emoji="👍")
+
+    async with db_conn.cursor() as cur:
+        await cur.execute("SELECT emoji FROM reactions WHERE message_id = 1000")
+        remaining = {row["emoji"] for row in await cur.fetchall()}
+    assert remaining == {"🎉"}
+
+
+async def test_sync_message_reactions_inserts_new_rows(db_conn):
+    await _seed_guild_and_channel(db_conn, is_public=True)
+    await _seed_message(db_conn, message_id=1000, channel_id=10)
+
+    await repository.sync_message_reactions(db_conn, 1000, [("👍", 3), ("🎉", 1)])
+
+    async with db_conn.cursor() as cur:
+        await cur.execute(
+            "SELECT emoji, count FROM reactions WHERE message_id = 1000 ORDER BY emoji"
+        )
+        rows = await cur.fetchall()
+    assert {(row["emoji"], row["count"]) for row in rows} == {("👍", 3), ("🎉", 1)}
+
+
+async def test_sync_message_reactions_updates_existing_counts(db_conn):
+    await _seed_guild_and_channel(db_conn, is_public=True)
+    await _seed_message(db_conn, message_id=1000, channel_id=10)
+    await repository.sync_message_reactions(db_conn, 1000, [("👍", 3)])
+
+    await repository.sync_message_reactions(db_conn, 1000, [("👍", 5)])
+
+    async with db_conn.cursor() as cur:
+        await cur.execute(
+            "SELECT count FROM reactions WHERE message_id = 1000 AND emoji = %s", ("👍",)
+        )
+        assert (await cur.fetchone())["count"] == 5
+
+
+async def test_sync_message_reactions_deletes_rows_no_longer_present(db_conn):
+    await _seed_guild_and_channel(db_conn, is_public=True)
+    await _seed_message(db_conn, message_id=1000, channel_id=10)
+    await repository.sync_message_reactions(db_conn, 1000, [("👍", 3), ("🎉", 1)])
+
+    await repository.sync_message_reactions(db_conn, 1000, [("👍", 3)])
+
+    async with db_conn.cursor() as cur:
+        await cur.execute("SELECT emoji FROM reactions WHERE message_id = 1000")
+        remaining = {row["emoji"] for row in await cur.fetchall()}
+    assert remaining == {"👍"}
+
+
+async def test_sync_message_reactions_with_empty_list_clears_all_rows(db_conn):
+    await _seed_guild_and_channel(db_conn, is_public=True)
+    await _seed_message(db_conn, message_id=1000, channel_id=10)
+    await repository.sync_message_reactions(db_conn, 1000, [("👍", 3)])
+
+    await repository.sync_message_reactions(db_conn, 1000, [])
+
+    async with db_conn.cursor() as cur:
+        await cur.execute("SELECT count(*) AS n FROM reactions WHERE message_id = 1000")
+        assert (await cur.fetchone())["n"] == 0

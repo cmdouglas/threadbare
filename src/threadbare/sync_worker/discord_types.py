@@ -35,6 +35,15 @@ class AttachmentLike(Protocol):
     url: str
 
 
+class ReactionLike(Protocol):
+    # discord.py's Reaction.emoji is Emoji | PartialEmoji | str — typed as
+    # object here (not a discord.py Union) since the only operation ever
+    # performed on it is str(), and this module stays discord.py-free
+    # elsewhere too.
+    emoji: object
+    count: int
+
+
 class MessageReferenceLike(Protocol):
     message_id: int | None
 
@@ -47,6 +56,7 @@ class MessageLike(Protocol):
     edited_at: datetime | None
     reference: MessageReferenceLike | None
     attachments: list[AttachmentLike]
+    reactions: list[ReactionLike]
 
 
 class ThreadLike(Protocol):

@@ -25,6 +25,7 @@ class FakeMessage:
     edited_at: datetime | None = None
     reference: object | None = None
     attachments: list = field(default_factory=list)
+    reactions: list = field(default_factory=list)
 
 
 @dataclass
@@ -35,6 +36,12 @@ class FakeThread:
     archived: bool = False
     created_at: datetime | None = field(default_factory=lambda: datetime.now(UTC))
     message_count: int = 0
+
+
+@dataclass
+class FakeReaction:
+    emoji: str
+    count: int
 
 
 async def _seed_guild_and_channel(conn, *, guild_id=1, channel_id=10, is_public=False):
@@ -203,6 +210,127 @@ async def test_handle_bulk_message_delete_removes_all_rows(db_conn):
         await cur.execute("SELECT id FROM messages")
         remaining = {row["id"] for row in await cur.fetchall()}
     assert remaining == {102}
+
+
+async def test_handle_reaction_add_is_a_no_op_for_an_unknown_message(db_conn):
+    # Regression test for the FK-violation risk: a reaction event for a
+    # message we never stored must not raise.
+    await events.handle_reaction_add(db_conn, message_id=999999, emoji="👍")
+
+    async with db_conn.cursor() as cur:
+        await cur.execute("SELECT count(*) AS n FROM reactions WHERE message_id = 999999")
+        assert (await cur.fetchone())["n"] == 0
+
+
+async def test_handle_reaction_add_inserts_a_row_for_a_known_message(db_conn):
+    await _seed_guild_and_channel(db_conn, is_public=True)
+    await events.handle_message_create(
+        db_conn, FakeMessage(id=100, author=FakeAuthor(id=1)), channel_id=10
+    )
+
+    await events.handle_reaction_add(db_conn, message_id=100, emoji="👍")
+
+    async with db_conn.cursor() as cur:
+        await cur.execute(
+            "SELECT count FROM reactions WHERE message_id = 100 AND emoji = %s", ("👍",)
+        )
+        assert (await cur.fetchone())["count"] == 1
+
+
+async def test_handle_reaction_remove_decrements_an_existing_row(db_conn):
+    await _seed_guild_and_channel(db_conn, is_public=True)
+    await events.handle_message_create(
+        db_conn, FakeMessage(id=100, author=FakeAuthor(id=1)), channel_id=10
+    )
+    await events.handle_reaction_add(db_conn, message_id=100, emoji="👍")
+    await events.handle_reaction_add(db_conn, message_id=100, emoji="👍")
+
+    await events.handle_reaction_remove(db_conn, message_id=100, emoji="👍")
+
+    async with db_conn.cursor() as cur:
+        await cur.execute(
+            "SELECT count FROM reactions WHERE message_id = 100 AND emoji = %s", ("👍",)
+        )
+        assert (await cur.fetchone())["count"] == 1
+
+
+async def test_handle_reaction_remove_is_a_no_op_for_an_unknown_message(db_conn):
+    await events.handle_reaction_remove(db_conn, message_id=999999, emoji="👍")  # should not raise
+
+
+async def test_handle_reaction_clear_removes_all_rows(db_conn):
+    await _seed_guild_and_channel(db_conn, is_public=True)
+    await events.handle_message_create(
+        db_conn, FakeMessage(id=100, author=FakeAuthor(id=1)), channel_id=10
+    )
+    await events.handle_reaction_add(db_conn, message_id=100, emoji="👍")
+    await events.handle_reaction_add(db_conn, message_id=100, emoji="🎉")
+
+    await events.handle_reaction_clear(db_conn, 100)
+
+    async with db_conn.cursor() as cur:
+        await cur.execute("SELECT count(*) AS n FROM reactions WHERE message_id = 100")
+        assert (await cur.fetchone())["n"] == 0
+
+
+async def test_handle_reaction_clear_emoji_removes_only_that_emoji(db_conn):
+    await _seed_guild_and_channel(db_conn, is_public=True)
+    await events.handle_message_create(
+        db_conn, FakeMessage(id=100, author=FakeAuthor(id=1)), channel_id=10
+    )
+    await events.handle_reaction_add(db_conn, message_id=100, emoji="👍")
+    await events.handle_reaction_add(db_conn, message_id=100, emoji="🎉")
+
+    await events.handle_reaction_clear_emoji(db_conn, message_id=100, emoji="👍")
+
+    async with db_conn.cursor() as cur:
+        await cur.execute("SELECT emoji FROM reactions WHERE message_id = 100")
+        remaining = {row["emoji"] for row in await cur.fetchall()}
+    assert remaining == {"🎉"}
+
+
+async def test_write_message_syncs_reactions_to_match_message_reactions(db_conn):
+    await _seed_guild_and_channel(db_conn, is_public=True)
+    author = FakeAuthor(id=1)
+    await events.handle_message_create(
+        db_conn,
+        FakeMessage(id=100, author=author, reactions=[FakeReaction(emoji="👍", count=3)]),
+        channel_id=10,
+    )
+
+    # A re-fetched Message (backfill/reconciliation/edit) reflects Discord's
+    # current state — 👍 dropped to 2, a new 🎉 appeared.
+    edited = FakeMessage(
+        id=100,
+        author=author,
+        reactions=[FakeReaction(emoji="👍", count=2), FakeReaction(emoji="🎉", count=1)],
+    )
+    await events.handle_message_edit(db_conn, edited, channel_id=10)
+
+    async with db_conn.cursor() as cur:
+        await cur.execute(
+            "SELECT emoji, count FROM reactions WHERE message_id = 100 ORDER BY emoji"
+        )
+        rows = await cur.fetchall()
+    assert {(row["emoji"], row["count"]) for row in rows} == {("👍", 2), ("🎉", 1)}
+
+
+async def test_write_message_with_no_reactions_clears_any_existing_rows(db_conn):
+    await _seed_guild_and_channel(db_conn, is_public=True)
+    author = FakeAuthor(id=1)
+    await events.handle_message_create(
+        db_conn,
+        FakeMessage(id=100, author=author, reactions=[FakeReaction(emoji="👍", count=3)]),
+        channel_id=10,
+    )
+
+    await events.handle_message_edit(
+        db_conn, FakeMessage(id=100, author=author, reactions=[]), channel_id=10
+    )
+
+    async with db_conn.cursor() as cur:
+        await cur.execute("SELECT count(*) AS n FROM reactions WHERE message_id = 100")
+        assert (await cur.fetchone())["n"] == 0
 
 
 class FakePermissionPair:

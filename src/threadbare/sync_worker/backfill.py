@@ -170,6 +170,16 @@ class RepositoryBackfillSink:
                     url_expires_at=_estimate_attachment_url_expiry(),
                 ),
             )
+        # Self-healing, matching message content: every Message object
+        # touched here (backfill, reconciliation, or a live create/edit)
+        # carries Discord's current, authoritative reaction counts — sync
+        # to match exactly rather than trusting incremental live-event math
+        # alone. Reaction gateway events (add/remove/clear) update counts
+        # directly for near-real-time speed; this is the drift-correction
+        # backstop, not the primary mechanism.
+        await repository.sync_message_reactions(
+            self._conn, message.id, [(str(r.emoji), r.count) for r in message.reactions]
+        )
 
     async def set_checkpoint(
         self, channel_id: int, *, last_message_id: int | None, complete: bool
