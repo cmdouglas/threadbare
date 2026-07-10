@@ -239,6 +239,89 @@ async def test_delete_thread_is_a_no_op_for_unknown_id(db_conn):
     await repository.delete_thread(db_conn, 999999)  # should not raise
 
 
+def _embed_row(*, message_id, position=0, title="a title", fields=None):
+    return {
+        "message_id": message_id,
+        "position": position,
+        "type": "rich",
+        "title": title,
+        "description": None,
+        "url": None,
+        "color": None,
+        "author_name": None,
+        "author_url": None,
+        "footer_text": None,
+        "image_url": None,
+        "thumbnail_url": None,
+        "fields": fields or [],
+    }
+
+
+async def test_sync_message_embeds_inserts_rows(db_conn):
+    await _seed_guild_and_channel(db_conn, is_public=True)
+    await _seed_message(db_conn, message_id=1000, channel_id=10)
+
+    await repository.sync_message_embeds(
+        db_conn,
+        1000,
+        [
+            _embed_row(message_id=1000, position=0, title="first"),
+            _embed_row(message_id=1000, position=1, title="second"),
+        ],
+    )
+
+    async with db_conn.cursor() as cur:
+        await cur.execute("SELECT title FROM embeds WHERE message_id = 1000 ORDER BY position")
+        rows = await cur.fetchall()
+    assert [row["title"] for row in rows] == ["first", "second"]
+
+
+async def test_sync_message_embeds_stores_fields_as_json(db_conn):
+    await _seed_guild_and_channel(db_conn, is_public=True)
+    await _seed_message(db_conn, message_id=1000, channel_id=10)
+
+    await repository.sync_message_embeds(
+        db_conn,
+        1000,
+        [_embed_row(message_id=1000, fields=[{"name": "k", "value": "v", "inline": True}])],
+    )
+
+    async with db_conn.cursor() as cur:
+        await cur.execute("SELECT fields FROM embeds WHERE message_id = 1000")
+        row = await cur.fetchone()
+    assert row["fields"] == [{"name": "k", "value": "v", "inline": True}]
+
+
+async def test_sync_message_embeds_replaces_existing_rows_on_resync(db_conn):
+    await _seed_guild_and_channel(db_conn, is_public=True)
+    await _seed_message(db_conn, message_id=1000, channel_id=10)
+    await repository.sync_message_embeds(
+        db_conn, 1000, [_embed_row(message_id=1000, position=0, title="original")]
+    )
+
+    # A re-fetched Message (edit) now has a different, single embed.
+    await repository.sync_message_embeds(
+        db_conn, 1000, [_embed_row(message_id=1000, position=0, title="replaced")]
+    )
+
+    async with db_conn.cursor() as cur:
+        await cur.execute("SELECT title FROM embeds WHERE message_id = 1000")
+        rows = await cur.fetchall()
+    assert [row["title"] for row in rows] == ["replaced"]
+
+
+async def test_sync_message_embeds_clears_all_rows_when_given_empty_list(db_conn):
+    await _seed_guild_and_channel(db_conn, is_public=True)
+    await _seed_message(db_conn, message_id=1000, channel_id=10)
+    await repository.sync_message_embeds(db_conn, 1000, [_embed_row(message_id=1000)])
+
+    await repository.sync_message_embeds(db_conn, 1000, [])
+
+    async with db_conn.cursor() as cur:
+        await cur.execute("SELECT count(*) AS n FROM embeds WHERE message_id = 1000")
+        assert (await cur.fetchone())["n"] == 0
+
+
 async def test_purge_channel_content_removes_messages_and_cascades(db_conn):
     await _seed_guild_and_channel(db_conn, is_public=True)
     await db_conn.execute("INSERT INTO users (id, display_name) VALUES (%s, %s)", (100, "someone"))

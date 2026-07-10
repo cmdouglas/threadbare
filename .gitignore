@@ -14,6 +14,9 @@ htmlcov/
 test-results/
 playwright-report/
 
+# scripts/render_preview.py output
+scripts/render_preview.html
+
 # Editors / OS
 .DS_Store
 .idea/

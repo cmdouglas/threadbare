@@ -180,6 +180,16 @@ class RepositoryBackfillSink:
         await repository.sync_message_reactions(
             self._conn, message.id, [(str(r.emoji), r.count) for r in message.reactions]
         )
+        # Same self-healing shape as reactions above: every Message object
+        # touched here carries Discord's current, authoritative embed set.
+        await repository.sync_message_embeds(
+            self._conn,
+            message.id,
+            [
+                transform.embed_to_row(embed, message_id=message.id, position=i)
+                for i, embed in enumerate(message.embeds)
+            ],
+        )
 
     async def set_checkpoint(
         self, channel_id: int, *, last_message_id: int | None, complete: bool

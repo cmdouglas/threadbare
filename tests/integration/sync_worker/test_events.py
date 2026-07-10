@@ -26,6 +26,7 @@ class FakeMessage:
     reference: object | None = None
     attachments: list = field(default_factory=list)
     reactions: list = field(default_factory=list)
+    embeds: list = field(default_factory=list)
 
 
 @dataclass
@@ -42,6 +43,20 @@ class FakeThread:
 class FakeReaction:
     emoji: str
     count: int
+
+
+@dataclass
+class FakeEmbed:
+    type: str | None = "rich"
+    title: str | None = None
+    description: str | None = None
+    url: str | None = None
+    color: object | None = None
+    author: object | None = None
+    footer: object | None = None
+    image: object | None = None
+    thumbnail: object | None = None
+    fields: list = field(default_factory=list)
 
 
 async def _seed_guild_and_channel(conn, *, guild_id=1, channel_id=10, is_public=False):
@@ -330,6 +345,48 @@ async def test_write_message_with_no_reactions_clears_any_existing_rows(db_conn)
 
     async with db_conn.cursor() as cur:
         await cur.execute("SELECT count(*) AS n FROM reactions WHERE message_id = 100")
+        assert (await cur.fetchone())["n"] == 0
+
+
+async def test_write_message_syncs_embeds_to_match_message_embeds(db_conn):
+    await _seed_guild_and_channel(db_conn, is_public=True)
+    author = FakeAuthor(id=1)
+    await events.handle_message_create(
+        db_conn,
+        FakeMessage(id=100, author=author, embeds=[FakeEmbed(title="first")]),
+        channel_id=10,
+    )
+
+    # A re-fetched Message (backfill/reconciliation/edit) reflects Discord's
+    # current embed set exactly, same self-healing shape as reactions.
+    edited = FakeMessage(
+        id=100,
+        author=author,
+        embeds=[FakeEmbed(title="replaced"), FakeEmbed(title="second")],
+    )
+    await events.handle_message_edit(db_conn, edited, channel_id=10)
+
+    async with db_conn.cursor() as cur:
+        await cur.execute("SELECT title FROM embeds WHERE message_id = 100 ORDER BY position")
+        rows = await cur.fetchall()
+    assert [row["title"] for row in rows] == ["replaced", "second"]
+
+
+async def test_write_message_with_no_embeds_clears_any_existing_rows(db_conn):
+    await _seed_guild_and_channel(db_conn, is_public=True)
+    author = FakeAuthor(id=1)
+    await events.handle_message_create(
+        db_conn,
+        FakeMessage(id=100, author=author, embeds=[FakeEmbed(title="first")]),
+        channel_id=10,
+    )
+
+    await events.handle_message_edit(
+        db_conn, FakeMessage(id=100, author=author, embeds=[]), channel_id=10
+    )
+
+    async with db_conn.cursor() as cur:
+        await cur.execute("SELECT count(*) AS n FROM embeds WHERE message_id = 100")
         assert (await cur.fetchone())["n"] == 0
 
 

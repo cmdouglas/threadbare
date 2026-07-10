@@ -24,6 +24,7 @@ class FakeMessage:
     reference: object | None = None
     attachments: list = field(default_factory=list)
     reactions: list = field(default_factory=list)
+    embeds: list = field(default_factory=list)
 
 
 @dataclass

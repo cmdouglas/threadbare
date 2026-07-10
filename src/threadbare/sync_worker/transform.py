@@ -7,7 +7,13 @@ from datetime import datetime
 
 import discord
 
-from threadbare.sync_worker.discord_types import AttachmentLike, MessageLike, ThreadLike, UserLike
+from threadbare.sync_worker.discord_types import (
+    AttachmentLike,
+    EmbedLike,
+    MessageLike,
+    ThreadLike,
+    UserLike,
+)
 
 
 def message_to_row(message: MessageLike, *, channel_id: int | None, thread_id: int | None) -> dict:
@@ -55,4 +61,27 @@ def attachment_to_row(
         "size": attachment.size,
         "cached_url": attachment.url,
         "url_expires_at": url_expires_at,
+    }
+
+
+def embed_to_row(embed: EmbedLike, *, message_id: int, position: int) -> dict:
+    # On a real discord.py Embed, footer/image/thumbnail/author are never
+    # None themselves (always an EmbedProxy, falsy when empty) — the `if
+    # embed.footer else None` guards exist for the sub-field access, and
+    # incidentally also tolerate simple test fakes that set these to None
+    # directly instead of a nested fake object.
+    return {
+        "message_id": message_id,
+        "position": position,
+        "type": embed.type,
+        "title": embed.title,
+        "description": embed.description,
+        "url": embed.url,
+        "color": embed.color.value if embed.color else None,
+        "author_name": embed.author.name if embed.author else None,
+        "author_url": embed.author.url if embed.author else None,
+        "footer_text": embed.footer.text if embed.footer else None,
+        "image_url": embed.image.url if embed.image else None,
+        "thumbnail_url": embed.thumbnail.url if embed.thumbnail else None,
+        "fields": [{"name": f.name, "value": f.value, "inline": f.inline} for f in embed.fields],
     }

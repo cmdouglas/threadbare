@@ -48,6 +48,44 @@ class MessageReferenceLike(Protocol):
     message_id: int | None
 
 
+class EmbedFooterLike(Protocol):
+    text: str | None
+
+
+class EmbedMediaLike(Protocol):
+    url: str | None
+
+
+class EmbedAuthorLike(Protocol):
+    name: str | None
+    url: str | None
+
+
+class EmbedFieldLike(Protocol):
+    name: str
+    value: str
+    inline: bool
+
+
+class EmbedLike(Protocol):
+    # discord.py's Embed uses its own EmbedProxy/_EmptyEmbed sentinel for
+    # unset sub-objects rather than None, but every attribute access on one
+    # of those proxies (e.g. embed.footer.text) itself yields another
+    # sentinel rather than raising — so a plain `embed.footer is not None`
+    # check works fine, matching how transform.py reads these.
+    type: str | None
+    title: str | None
+    description: str | None
+    url: str | None
+    # discord.py's Embed.color is a Colour object (.value: int) or None.
+    color: object | None
+    author: EmbedAuthorLike | None
+    footer: EmbedFooterLike | None
+    image: EmbedMediaLike | None
+    thumbnail: EmbedMediaLike | None
+    fields: list[EmbedFieldLike]
+
+
 class MessageLike(Protocol):
     id: int
     author: UserLike
@@ -57,6 +95,7 @@ class MessageLike(Protocol):
     reference: MessageReferenceLike | None
     attachments: list[AttachmentLike]
     reactions: list[ReactionLike]
+    embeds: list[EmbedLike]
 
 
 class ThreadLike(Protocol):

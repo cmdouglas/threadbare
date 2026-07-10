@@ -1,0 +1,169 @@
+"""Discord-flavored markdown -> HTML. Pure, no I/O — mention/channel ids in
+`content` are resolved against a plain ResolvedRefs dict handed in by the
+caller (see rendering/resolve.py for the DB-touching lookup that builds one),
+so this module never talks to Postgres itself.
+
+Parsing leans on discord-markdown-ast-parser (DESIGN.md's "accept ~80%
+fidelity, lean on an existing library" trade-off) rather than a hand-rolled
+parser. nh3 is a final defense-in-depth sanitization pass over the HTML we
+construct ourselves — every fragment is already built from escaped/allowlisted
+pieces, so this mainly guards against a bug in our own node handling turning
+into stored XSS across every mirrored message.
+"""
+
+import html
+import re
+from dataclasses import dataclass, field
+
+import nh3
+from discord_markdown_ast_parser import parse
+from discord_markdown_ast_parser.parser import Node, NodeType
+
+from threadbare.rendering.emoji import render_custom_emoji_html
+
+ALLOWED_TAGS = {
+    "strong",
+    "em",
+    "u",
+    "s",
+    "span",
+    "details",
+    "summary",
+    "code",
+    "pre",
+    "blockquote",
+    "a",
+    "img",
+}
+ALLOWED_ATTRIBUTES = {
+    "span": {"class", "data-channel-id"},
+    "a": {"href"},
+    "img": {"class", "src", "alt"},
+    "code": {"class"},
+    "details": {"class"},
+}
+
+# discord-markdown-ast-parser's lexer only matches the static custom-emoji
+# form (`<:name:id>`) — its EMOJI_CUSTOM regex has no `a` branch at all
+# (confirmed by reading lexer.py), so `<a:name:id>` falls through as broken
+# text plus a bogus EMOJI_UNICODE_ENCODED node instead of a real emoji.
+# Normalizing the `a:` prefix away before parsing loses the "animated" bit
+# but renders a correct static image instead of garbage — an acceptable
+# trade inside DESIGN.md's accepted ~80% fidelity.
+_ANIMATED_EMOJI_RE = re.compile(r"<a(:[a-zA-Z0-9_]{2,}:[0-9]+>)")
+
+
+@dataclass(frozen=True)
+class ReferencedIds:
+    user_ids: frozenset[int]
+    role_ids: frozenset[int]
+    channel_ids: frozenset[int]
+
+
+@dataclass(frozen=True)
+class ResolvedRefs:
+    users: dict[int, str]
+    channels: dict[int, str]
+    roles: dict[int, str] = field(default_factory=dict)
+
+
+def _normalize_animated_emoji(content: str) -> str:
+    return _ANIMATED_EMOJI_RE.sub(lambda m: f"<{m.group(1)}", content)
+
+
+def collect_referenced_ids(content: str) -> ReferencedIds:
+    user_ids: set[int] = set()
+    role_ids: set[int] = set()
+    channel_ids: set[int] = set()
+
+    def walk(node: Node) -> None:
+        if node.node_type is NodeType.USER:
+            user_ids.add(node.discord_id)
+        elif node.node_type is NodeType.ROLE:
+            role_ids.add(node.discord_id)
+        elif node.node_type is NodeType.CHANNEL:
+            channel_ids.add(node.discord_id)
+        for child in node.children or []:
+            walk(child)
+
+    for node in parse(_normalize_animated_emoji(content)):
+        walk(node)
+
+    return ReferencedIds(
+        user_ids=frozenset(user_ids),
+        role_ids=frozenset(role_ids),
+        channel_ids=frozenset(channel_ids),
+    )
+
+
+def render_message_content(content: str, *, refs: ResolvedRefs) -> str:
+    nodes = parse(_normalize_animated_emoji(content))
+    raw_html = "".join(_render_node(node, refs) for node in nodes)
+    return nh3.clean(raw_html, tags=ALLOWED_TAGS, attributes=ALLOWED_ATTRIBUTES)
+
+
+def _render_children(node: Node, refs: ResolvedRefs) -> str:
+    return "".join(_render_node(child, refs) for child in node.children or [])
+
+
+def _render_node(node: Node, refs: ResolvedRefs) -> str:
+    match node.node_type:
+        case NodeType.TEXT:
+            return html.escape(node.text_content or "")
+        case NodeType.BOLD:
+            return f"<strong>{_render_children(node, refs)}</strong>"
+        case NodeType.ITALIC:
+            return f"<em>{_render_children(node, refs)}</em>"
+        case NodeType.UNDERLINE:
+            return f"<u>{_render_children(node, refs)}</u>"
+        case NodeType.STRIKETHROUGH:
+            return f"<s>{_render_children(node, refs)}</s>"
+        case NodeType.CODE_INLINE:
+            return f"<code>{_render_children(node, refs)}</code>"
+        case NodeType.CODE_BLOCK:
+            lang_class = (
+                f' class="language-{html.escape(node.code_lang)}"' if node.code_lang else ""
+            )
+            return f"<pre><code{lang_class}>{_render_children(node, refs)}</code></pre>"
+        case NodeType.QUOTE_BLOCK:
+            return f"<blockquote>{_render_children(node, refs)}</blockquote>"
+        case NodeType.SPOILER:
+            return (
+                '<details class="spoiler"><summary>Spoiler</summary>'
+                f"{_render_children(node, refs)}</details>"
+            )
+        case NodeType.USER:
+            name = refs.users.get(node.discord_id, "unknown user")
+            return f'<span class="mention mention-user">@{html.escape(name)}</span>'
+        case NodeType.ROLE:
+            # No `roles` table exists to resolve against (ROADMAP.md §3) --
+            # always rendered as an inert placeholder.
+            return '<span class="mention mention-role">@unknown role</span>'
+        case NodeType.CHANNEL:
+            name = refs.channels.get(node.discord_id, "unknown-channel")
+            return (
+                f'<span class="mention mention-channel" data-channel-id="{node.discord_id}">'
+                f"#{html.escape(name)}</span>"
+            )
+        case NodeType.EMOJI_CUSTOM:
+            return render_custom_emoji_html(
+                emoji_id=node.discord_id, name=node.emoji_name, animated=False
+            )
+        case NodeType.EMOJI_UNICODE_ENCODED:
+            # Discord's own client resolves :name: shortcodes to real unicode
+            # before sending; this only appears via bots/webhooks bypassing
+            # that, or a genuinely unmatched shortcode. No local emoji-name
+            # lookup exists, so render the literal text.
+            return html.escape(f":{node.emoji_name}:")
+        case NodeType.URL_WITH_PREVIEW | NodeType.URL_WITHOUT_PREVIEW:
+            # No distinct preview-card feature exists in this project (that's
+            # embeds.py's job, driven by Discord's own structured embed data,
+            # not ad-hoc link scraping) -- both node types get an identical
+            # plain link. url can only ever contain http(s):// plus a fixed
+            # safe character class (see lexer.py's URL_REGEX), so it can't
+            # itself carry a javascript: scheme or break out of the
+            # attribute.
+            safe_url = html.escape(node.url or "", quote=True)
+            return f'<a href="{safe_url}">{html.escape(node.url or "")}</a>'
+        case _:
+            raise AssertionError(f"unhandled markdown node type: {node.node_type}")

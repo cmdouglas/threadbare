@@ -6,6 +6,7 @@ per-test isolation for free via rollback, without truncating tables.
 """
 
 import psycopg
+from psycopg.types.json import Json
 
 
 async def upsert_guild(conn: psycopg.AsyncConnection, row: dict) -> None:
@@ -125,6 +126,35 @@ async def upsert_attachment(conn: psycopg.AsyncConnection, row: dict) -> None:
         """,
         row,
     )
+
+
+async def sync_message_embeds(
+    conn: psycopg.AsyncConnection, message_id: int, embeds: list[dict]
+) -> None:
+    """Makes the embeds table match `embeds` exactly for this message —
+    delete-then-bulk-insert, not per-field upsert, matching
+    sync_message_reactions's "re-fetch and overwrite" self-healing shape.
+    Unlike reactions, embeds have no stable Discord-side id of their own to
+    upsert against (position is a local ordering, not an identity), and
+    their count/order can change freely between edits, so replace-all is the
+    only shape that's actually correct here.
+    """
+    await conn.execute("DELETE FROM embeds WHERE message_id = %s", (message_id,))
+    for embed in embeds:
+        await conn.execute(
+            """
+            INSERT INTO embeds (
+                message_id, position, type, title, description, url, color,
+                author_name, author_url, footer_text, image_url, thumbnail_url, fields
+            )
+            VALUES (
+                %(message_id)s, %(position)s, %(type)s, %(title)s, %(description)s,
+                %(url)s, %(color)s, %(author_name)s, %(author_url)s, %(footer_text)s,
+                %(image_url)s, %(thumbnail_url)s, %(fields)s
+            )
+            """,
+            {**embed, "fields": Json(embed["fields"])},
+        )
 
 
 async def get_channel_sync_flags(
