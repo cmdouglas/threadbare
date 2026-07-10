@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Threadbare{% endblock %}
+{% block content %}
+<table class="board-index">
+{% for group in groups %}
+  {% if group.category %}
+  <tr class="category-heading"><td colspan="3">{{ group.category.name }}</td></tr>
+  {% endif %}
+  {% for board in group.boards %}
+  {% set agg = aggregates.get(board.id, {"post_count": 0, "last_message_id": None, "last_posted_at": None, "last_author_id": None}) %}
+  <tr class="board-row">
+    <td class="board-name"><a href="{{ urls.board_url(board.id) }}">{{ board.name }}</a></td>
+    <td class="board-post-count">{{ agg.post_count }}</td>
+    <td class="board-last-post">
+      {% if agg.last_posted_at %}
+        <time datetime="{{ agg.last_posted_at.isoformat() }}">{{ agg.last_posted_at }}</time>
+        by {{ authors.get(agg.last_author_id, "unknown") }}
+      {% endif %}
+    </td>
+  </tr>
+  {% endfor %}
+{% endfor %}
+</table>
+{% endblock %}

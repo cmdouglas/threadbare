@@ -9,9 +9,9 @@ from threadbare.rendering.attachments import (
 EXPIRES_AT = datetime(2026, 1, 2, tzinfo=UTC)
 
 
-def _row(*, filename, content_type, cached_url="https://cdn.example/x"):
+def _row(*, filename, content_type, attachment_id=1, cached_url="https://cdn.example/x"):
     return {
-        "id": 1,
+        "id": attachment_id,
         "filename": filename,
         "content_type": content_type,
         "size": 100,
@@ -41,7 +41,10 @@ def test_render_attachment_html_image():
 
     assert 'class="attachment attachment-image"' in html
     assert "<img" in html
-    assert 'src="https://cdn.example/x"' in html
+    # links through the /att/{id} proxy, not the raw (often-expired) cached_url
+    assert 'href="/att/1"' in html
+    assert 'src="/att/1"' in html
+    assert "cdn.example" not in html
     assert 'alt="cat.png"' in html
 
 
@@ -50,6 +53,7 @@ def test_render_attachment_html_generic_file():
 
     assert 'class="attachment attachment-file"' in html
     assert "<img" not in html
+    assert 'href="/att/1"' in html
     assert "notes.txt" in html
 
 
@@ -67,6 +71,15 @@ def test_render_attachment_html_wraps_spoiler_attachments():
     # displayed with the SPOILER_ prefix stripped, not the raw filename
     assert 'alt="cat.png"' in html
     assert "SPOILER_" not in html
+
+
+def test_render_attachment_html_uses_the_attachment_id_in_the_proxy_url():
+    html = render_attachment_html(
+        _row(filename="cat.png", content_type="image/png", attachment_id=999)
+    )
+
+    assert 'href="/att/999"' in html
+    assert 'src="/att/999"' in html
 
 
 def test_render_attachment_html_escapes_filename():

@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}{{ thread.name }} — Threadbare{% endblock %}
+{% block content %}
+<h1 class="topic-title">{{ thread.name }}</h1>
+<form class="jump-to-date" action="{{ url_for('topic.topic_jump', thread_id=thread.id) }}" method="get">
+  <label>Jump to date <input type="date" name="date"></label>
+  <button type="submit">Go</button>
+</form>
+{% include "_pagination.html" %}
+{% for message_row, rendered in posts %}
+  {% include "_post.html" %}
+{% endfor %}
+{% include "_pagination.html" %}
+{% endblock %}

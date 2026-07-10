@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from threadbare.db import queries
 
@@ -14,6 +14,13 @@ async def _seed_guild_and_channel(conn, *, guild_id=1, channel_id=10, is_public=
     )
 
 
+async def _seed_guild(conn, *, guild_id):
+    await conn.execute(
+        "INSERT INTO guilds (id, name) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+        (guild_id, "Test Guild"),
+    )
+
+
 async def _seed_user(conn, *, user_id, display_name):
     await conn.execute(
         "INSERT INTO users (id, display_name) VALUES (%s, %s) ON CONFLICT DO NOTHING",
@@ -21,13 +28,34 @@ async def _seed_user(conn, *, user_id, display_name):
     )
 
 
-async def _seed_message(conn, *, message_id, channel_id, author_id, content="hello"):
+async def _seed_message(
+    conn, *, message_id, channel_id, author_id, content="hello", posted_at=None
+):
     await conn.execute(
         """
         INSERT INTO messages (id, channel_id, author_id, content, posted_at)
-        VALUES (%s, %s, %s, %s, now())
+        VALUES (%s, %s, %s, %s, COALESCE(%s, now()))
         """,
-        (message_id, channel_id, author_id, content),
+        (message_id, channel_id, author_id, content, posted_at),
+    )
+
+
+async def _seed_thread(conn, *, thread_id, parent_channel_id, name="a thread"):
+    await conn.execute(
+        "INSERT INTO threads (id, parent_channel_id, name, created_at) VALUES (%s, %s, %s, now())",
+        (thread_id, parent_channel_id, name),
+    )
+
+
+async def _seed_thread_message(
+    conn, *, message_id, thread_id, author_id, content="hello", posted_at=None
+):
+    await conn.execute(
+        """
+        INSERT INTO messages (id, thread_id, author_id, content, posted_at)
+        VALUES (%s, %s, %s, %s, COALESCE(%s, now()))
+        """,
+        (message_id, thread_id, author_id, content, posted_at),
     )
 
 
@@ -135,3 +163,498 @@ async def test_resolve_channels_returns_names_for_known_ids(db_conn):
 
 async def test_resolve_channels_returns_empty_dict_for_no_ids(db_conn):
     assert await queries.resolve_channels(db_conn, []) == {}
+
+
+T1 = datetime(2026, 1, 1, 0, 0, 0, tzinfo=UTC)
+T2 = datetime(2026, 1, 1, 0, 0, 1, tzinfo=UTC)
+T3 = datetime(2026, 1, 1, 0, 0, 2, tzinfo=UTC)
+
+
+async def test_count_messages_before_with_no_before_returns_total_for_channel(db_conn):
+    await _seed_guild_and_channel(db_conn)
+    await _seed_user(db_conn, user_id=100, display_name="alice")
+    await _seed_message(db_conn, message_id=1, channel_id=10, author_id=100, posted_at=T1)
+    await _seed_message(db_conn, message_id=2, channel_id=10, author_id=100, posted_at=T2)
+
+    assert await queries.count_messages_before(db_conn, channel_id=10) == 2
+
+
+async def test_count_messages_before_with_no_before_returns_total_for_thread(db_conn):
+    await _seed_guild_and_channel(db_conn)
+    await _seed_thread(db_conn, thread_id=3000, parent_channel_id=10)
+    await _seed_user(db_conn, user_id=100, display_name="alice")
+    await _seed_thread_message(db_conn, message_id=1, thread_id=3000, author_id=100, posted_at=T1)
+
+    assert await queries.count_messages_before(db_conn, thread_id=3000) == 1
+
+
+async def test_count_messages_before_a_specific_message_counts_only_earlier_ones(db_conn):
+    await _seed_guild_and_channel(db_conn)
+    await _seed_user(db_conn, user_id=100, display_name="alice")
+    await _seed_message(db_conn, message_id=1, channel_id=10, author_id=100, posted_at=T1)
+    await _seed_message(db_conn, message_id=2, channel_id=10, author_id=100, posted_at=T2)
+    await _seed_message(db_conn, message_id=3, channel_id=10, author_id=100, posted_at=T3)
+
+    n = await queries.count_messages_before(db_conn, channel_id=10, before=(T3, 3))
+
+    assert n == 2
+
+
+async def test_count_messages_before_breaks_ties_on_id_at_equal_posted_at(db_conn):
+    await _seed_guild_and_channel(db_conn)
+    await _seed_user(db_conn, user_id=100, display_name="alice")
+    await _seed_message(db_conn, message_id=1, channel_id=10, author_id=100, posted_at=T1)
+    await _seed_message(db_conn, message_id=2, channel_id=10, author_id=100, posted_at=T1)
+
+    assert await queries.count_messages_before(db_conn, channel_id=10, before=(T1, 2)) == 1
+    assert await queries.count_messages_before(db_conn, channel_id=10, before=(T1, 1)) == 0
+
+
+async def test_count_messages_before_a_date_counts_all_earlier_messages(db_conn):
+    await _seed_guild_and_channel(db_conn)
+    await _seed_user(db_conn, user_id=100, display_name="alice")
+    await _seed_message(db_conn, message_id=1, channel_id=10, author_id=100, posted_at=T1)
+    await _seed_message(db_conn, message_id=2, channel_id=10, author_id=100, posted_at=T3)
+
+    assert await queries.count_messages_before(db_conn, channel_id=10, before=T2) == 1
+
+
+async def test_count_messages_before_windowed_by_since_and_until(db_conn):
+    await _seed_guild_and_channel(db_conn)
+    await _seed_user(db_conn, user_id=100, display_name="alice")
+    await _seed_message(db_conn, message_id=1, channel_id=10, author_id=100, posted_at=T1)
+    await _seed_message(db_conn, message_id=2, channel_id=10, author_id=100, posted_at=T2)
+    await _seed_message(db_conn, message_id=3, channel_id=10, author_id=100, posted_at=T3)
+
+    n = await queries.count_messages_before(db_conn, channel_id=10, since=T2, until=T3)
+
+    assert n == 1
+
+
+async def test_get_board_post_aggregates_combines_direct_and_thread_messages(db_conn):
+    await _seed_guild_and_channel(db_conn, channel_id=10)
+    await _seed_thread(db_conn, thread_id=3000, parent_channel_id=10)
+    await _seed_user(db_conn, user_id=100, display_name="alice")
+    await _seed_user(db_conn, user_id=101, display_name="bob")
+    await _seed_message(db_conn, message_id=1, channel_id=10, author_id=100, posted_at=T1)
+    await _seed_thread_message(db_conn, message_id=2, thread_id=3000, author_id=101, posted_at=T2)
+
+    result = await queries.get_board_post_aggregates(db_conn, [10])
+
+    assert result[10]["post_count"] == 2
+    assert result[10]["last_message_id"] == 2
+    assert result[10]["last_posted_at"] == T2
+    assert result[10]["last_author_id"] == 101
+
+
+async def test_get_board_post_aggregates_left_fills_boards_with_no_messages(db_conn):
+    await _seed_guild_and_channel(db_conn, channel_id=10)
+
+    result = await queries.get_board_post_aggregates(db_conn, [10])
+
+    assert result == {
+        10: {
+            "post_count": 0,
+            "last_message_id": None,
+            "last_posted_at": None,
+            "last_author_id": None,
+        }
+    }
+
+
+async def test_get_board_post_aggregates_returns_empty_dict_for_no_ids(db_conn):
+    assert await queries.get_board_post_aggregates(db_conn, []) == {}
+
+
+async def test_get_thread_post_aggregates_left_fills_and_computes_last_post(db_conn):
+    await _seed_guild_and_channel(db_conn, channel_id=10)
+    await _seed_thread(db_conn, thread_id=3000, parent_channel_id=10)
+    await _seed_thread(db_conn, thread_id=3001, parent_channel_id=10)
+    await _seed_user(db_conn, user_id=100, display_name="alice")
+    await _seed_thread_message(db_conn, message_id=1, thread_id=3000, author_id=100, posted_at=T1)
+    await _seed_thread_message(db_conn, message_id=2, thread_id=3000, author_id=100, posted_at=T2)
+
+    result = await queries.get_thread_post_aggregates(db_conn, [3000, 3001])
+
+    assert result[3000]["post_count"] == 2
+    assert result[3000]["last_message_id"] == 2
+    assert result[3001]["post_count"] == 0
+    assert result[3001]["last_message_id"] is None
+
+
+async def test_count_topics_for_board(db_conn):
+    await _seed_guild_and_channel(db_conn, channel_id=10)
+    await _seed_thread(db_conn, thread_id=3000, parent_channel_id=10)
+    await _seed_thread(db_conn, thread_id=3001, parent_channel_id=10)
+
+    assert await queries.count_topics_for_board(db_conn, 10) == 2
+
+
+async def test_get_messages_page_matches_get_message_for_render_column_shape(db_conn):
+    await _seed_guild_and_channel(db_conn)
+    await _seed_user(db_conn, user_id=100, display_name="alice")
+    await _seed_message(db_conn, message_id=1, channel_id=10, author_id=100, posted_at=T1)
+
+    [page_row] = await queries.get_messages_page(db_conn, channel_id=10, page=1, page_size=25)
+    render_row = await queries.get_message_for_render(db_conn, 1)
+
+    assert page_row.keys() == render_row.keys()
+    assert page_row == render_row
+
+
+async def test_get_messages_page_orders_by_posted_at_then_id(db_conn):
+    await _seed_guild_and_channel(db_conn)
+    await _seed_user(db_conn, user_id=100, display_name="alice")
+    await _seed_message(db_conn, message_id=2, channel_id=10, author_id=100, posted_at=T2)
+    await _seed_message(db_conn, message_id=1, channel_id=10, author_id=100, posted_at=T1)
+
+    rows = await queries.get_messages_page(db_conn, channel_id=10, page=1, page_size=25)
+
+    assert [r["id"] for r in rows] == [1, 2]
+
+
+async def test_get_messages_page_paginates_with_page_size(db_conn):
+    await _seed_guild_and_channel(db_conn)
+    await _seed_user(db_conn, user_id=100, display_name="alice")
+    for i, t in enumerate([T1, T2, T3], start=1):
+        await _seed_message(db_conn, message_id=i, channel_id=10, author_id=100, posted_at=t)
+
+    page1 = await queries.get_messages_page(db_conn, channel_id=10, page=1, page_size=2)
+    page2 = await queries.get_messages_page(db_conn, channel_id=10, page=2, page_size=2)
+
+    assert [r["id"] for r in page1] == [1, 2]
+    assert [r["id"] for r in page2] == [3]
+
+
+async def test_get_messages_page_windowed_by_since_and_until(db_conn):
+    await _seed_guild_and_channel(db_conn)
+    await _seed_user(db_conn, user_id=100, display_name="alice")
+    await _seed_message(db_conn, message_id=1, channel_id=10, author_id=100, posted_at=T1)
+    await _seed_message(db_conn, message_id=2, channel_id=10, author_id=100, posted_at=T2)
+    await _seed_message(db_conn, message_id=3, channel_id=10, author_id=100, posted_at=T3)
+
+    rows = await queries.get_messages_page(
+        db_conn, channel_id=10, page=1, page_size=25, since=T2, until=T3
+    )
+
+    assert [r["id"] for r in rows] == [2]
+
+
+async def test_get_messages_page_for_a_thread(db_conn):
+    await _seed_guild_and_channel(db_conn)
+    await _seed_thread(db_conn, thread_id=3000, parent_channel_id=10)
+    await _seed_user(db_conn, user_id=100, display_name="alice")
+    await _seed_thread_message(db_conn, message_id=1, thread_id=3000, author_id=100, posted_at=T1)
+
+    rows = await queries.get_messages_page(db_conn, thread_id=3000, page=1, page_size=25)
+
+    assert [r["id"] for r in rows] == [1]
+
+
+async def test_get_attachment_by_id_returns_row(db_conn):
+    await _seed_guild_and_channel(db_conn)
+    await _seed_user(db_conn, user_id=100, display_name="alice")
+    await _seed_message(db_conn, message_id=1000, channel_id=10, author_id=100)
+    expires_at = datetime(2026, 1, 2, tzinfo=UTC)
+    await db_conn.execute(
+        """
+        INSERT INTO attachments (
+            id, message_id, filename, content_type, size, cached_url, url_expires_at
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        """,
+        (2000, 1000, "cat.png", "image/png", 100, "https://example.com/cat.png", expires_at),
+    )
+
+    row = await queries.get_attachment_by_id(db_conn, 2000)
+
+    assert row["filename"] == "cat.png"
+    assert row["cached_url"] == "https://example.com/cat.png"
+
+
+async def test_get_attachment_by_id_returns_none_for_unknown_id(db_conn):
+    assert await queries.get_attachment_by_id(db_conn, 999999) is None
+
+
+async def test_update_attachment_cache_updates_url_and_expiry(db_conn):
+    await _seed_guild_and_channel(db_conn)
+    await _seed_user(db_conn, user_id=100, display_name="alice")
+    await _seed_message(db_conn, message_id=1000, channel_id=10, author_id=100)
+    old_expires_at = datetime(2026, 1, 2, tzinfo=UTC)
+    await db_conn.execute(
+        """
+        INSERT INTO attachments (
+            id, message_id, filename, content_type, size, cached_url, url_expires_at
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        """,
+        (2000, 1000, "cat.png", "image/png", 100, "https://example.com/old.png", old_expires_at),
+    )
+    new_expires_at = datetime(2026, 1, 3, tzinfo=UTC)
+
+    await queries.update_attachment_cache(
+        db_conn, 2000, cached_url="https://example.com/new.png", url_expires_at=new_expires_at
+    )
+
+    row = await queries.get_attachment_by_id(db_conn, 2000)
+    assert row["cached_url"] == "https://example.com/new.png"
+    assert row["url_expires_at"] == new_expires_at
+
+
+async def test_search_messages_matches_full_text(db_conn):
+    await _seed_guild_and_channel(db_conn)
+    await _seed_user(db_conn, user_id=100, display_name="alice")
+    await _seed_message(
+        db_conn, message_id=1, channel_id=10, author_id=100, content="a message about pizza"
+    )
+    await _seed_message(
+        db_conn, message_id=2, channel_id=10, author_id=100, content="unrelated content"
+    )
+
+    rows = await queries.search_messages(db_conn, query="pizza")
+
+    assert [r["id"] for r in rows] == [1]
+    assert "snippet" in rows[0]
+
+
+async def test_search_messages_filters_by_author(db_conn):
+    await _seed_guild_and_channel(db_conn)
+    await _seed_user(db_conn, user_id=100, display_name="alice")
+    await _seed_user(db_conn, user_id=101, display_name="bob")
+    await _seed_message(db_conn, message_id=1, channel_id=10, author_id=100, content="pizza time")
+    await _seed_message(db_conn, message_id=2, channel_id=10, author_id=101, content="pizza too")
+
+    rows = await queries.search_messages(db_conn, query="pizza", author="ali")
+
+    assert [r["id"] for r in rows] == [1]
+
+
+async def test_search_messages_filters_by_channel_including_child_threads(db_conn):
+    await _seed_guild_and_channel(db_conn, channel_id=10)
+    await _seed_guild_and_channel(db_conn, guild_id=2, channel_id=11)
+    await _seed_thread(db_conn, thread_id=3000, parent_channel_id=10)
+    await _seed_user(db_conn, user_id=100, display_name="alice")
+    await _seed_message(db_conn, message_id=1, channel_id=10, author_id=100, content="pizza a")
+    await _seed_thread_message(
+        db_conn, message_id=2, thread_id=3000, author_id=100, content="pizza b"
+    )
+    await _seed_message(db_conn, message_id=3, channel_id=11, author_id=100, content="pizza c")
+
+    rows = await queries.search_messages(db_conn, query="pizza", channel_id=10)
+
+    assert {r["id"] for r in rows} == {1, 2}
+
+
+async def test_search_messages_filters_by_date_range(db_conn):
+    await _seed_guild_and_channel(db_conn)
+    await _seed_user(db_conn, user_id=100, display_name="alice")
+    await _seed_message(
+        db_conn, message_id=1, channel_id=10, author_id=100, content="pizza old", posted_at=T1
+    )
+    await _seed_message(
+        db_conn, message_id=2, channel_id=10, author_id=100, content="pizza new", posted_at=T3
+    )
+
+    rows = await queries.search_messages(db_conn, query="pizza", after=T2)
+
+    assert [r["id"] for r in rows] == [2]
+
+
+async def test_search_messages_excludes_non_indexed_channels(db_conn):
+    await _seed_guild_and_channel(db_conn, channel_id=10)
+    await db_conn.execute("UPDATE channels SET indexed = false WHERE id = 10")
+    await _seed_user(db_conn, user_id=100, display_name="alice")
+    await _seed_message(db_conn, message_id=1, channel_id=10, author_id=100, content="pizza")
+
+    assert await queries.search_messages(db_conn, query="pizza") == []
+
+
+async def test_search_messages_preceding_count_reflects_position_in_container(db_conn):
+    await _seed_guild_and_channel(db_conn)
+    await _seed_user(db_conn, user_id=100, display_name="alice")
+    await _seed_message(db_conn, message_id=1, channel_id=10, author_id=100, posted_at=T1)
+    await _seed_message(db_conn, message_id=2, channel_id=10, author_id=100, posted_at=T2)
+    await _seed_message(
+        db_conn, message_id=3, channel_id=10, author_id=100, content="pizza", posted_at=T3
+    )
+
+    [row] = await queries.search_messages(db_conn, query="pizza")
+
+    assert row["preceding_count"] == 2
+
+
+async def test_search_messages_handles_malformed_query_without_raising(db_conn):
+    await _seed_guild_and_channel(db_conn)
+    await _seed_user(db_conn, user_id=100, display_name="alice")
+    await _seed_message(db_conn, message_id=1, channel_id=10, author_id=100, content="pizza")
+
+    assert await queries.search_messages(db_conn, query='"unterminated quote') == []
+
+
+async def test_count_search_results_matches_search_messages_count(db_conn):
+    await _seed_guild_and_channel(db_conn)
+    await _seed_user(db_conn, user_id=100, display_name="alice")
+    await _seed_message(db_conn, message_id=1, channel_id=10, author_id=100, content="pizza a")
+    await _seed_message(db_conn, message_id=2, channel_id=10, author_id=100, content="pizza b")
+
+    assert await queries.count_search_results(db_conn, query="pizza") == 2
+
+
+async def test_get_user_returns_row(db_conn):
+    await _seed_user(db_conn, user_id=100, display_name="alice")
+
+    row = await queries.get_user(db_conn, 100)
+
+    assert row["display_name"] == "alice"
+
+
+async def test_get_user_returns_none_for_unknown_id(db_conn):
+    assert await queries.get_user(db_conn, 999999) is None
+
+
+async def test_get_post_count_for_user_counts_only_indexed_channels(db_conn):
+    await _seed_guild_and_channel(db_conn, channel_id=10)
+    await _seed_guild_and_channel(db_conn, guild_id=2, channel_id=11)
+    await db_conn.execute("UPDATE channels SET indexed = false WHERE id = 11")
+    await _seed_user(db_conn, user_id=100, display_name="alice")
+    await _seed_message(db_conn, message_id=1, channel_id=10, author_id=100)
+    await _seed_message(db_conn, message_id=2, channel_id=11, author_id=100)
+
+    assert await queries.get_post_count_for_user(db_conn, 100) == 1
+
+
+async def test_get_threads_for_board_orders_newest_first(db_conn):
+    await _seed_guild_and_channel(db_conn, channel_id=10)
+    await db_conn.execute(
+        "INSERT INTO threads (id, parent_channel_id, name, created_at) VALUES (%s, %s, %s, %s)",
+        (3000, 10, "older", T1),
+    )
+    await db_conn.execute(
+        "INSERT INTO threads (id, parent_channel_id, name, created_at) VALUES (%s, %s, %s, %s)",
+        (3001, 10, "newer", T2),
+    )
+
+    rows = await queries.get_threads_for_board(db_conn, 10, page=1, page_size=25)
+
+    assert [r["name"] for r in rows] == ["newer", "older"]
+
+
+async def test_get_threads_for_board_paginates(db_conn):
+    await _seed_guild_and_channel(db_conn, channel_id=10)
+    for i in range(3):
+        await db_conn.execute(
+            "INSERT INTO threads (id, parent_channel_id, name, created_at) VALUES (%s, %s, %s, %s)",
+            (3000 + i, 10, f"thread {i}", T1 + timedelta(seconds=i)),
+        )
+
+    page1 = await queries.get_threads_for_board(db_conn, 10, page=1, page_size=2)
+    page2 = await queries.get_threads_for_board(db_conn, 10, page=2, page_size=2)
+
+    assert len(page1) == 2
+    assert len(page2) == 1
+
+
+async def test_get_weeks_for_board_groups_by_iso_week(db_conn):
+    await _seed_guild_and_channel(db_conn, channel_id=10)
+    await _seed_user(db_conn, user_id=100, display_name="alice")
+    monday_week_28 = datetime(2026, 7, 6, tzinfo=UTC)
+    await _seed_message(
+        db_conn, message_id=1, channel_id=10, author_id=100, posted_at=monday_week_28
+    )
+    await _seed_message(
+        db_conn,
+        message_id=2,
+        channel_id=10,
+        author_id=100,
+        posted_at=monday_week_28 + timedelta(days=1),
+    )
+    next_week = monday_week_28 + timedelta(days=7)
+    await _seed_message(db_conn, message_id=3, channel_id=10, author_id=100, posted_at=next_week)
+
+    weeks = await queries.get_weeks_for_board(db_conn, 10)
+
+    assert [(w["week_id"], w["post_count"]) for w in weeks] == [("2026-W29", 1), ("2026-W28", 2)]
+
+
+async def test_get_channel_returns_row(db_conn):
+    await _seed_guild_and_channel(db_conn, channel_id=10)
+
+    row = await queries.get_channel(db_conn, 10)
+
+    assert row["id"] == 10
+    assert row["name"] == "general"
+    assert row["type"] == 0
+
+
+async def test_get_channel_returns_none_for_unknown_id(db_conn):
+    assert await queries.get_channel(db_conn, 999999) is None
+
+
+async def test_get_thread_returns_row(db_conn):
+    await _seed_guild_and_channel(db_conn, channel_id=10)
+    await _seed_thread(db_conn, thread_id=3000, parent_channel_id=10, name="a thread")
+
+    row = await queries.get_thread(db_conn, 3000)
+
+    assert row["id"] == 3000
+    assert row["parent_channel_id"] == 10
+    assert row["name"] == "a thread"
+
+
+async def test_get_thread_returns_none_for_unknown_id(db_conn):
+    assert await queries.get_thread(db_conn, 999999) is None
+
+
+async def test_get_boards_and_categories_includes_all_categories(db_conn):
+    await _seed_guild(db_conn, guild_id=1)
+    await db_conn.execute(
+        "INSERT INTO channels (id, guild_id, type, name, is_public) VALUES (%s, %s, 4, %s, false)",
+        (1, 1, "a category"),
+    )
+
+    rows = await queries.get_boards_and_categories(db_conn, 1)
+
+    assert [r["id"] for r in rows] == [1]
+
+
+async def test_get_boards_and_categories_excludes_non_public_or_non_indexed_boards(db_conn):
+    await _seed_guild(db_conn, guild_id=1)
+    await db_conn.execute(
+        """
+        INSERT INTO channels (id, guild_id, type, name, is_public, indexed)
+        VALUES (10, 1, 0, 'public', true, true),
+               (11, 1, 0, 'private', false, true),
+               (12, 1, 0, 'unindexed', true, false)
+        """
+    )
+
+    rows = await queries.get_boards_and_categories(db_conn, 1)
+
+    assert [r["id"] for r in rows] == [10]
+
+
+async def test_get_boards_and_categories_only_for_the_given_guild(db_conn):
+    await _seed_guild(db_conn, guild_id=1)
+    await _seed_guild(db_conn, guild_id=2)
+    await db_conn.execute(
+        """
+        INSERT INTO channels (id, guild_id, type, name, is_public, indexed)
+        VALUES (10, 1, 0, 'a', true, true), (11, 2, 0, 'b', true, true)
+        """
+    )
+
+    rows = await queries.get_boards_and_categories(db_conn, 1)
+
+    assert [r["id"] for r in rows] == [10]
+
+
+async def test_get_recent_posts_for_user_orders_newest_first_and_respects_limit(db_conn):
+    await _seed_guild_and_channel(db_conn)
+    await _seed_user(db_conn, user_id=100, display_name="alice")
+    await _seed_message(db_conn, message_id=1, channel_id=10, author_id=100, posted_at=T1)
+    await _seed_message(db_conn, message_id=2, channel_id=10, author_id=100, posted_at=T2)
+    await _seed_message(db_conn, message_id=3, channel_id=10, author_id=100, posted_at=T3)
+
+    rows = await queries.get_recent_posts_for_user(db_conn, 100, limit=2)
+
+    assert [r["id"] for r in rows] == [3, 2]

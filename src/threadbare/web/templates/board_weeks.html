@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}{{ channel.name }} by week — Threadbare{% endblock %}
+{% block content %}
+<h1 class="board-title">{{ channel.name }} — by week</h1>
+<table class="board-week-list">
+{% for week in weeks %}
+  <tr class="week-row">
+    <td class="week-id"><a href="{{ urls.week_url(channel.id, week.week_id) }}">{{ week.week_id }}</a></td>
+    <td class="week-post-count">{{ week.post_count }}</td>
+    <td class="week-last-post">
+      {% if week.last_posted_at %}
+        <time datetime="{{ week.last_posted_at.isoformat() }}">{{ week.last_posted_at }}</time>
+      {% endif %}
+    </td>
+  </tr>
+{% else %}
+  <tr><td colspan="3" class="board-empty">No messages yet.</td></tr>
+{% endfor %}
+</table>
+{% endblock %}

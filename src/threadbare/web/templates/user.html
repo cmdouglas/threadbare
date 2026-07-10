@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}{{ profile.display_name }} — Threadbare{% endblock %}
+{% block content %}
+<h1 class="user-display-name">{{ profile.display_name }}</h1>
+<p class="user-post-count">{{ post_count }} post{{ "s" if post_count != 1 else "" }}</p>
+<h2>Recent posts</h2>
+{% for message_row, rendered, page in posts %}
+  {% include "_post.html" %}
+{% else %}
+<p class="user-no-posts">No posts yet.</p>
+{% endfor %}
+{% endblock %}

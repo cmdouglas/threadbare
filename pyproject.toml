@@ -14,11 +14,14 @@ dependencies = [
     "python-dotenv>=1.0",
     "discord-markdown-ast-parser>=1.0.6",
     "nh3>=0.3.6",
+    "flask[async]>=3.1.3",
+    "httpx>=0.28.1",
 ]
 
 [project.scripts]
 threadbare-migrate = "threadbare.db.migrate:main"
 threadbare-sync-worker = "threadbare.sync_worker.cli:main"
+threadbare-web = "threadbare.web.cli:main"
 
 [dependency-groups]
 dev = [

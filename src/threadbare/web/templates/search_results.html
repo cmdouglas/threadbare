@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Search{% if query %}: {{ query }}{% endif %} — Threadbare{% endblock %}
+{% block content %}
+<form class="search-page-form" method="get" action="{{ url_for('search.search') }}">
+  <input type="search" name="q" value="{{ query }}" placeholder="Search…" aria-label="Search terms">
+  <input type="text" name="author" value="{{ request.args.get('author', '') }}" placeholder="Author">
+  <input type="number" name="channel" value="{{ request.args.get('channel', '') }}" placeholder="Channel ID">
+  <label>After <input type="date" name="after" value="{{ request.args.get('after', '') }}"></label>
+  <label>Before <input type="date" name="before" value="{{ request.args.get('before', '') }}"></label>
+  <button type="submit">Search</button>
+</form>
+{% if query %}
+<p class="search-summary">{{ total }} result{{ "s" if total != 1 else "" }} for &ldquo;{{ query }}&rdquo;</p>
+<ul class="search-results">
+  {% for row in results %}
+  <li class="search-result">
+    <a href="{{ urls.permalink_for_message(row, page=row.page) }}">
+      <span class="search-result-author">{{ row.author_display_name }}</span>
+      <span class="search-result-snippet">{{ row.snippet | safe }}</span>
+    </a>
+  </li>
+  {% endfor %}
+</ul>
+{% if total > 0 %}{% include "_pagination.html" %}{% endif %}
+{% endif %}
+{% endblock %}

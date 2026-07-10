@@ -5,6 +5,8 @@ column) — parseable from attachments.filename alone.
 
 import html
 
+from threadbare import urls
+
 SPOILER_PREFIX = "SPOILER_"
 
 
@@ -21,7 +23,10 @@ def display_filename(filename: str) -> str:
 def render_attachment_html(row: dict) -> str:
     is_image = (row["content_type"] or "").startswith("image/")
     safe_filename = html.escape(display_filename(row["filename"]))
-    safe_url = html.escape(row["cached_url"], quote=True)
+    # Routed through the /att/{id} proxy, not row["cached_url"] directly --
+    # Discord's signed CDN URLs expire (~24h) and are frequently already
+    # dead by the time a page is viewed; the proxy refreshes on demand.
+    safe_url = html.escape(urls.attachment_proxy_url(row["id"]), quote=True)
 
     if is_image:
         inner = (

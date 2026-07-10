@@ -1,0 +1,79 @@
+from .conftest import run
+
+
+async def _seed_guild(conn, *, guild_id=1):
+    await conn.execute("INSERT INTO guilds (id, name) VALUES (%s, %s)", (guild_id, "Test Guild"))
+
+
+async def _seed_category(conn, *, category_id, guild_id=1, name="A Category", position=0):
+    await conn.execute(
+        "INSERT INTO channels (id, guild_id, type, name, position) VALUES (%s, %s, 4, %s, %s)",
+        (category_id, guild_id, name, position),
+    )
+
+
+async def _seed_board(
+    conn, *, channel_id, guild_id=1, parent_id=None, name="general", position=0, is_public=True
+):
+    await conn.execute(
+        """
+        INSERT INTO channels (id, guild_id, parent_id, type, name, position, is_public, indexed)
+        VALUES (%s, %s, %s, 0, %s, %s, %s, true)
+        """,
+        (channel_id, guild_id, parent_id, name, position, is_public),
+    )
+
+
+async def _seed_message(conn, *, message_id, channel_id, author_id=100, content="hi"):
+    await conn.execute(
+        "INSERT INTO users (id, display_name) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+        (author_id, "alice"),
+    )
+    await conn.execute(
+        """
+        INSERT INTO messages (id, channel_id, author_id, content, posted_at)
+        VALUES (%s, %s, %s, %s, now())
+        """,
+        (message_id, channel_id, author_id, content),
+    )
+
+
+def test_board_index_renders_with_no_boards(client, web_conn):
+    run(_seed_guild(web_conn))
+
+    resp = client.get("/")
+
+    assert resp.status_code == 200
+
+
+def test_board_index_shows_a_board_and_its_post_count(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10, name="general"))
+    run(_seed_message(web_conn, message_id=1000, channel_id=10))
+
+    resp = client.get("/")
+
+    assert resp.status_code == 200
+    assert b"general" in resp.data
+    assert b"alice" in resp.data
+
+
+def test_board_index_excludes_non_public_boards(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10, name="secret", is_public=False))
+
+    resp = client.get("/")
+
+    assert b"secret" not in resp.data
+
+
+def test_board_index_groups_boards_under_their_category(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_category(web_conn, category_id=1, name="Main"))
+    run(_seed_board(web_conn, channel_id=10, parent_id=1, name="general"))
+
+    resp = client.get("/")
+
+    assert resp.status_code == 200
+    assert b"Main" in resp.data
+    assert b"general" in resp.data

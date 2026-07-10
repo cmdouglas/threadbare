@@ -1,0 +1,12 @@
+{# Expects: page (current, 1-indexed), total_pages, page_url (callable int -> str) #}
+<nav class="pagination">
+  {% if page > 1 %}
+    <a class="pagination-first" href="{{ page_url(1) }}">&laquo; First</a>
+    <a class="pagination-prev" href="{{ page_url(page - 1) }}">&lsaquo; Prev</a>
+  {% endif %}
+  <span class="pagination-current">Page {{ page }} of {{ total_pages }}</span>
+  {% if page < total_pages %}
+    <a class="pagination-next" href="{{ page_url(page + 1) }}">Next &rsaquo;</a>
+    <a class="pagination-last" href="{{ page_url(total_pages) }}">Last &raquo;</a>
+  {% endif %}
+</nav>

@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Threadbare{% endblock %}</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='theme-plain.css') }}">
+</head>
+<body>
+<header class="site-header">
+  <a class="site-title" href="{{ url_for('board_index.board_index') }}">Threadbare</a>
+  <form class="search-form" action="{{ url_for('search.search') }}" method="get">
+    <input type="search" name="q" placeholder="Search…" aria-label="Search">
+    <button type="submit">Search</button>
+  </form>
+</header>
+<main class="site-main">
+{% block content %}{% endblock %}
+</main>
+</body>
+</html>

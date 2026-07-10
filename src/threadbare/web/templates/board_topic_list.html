@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}{{ channel.name }} — Threadbare{% endblock %}
+{% block content %}
+<h1 class="board-title">{{ channel.name }}</h1>
+{% if mode == "freeform" %}
+<p class="board-freeform-controls">
+  <a href="{{ url_for('board.board_continuous_page', channel_id=channel.id, page=1) }}">Browse continuously</a>
+  &middot;
+  <a href="{{ url_for('board.board_weeks_index', channel_id=channel.id) }}">Browse by week</a>
+</p>
+{% endif %}
+<table class="board-topic-list">
+{% for thread in threads %}
+  {% set agg = aggregates.get(thread.id, {"post_count": 0, "last_message_id": None, "last_posted_at": None, "last_author_id": None}) %}
+  <tr class="topic-row">
+    <td class="topic-name"><a href="{{ urls.topic_url(thread.id) }}">{{ thread.name }}</a></td>
+    <td class="topic-post-count">{{ agg.post_count }}</td>
+    <td class="topic-last-post">
+      {% if agg.last_posted_at %}
+        <time datetime="{{ agg.last_posted_at.isoformat() }}">{{ agg.last_posted_at }}</time>
+        by {{ authors.get(agg.last_author_id, "unknown") }}
+      {% endif %}
+    </td>
+  </tr>
+{% else %}
+  <tr><td colspan="3" class="board-empty">No topics yet.</td></tr>
+{% endfor %}
+</table>
+{% include "_pagination.html" %}
+{% endblock %}

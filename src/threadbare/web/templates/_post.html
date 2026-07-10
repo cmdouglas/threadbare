@@ -1,0 +1,17 @@
+{# Expects: message_row (dict), rendered (RenderedMessage), page (current page, for the permalink) #}
+<article class="post" id="post-{{ message_row.id }}">
+  <div class="post-meta">
+    <a class="post-author" href="{{ urls.user_url(message_row.author_id) }}">{{ message_row.author_display_name }}</a>
+    <time class="post-time" datetime="{{ message_row.posted_at.isoformat() }}">{{ message_row.posted_at }}</time>
+    {% if message_row.edited_at %}<span class="post-edited">(edited)</span>{% endif %}
+    <a class="post-permalink" href="{{ urls.permalink_for_message(message_row, page=page) }}">#</a>
+    <a class="post-discord-link" href="{{ urls.discord_deep_link_url(guild_id=guild_id, message_row=message_row) }}" target="_blank" rel="noopener noreferrer">View on Discord</a>
+  </div>
+  {% if rendered.reply_quote_html %}
+  <div class="post-reply-quote">{{ rendered.reply_quote_html | safe }}</div>
+  {% endif %}
+  <div class="post-content">{{ rendered.content_html | safe }}</div>
+  {% if rendered.attachments_html %}<div class="post-attachments">{{ rendered.attachments_html | safe }}</div>{% endif %}
+  {% if rendered.embeds_html %}<div class="post-embeds">{{ rendered.embeds_html | safe }}</div>{% endif %}
+  {% if rendered.reactions_html %}{{ rendered.reactions_html | safe }}{% endif %}
+</article>

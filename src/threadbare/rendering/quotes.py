@@ -7,7 +7,9 @@ import html
 
 import psycopg
 
+from threadbare import urls
 from threadbare.db import queries
+from threadbare.pagination import page_number_for_offset
 
 DEFAULT_SNIPPET_LIMIT = 280
 
@@ -30,11 +32,21 @@ async def render_reply_quote(conn: psycopg.AsyncConnection, message_row: dict) -
     if target is None:
         return None
 
+    preceding = await queries.count_messages_before(
+        conn,
+        thread_id=target["thread_id"],
+        channel_id=target["channel_id"],
+        before=(target["posted_at"], target["id"]),
+    )
+    page = page_number_for_offset(preceding)
+    href = html.escape(urls.permalink_for_message(target, page=page), quote=True)
+
     author = html.escape(target["author_display_name"])
     snippet = html.escape(truncate_snippet(target["content"]))
     return (
         f'<blockquote class="reply-quote" data-quoted-message-id="{reply_to_id}">'
-        f'<span class="reply-quote-author">{author}</span> '
+        f'<a href="{href}">'
+        f'<span class="reply-quote-author">{author}</span></a> '
         f'<span class="reply-quote-snippet">{snippet}</span>'
         "</blockquote>"
     )

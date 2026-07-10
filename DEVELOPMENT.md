@@ -44,11 +44,14 @@ uv run pytest
 - **Run end-to-end (Playwright) tests**: `uv run pytest tests/e2e` — **always run this separately**, never together with the other tiers in one `pytest` invocation. pytest-playwright's sync driver and pytest-asyncio's runner corrupt each other's event-loop state when collected into the same session (a real upstream friction point between the two plugins, not a bug in this codebase) — `tests/e2e` is deliberately excluded from the default `testpaths` in `pyproject.toml` for this reason.
 - **Run live-Discord tests** (opt-in, needs `.env` secrets): `uv run pytest tests/live_discord -m live_discord` — excluded by default via `addopts` so a plain `uv run pytest` never touches the network.
 - **Apply database migrations**: `uv run threadbare-migrate` (reads `DATABASE_URL`; the integration suite applies migrations to `TEST_DATABASE_URL` itself, automatically, before its tests run)
+- **Run the web app**: `uv run threadbare-web` — dev server on `http://localhost:5000` (on macOS, AirPlay Receiver squats on port 5000 by default; disable it in System Settings → General → AirDrop & Handoff, or the request just silently 403s from `ControlCenter`, not Flask). No auth gate yet (that's §6); needs `DATABASE_URL` pointing at a database with real mirrored content to show anything on the board index.
 - **Lint**: `uv run ruff check .`
 - **Format**: `uv run ruff format .`
 - **Pre-commit hooks** (ruff check + format, run automatically on `git commit` once installed): `uv run pre-commit install` (one-time), or run ad hoc with `uv run pre-commit run --all-files`
 
-Following `CLAUDE.md`: write the failing test first, then the implementation. Every feature needs both a unit test and, where it touches a user-facing flow, an end-to-end test — not one or the other. For this project that spans four tiers: pure unit tests, DB-backed integration tests (`tests/integration`, real Postgres, isolated per-test via transaction rollback), live-Discord smoke tests (`tests/live_discord`, opt-in), and browser-driven Playwright tests (`tests/e2e`, for the future web app).
+Following `CLAUDE.md`: write the failing test first, then the implementation. Every feature needs both a unit test and, where it touches a user-facing flow, an end-to-end test — not one or the other. For this project that spans four tiers: pure unit tests, DB-backed integration tests (`tests/integration`, real Postgres, isolated per-test via transaction rollback), live-Discord smoke tests (`tests/live_discord`, opt-in), and browser-driven Playwright tests (`tests/e2e`) — now exercising the real web app.
+
+Note: `tests/integration/web/` and `tests/e2e/` use plain sync test functions rather than this project's usual `async def`, and hand-roll their own `asyncio.run()`-based fixtures instead of the shared `db_conn` fixture — Flask's `flask[async]`/asgiref bridge and pytest-asyncio's session-wide event loop don't tolerate each other. See `ROADMAP.md` §4 and `DESIGN.md` §10 for the full reasoning; follow the existing pattern in those directories rather than reintroducing `async def test_...` there.
 
 ## Test Discord server & bot
 
