@@ -12,11 +12,21 @@ import httpx
 DISCORD_API_BASE = "https://discord.com/api/v10"
 
 
-class SignedUrlExpiryError(Exception):
+class DiscordRestError(Exception):
+    """Base for every typed error this module raises -- callers can catch
+    this alone if they don't care which specific call failed.
+    """
+
+
+class SignedUrlExpiryError(DiscordRestError):
     pass
 
 
-class AttachmentRefreshError(Exception):
+class AttachmentRefreshError(DiscordRestError):
+    pass
+
+
+class OAuthExchangeError(DiscordRestError):
     pass
 
 
@@ -89,3 +99,81 @@ async def refresh_attachment_urls(
             return {item["original"]: item["refreshed"] for item in data["refreshed_urls"]}
         except (KeyError, TypeError, ValueError) as e:
             raise AttachmentRefreshError(f"unexpected response shape: {e}") from e
+
+
+async def exchange_oauth_code(
+    *,
+    client_id: str,
+    client_secret: str,
+    redirect_uri: str,
+    code: str,
+    transport: httpx.BaseTransport | None = None,
+) -> dict:
+    """Exchanges the one-time `code` from the OAuth redirect for an access
+    token (POST /oauth2/token, grant_type=authorization_code). The client
+    secret only ever leaves the web app process for this single call.
+    """
+    async with httpx.AsyncClient(transport=transport) as client:
+        try:
+            response = await client.post(
+                f"{DISCORD_API_BASE}/oauth2/token",
+                data={
+                    "client_id": client_id,
+                    "client_secret": client_secret,
+                    "grant_type": "authorization_code",
+                    "code": code,
+                    "redirect_uri": redirect_uri,
+                },
+            )
+            response.raise_for_status()
+        except httpx.HTTPError as e:
+            raise OAuthExchangeError(str(e)) from e
+
+        try:
+            return response.json()
+        except ValueError as e:
+            raise OAuthExchangeError(f"unexpected response shape: {e}") from e
+
+
+async def get_current_user(
+    access_token: str, *, transport: httpx.BaseTransport | None = None
+) -> dict:
+    """GET /users/@me -- the logged-in Discord user's own profile."""
+    async with httpx.AsyncClient(transport=transport) as client:
+        try:
+            response = await client.get(
+                f"{DISCORD_API_BASE}/users/@me",
+                headers={"Authorization": f"Bearer {access_token}"},
+            )
+            response.raise_for_status()
+        except httpx.HTTPError as e:
+            raise OAuthExchangeError(str(e)) from e
+
+        try:
+            return response.json()
+        except ValueError as e:
+            raise OAuthExchangeError(f"unexpected response shape: {e}") from e
+
+
+async def get_current_user_guilds(
+    access_token: str, *, transport: httpx.BaseTransport | None = None
+) -> list[dict]:
+    """GET /users/@me/guilds -- every guild the user is in, each including a
+    `permissions` bitfield already resolved for that user in that guild
+    (base @everyone permissions + their roles) -- no separate per-role
+    lookup is needed to compute mod status from this alone.
+    """
+    async with httpx.AsyncClient(transport=transport) as client:
+        try:
+            response = await client.get(
+                f"{DISCORD_API_BASE}/users/@me/guilds",
+                headers={"Authorization": f"Bearer {access_token}"},
+            )
+            response.raise_for_status()
+        except httpx.HTTPError as e:
+            raise OAuthExchangeError(str(e)) from e
+
+        try:
+            return response.json()
+        except ValueError as e:
+            raise OAuthExchangeError(f"unexpected response shape: {e}") from e

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}Threadbare{% endblock %}</title>
-<link rel="stylesheet" href="{{ url_for('static', filename='theme-plain.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename=theme_stylesheet) }}">
 </head>
 <body>
 <header class="site-header">
@@ -13,6 +13,17 @@
     <input type="search" name="q" placeholder="Search…" aria-label="Search">
     <button type="submit">Search</button>
   </form>
+  <nav class="theme-switcher">
+    {% for name in themes_available %}<a href="{{ theme_switch_url(name) }}">{{ name }}</a>{% endfor %}
+  </nav>
+  <nav class="account-nav">
+    {% if session.get("user_id") %}
+      {% if session.get("is_mod") %}<a href="{{ url_for('admin.index') }}">Admin</a>{% endif %}
+      <a href="{{ url_for('auth.logout') }}">Log out</a>
+    {% else %}
+      <a href="{{ url_for('auth.login') }}">Log in</a>
+    {% endif %}
+  </nav>
 </header>
 <main class="site-main">
 {% block content %}{% endblock %}

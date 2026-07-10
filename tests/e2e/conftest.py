@@ -26,10 +26,12 @@ import os
 import subprocess
 import sys
 import threading
+from dataclasses import dataclass
 
 import psycopg
 import pytest
 from dotenv import load_dotenv
+from flask import Flask
 from psycopg.rows import dict_row
 from werkzeug.serving import make_server
 
@@ -57,19 +59,51 @@ subprocess.run(
 E2E_GUILD_ID = 1
 
 
+@dataclass
+class LiveServer:
+    """Wraps the base URL (the only thing most e2e tests need) alongside
+    the real Flask `app` object, needed only by tests that must construct a
+    signed session cookie directly -- Playwright can't monkeypatch code
+    running in live_server's background thread, so seeding a valid session
+    is how auth-gated e2e tests get past the login gate without a real
+    Discord OAuth round trip (see test_admin_and_login_gate.py).
+
+    __str__ returns base_url so every pre-existing `f"{live_server}/path"`
+    call site keeps working unchanged.
+    """
+
+    base_url: str
+    app: Flask
+
+    def __str__(self) -> str:
+        return self.base_url
+
+    def session_cookie(self, **session_data) -> dict:
+        serializer = self.app.session_interface.get_signing_serializer(self.app)
+        return {
+            "name": self.app.config["SESSION_COOKIE_NAME"],
+            "value": serializer.dumps(session_data),
+            "url": self.base_url,
+        }
+
+
 @pytest.fixture(scope="session")
 def live_server():
     settings = Settings(
         discord_bot_token="e2e-test-token",
         discord_guild_id=E2E_GUILD_ID,
         database_url=TEST_DATABASE_URL,
+        discord_client_id="e2e-client-id",
+        discord_client_secret="e2e-client-secret",
+        discord_oauth_redirect_uri="http://127.0.0.1/oauth/callback",
+        flask_secret_key="e2e-test-secret-key",
     )
     pool = PerRequestConnectionSource(TEST_DATABASE_URL)
     app = create_app(settings, pool)
     server = make_server("127.0.0.1", 0, app)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
-    yield f"http://127.0.0.1:{server.server_port}"
+    yield LiveServer(base_url=f"http://127.0.0.1:{server.server_port}", app=app)
     server.shutdown()
     thread.join()
 
@@ -82,3 +116,29 @@ def seed_conn():
     conn = psycopg.connect(TEST_DATABASE_URL, row_factory=dict_row)
     yield conn
     conn.close()
+
+
+@pytest.fixture
+def context(context, live_server):
+    """Overrides pytest-playwright's own `context` fixture (the standard
+    way to extend it -- its docs use this same pattern for auth) so every
+    test gets a logged-in session by default now that the login gate
+    (web/app.py's require_login) covers every route. Auth/admin-gate tests
+    that need to exercise anonymous or mod-elevated state use
+    `anonymous_page`/override the cookie themselves instead.
+    """
+    context.add_cookies(
+        [live_server.session_cookie(user_id=1, display_name="e2e-user", is_mod=False)]
+    )
+    return context
+
+
+@pytest.fixture
+def anonymous_page(browser):
+    """A page with no session cookie at all -- for exercising the login
+    gate itself, bypassing the auto-login `context` override above.
+    """
+    context = browser.new_context()
+    page = context.new_page()
+    yield page
+    context.close()

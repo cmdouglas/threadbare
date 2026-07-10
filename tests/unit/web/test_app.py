@@ -6,7 +6,13 @@ from threadbare.web.app import create_app
 
 def _settings() -> Settings:
     return Settings(
-        discord_bot_token="tok", discord_guild_id=1, database_url="postgresql://x/y"
+        discord_bot_token="tok",
+        discord_guild_id=1,
+        database_url="postgresql://x/y",
+        discord_client_id="client-id",
+        discord_client_secret="client-secret",
+        discord_oauth_redirect_uri="http://localhost:5000/oauth/callback",
+        flask_secret_key="test-secret-key",
     )
 
 

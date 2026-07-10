@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Admin — Threadbare{% endblock %}
+{% block content %}
+<h1>Admin</h1>
+
+<section class="admin-sync-health">
+  <h2>Sync health</h2>
+  {% if heartbeat_stale %}
+  <p class="sync-health-status sync-health-stale">
+    Sync worker heartbeat is stale or missing — the worker may be down.
+  </p>
+  {% else %}
+  <p class="sync-health-status sync-health-healthy">Sync worker heartbeat is healthy.</p>
+  {% endif %}
+  {% if heartbeat %}
+  <p>
+    Last heartbeat:
+    <time datetime="{{ heartbeat.updated_at.isoformat() }}">{{ heartbeat.updated_at }}</time>
+  </p>
+  {% if heartbeat.last_gateway_event_at %}
+  <p>
+    Last gateway event:
+    <time datetime="{{ heartbeat.last_gateway_event_at.isoformat() }}">{{ heartbeat.last_gateway_event_at }}</time>
+  </p>
+  {% endif %}
+  {% endif %}
+</section>
+
+<section class="admin-channels">
+  <h2>Channels</h2>
+  <table class="admin-channel-list">
+    <tr>
+      <th>Channel</th>
+      <th>Public</th>
+      <th>Indexed</th>
+      <th>Backfill</th>
+      <th></th>
+    </tr>
+    {% for channel in channels %}
+    <tr class="admin-channel-row">
+      <td class="admin-channel-name">{{ channel.name }}</td>
+      <td class="admin-channel-public">{{ "yes" if channel.is_public else "no" }}</td>
+      <td class="admin-channel-indexed">{{ "yes" if channel.indexed else "no" }}</td>
+      <td class="admin-channel-backfill">
+        {% if channel.backfill_complete %}complete
+        {% elif channel.last_backfilled_message_id %}in progress
+        {% else %}not started
+        {% endif %}
+      </td>
+      <td>
+        <form method="post" action="{{ url_for('admin.toggle_indexed', channel_id=channel.id) }}">
+          <button type="submit">{{ "Disable" if channel.indexed else "Enable" }}</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+</section>
+{% endblock %}

@@ -1,0 +1,261 @@
+/* subSilver-ish -- a loving, not pixel-exact, recreation of the 2004 phpBB2
+ * default theme: beveled gradients, table-dense layouts, tiny pagination
+ * links. Same CSS custom-property contract as theme-plain.css (every other
+ * theme, including this one, only needs to override the :root values below
+ * plus a handful of subSilver-specific flourishes) -- the semantic classed
+ * markup itself (board-index, board-row, topic-row, post, post-meta,
+ * post-content, reply-quote, ...) stays fixed across all themes.
+ */
+
+:root {
+  --color-bg: #ebebeb;
+  --color-bg-alt: #f8f8f8;
+  --color-fg: #000000;
+  --color-fg-muted: #666666;
+  --color-border: #98aab1;
+  --color-link: #006699;
+  --color-link-visited: #5493b4;
+  --color-accent: #34589a;
+  --color-accent-fg: #ffffff;
+  --color-danger: #cc0000;
+
+  --font-body: Verdana, Arial, Helvetica, sans-serif;
+  --font-mono: "Courier New", monospace;
+  --font-size-base: 0.8125rem;
+  --font-size-small: 0.6875rem;
+  --line-height-base: 1.4;
+
+  --space-xs: 0.25rem;
+  --space-sm: 0.4rem;
+  --space-md: 0.8rem;
+  --space-lg: 1.6rem;
+
+  --radius: 0px;
+  --border-width: 1px;
+  --container-max-width: 1000px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg: #1c1f23;
+    --color-bg-alt: #262a2f;
+    --color-fg: #d8dee3;
+    --color-fg-muted: #9aa4ad;
+    --color-border: #4a5560;
+    --color-link: #6db3d8;
+    --color-link-visited: #a08fcf;
+    --color-accent: #2c4a80;
+    --color-accent-fg: #ffffff;
+    --color-danger: #e05a5a;
+  }
+}
+
+@media (prefers-contrast: more) {
+  :root {
+    --color-border: currentColor;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-fg);
+  font-family: var(--font-body);
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-base);
+}
+
+a {
+  color: var(--color-link);
+  text-decoration: underline;
+}
+
+a:visited {
+  color: var(--color-link-visited);
+}
+
+.site-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+  background: var(--color-accent);
+  color: var(--color-accent-fg);
+  border-bottom: 3px solid var(--color-border);
+}
+
+.site-header .site-title {
+  color: var(--color-accent-fg);
+  font-weight: bold;
+  font-size: 1.1rem;
+  text-decoration: none;
+}
+
+.theme-switcher {
+  font-size: var(--font-size-small);
+  display: flex;
+  gap: var(--space-xs);
+}
+
+.theme-switcher a {
+  color: var(--color-accent-fg);
+}
+
+.site-main {
+  max-width: var(--container-max-width);
+  margin: 0 auto;
+  padding: var(--space-md);
+}
+
+.board-index,
+.board-topic-list,
+.board-week-list {
+  width: 100%;
+  border-collapse: collapse;
+  border: var(--border-width) solid var(--color-border);
+}
+
+.board-row,
+.topic-row,
+.week-row {
+  border-bottom: var(--border-width) solid var(--color-border);
+}
+
+.board-row:nth-child(even),
+.topic-row:nth-child(even),
+.week-row:nth-child(even) {
+  background: var(--color-bg-alt);
+}
+
+.board-row td,
+.topic-row td,
+.week-row td {
+  padding: var(--space-xs) var(--space-sm);
+}
+
+.category-heading {
+  background: linear-gradient(to bottom, var(--color-accent), #1f3868);
+  color: var(--color-accent-fg);
+  padding: var(--space-xs) var(--space-sm);
+  font-weight: bold;
+}
+
+.post {
+  border: var(--border-width) solid var(--color-border);
+  border-style: outset;
+  padding: var(--space-sm);
+  margin-bottom: var(--space-sm);
+  background: var(--color-bg-alt);
+}
+
+.post-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  color: var(--color-fg-muted);
+  font-size: var(--font-size-small);
+  margin-bottom: var(--space-xs);
+  padding-bottom: var(--space-xs);
+  border-bottom: var(--border-width) dotted var(--color-border);
+}
+
+.post-author {
+  font-weight: bold;
+  color: var(--color-accent);
+}
+
+.reply-quote,
+.post-reply-quote blockquote {
+  border: var(--border-width) solid var(--color-border);
+  border-left: 3px solid var(--color-accent);
+  background: var(--color-bg);
+  padding: var(--space-xs) var(--space-sm);
+  color: var(--color-fg-muted);
+  margin: var(--space-xs) 0;
+}
+
+.mention {
+  color: var(--color-accent-fg);
+  background: var(--color-accent);
+  border-radius: var(--radius);
+  padding: 0 0.25em;
+}
+
+.spoiler summary {
+  cursor: pointer;
+  color: var(--color-fg-muted);
+}
+
+.reactions {
+  margin-top: var(--space-xs);
+}
+
+.reaction-badge {
+  display: inline-block;
+  border: var(--border-width) solid var(--color-border);
+  border-style: outset;
+  padding: 0.05em 0.5em;
+  margin-right: var(--space-xs);
+  font-size: var(--font-size-small);
+  background: var(--color-bg-alt);
+}
+
+.embed {
+  border-left: 4px solid var(--embed-color, var(--color-border));
+  border-top: var(--border-width) solid var(--color-border);
+  border-right: var(--border-width) solid var(--color-border);
+  border-bottom: var(--border-width) solid var(--color-border);
+  padding: var(--space-sm);
+  margin-top: var(--space-xs);
+  background: var(--color-bg);
+}
+
+.attachment img {
+  max-width: 100%;
+  border: var(--border-width) solid var(--color-border);
+}
+
+.pagination {
+  display: flex;
+  gap: var(--space-xs);
+  align-items: center;
+  margin: var(--space-sm) 0;
+  font-size: var(--font-size-small);
+}
+
+.pagination a,
+.pagination span {
+  padding: 0 3px;
+}
+
+.search-form input[type="search"] {
+  font: inherit;
+  padding: var(--space-xs) var(--space-sm);
+  border: var(--border-width) solid var(--color-border);
+  border-style: inset;
+  background: var(--color-bg);
+  color: var(--color-fg);
+}
+
+code, pre {
+  font-family: var(--font-mono);
+}
+
+pre {
+  background: var(--color-bg-alt);
+  border: var(--border-width) solid var(--color-border);
+  padding: var(--space-sm);
+  overflow-x: auto;
+}

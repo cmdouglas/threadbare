@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}Login denied — Threadbare{% endblock %}
+{% block content %}
+<p class="login-denied">
+  Login failed. Threadbare is only open to members of the mirrored Discord
+  server — make sure you're a member and try again.
+</p>
+<p><a href="{{ url_for('auth.login') }}">Try again</a></p>
+{% endblock %}

@@ -12,6 +12,10 @@ class Settings:
     discord_bot_token: str
     discord_guild_id: int
     database_url: str
+    discord_client_id: str
+    discord_client_secret: str
+    discord_oauth_redirect_uri: str
+    flask_secret_key: str
 
 
 def load_settings(env: Mapping[str, str] | None = None) -> Settings:
@@ -41,6 +45,22 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
     if not database_url:
         errors.append("DATABASE_URL is required")
 
+    client_id = env.get("DISCORD_CLIENT_ID", "").strip()
+    if not client_id:
+        errors.append("DISCORD_CLIENT_ID is required")
+
+    client_secret = env.get("DISCORD_CLIENT_SECRET", "").strip()
+    if not client_secret:
+        errors.append("DISCORD_CLIENT_SECRET is required")
+
+    oauth_redirect_uri = env.get("DISCORD_OAUTH_REDIRECT_URI", "").strip()
+    if not oauth_redirect_uri:
+        errors.append("DISCORD_OAUTH_REDIRECT_URI is required")
+
+    flask_secret_key = env.get("FLASK_SECRET_KEY", "").strip()
+    if not flask_secret_key:
+        errors.append("FLASK_SECRET_KEY is required")
+
     if errors:
         raise ConfigError("Invalid configuration:\n" + "\n".join(f"  - {e}" for e in errors))
 
@@ -49,4 +69,8 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         discord_bot_token=bot_token,
         discord_guild_id=guild_id,
         database_url=database_url,
+        discord_client_id=client_id,
+        discord_client_secret=client_secret,
+        discord_oauth_redirect_uri=oauth_redirect_uri,
+        flask_secret_key=flask_secret_key,
     )

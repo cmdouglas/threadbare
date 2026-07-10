@@ -107,3 +107,30 @@ def test_css_custom_property_contract_is_present(page, live_server, seeded):
         "getComputedStyle(document.body).getPropertyValue('--color-bg')"
     )
     assert color_bg.strip() != ""
+
+
+def test_theme_switch_via_query_param_changes_computed_stylesheet(page, live_server, seeded):
+    page.goto(f"{live_server}/?theme=plain")
+    plain_href = page.locator("link[rel=stylesheet]").get_attribute("href")
+    plain_color_bg = page.evaluate(
+        "getComputedStyle(document.body).getPropertyValue('--color-bg')"
+    ).strip()
+    assert "theme-plain.css" in plain_href
+
+    page.goto(f"{live_server}/?theme=subsilver")
+    subsilver_href = page.locator("link[rel=stylesheet]").get_attribute("href")
+    subsilver_color_bg = page.evaluate(
+        "getComputedStyle(document.body).getPropertyValue('--color-bg')"
+    ).strip()
+    assert "theme-subsilver.css" in subsilver_href
+
+    assert plain_color_bg != subsilver_color_bg
+
+
+def test_theme_choice_persists_across_navigation_without_query_param(page, live_server, seeded):
+    page.goto(f"{live_server}/?theme=plain")
+    assert "theme-plain.css" in page.locator("link[rel=stylesheet]").get_attribute("href")
+
+    page.goto(f"{live_server}/")
+
+    assert "theme-plain.css" in page.locator("link[rel=stylesheet]").get_attribute("href")

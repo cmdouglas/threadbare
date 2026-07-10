@@ -6,6 +6,10 @@ VALID_ENV = {
     "DISCORD_BOT_TOKEN": "fake-token",
     "DISCORD_TEST_GUILD_ID": "1524883720350466048",
     "DATABASE_URL": "postgresql://threadbare:threadbare@localhost:5432/threadbare_dev",
+    "DISCORD_CLIENT_ID": "fake-client-id",
+    "DISCORD_CLIENT_SECRET": "fake-client-secret",
+    "DISCORD_OAUTH_REDIRECT_URI": "http://localhost:5000/oauth/callback",
+    "FLASK_SECRET_KEY": "fake-secret-key",
 }
 
 
@@ -16,6 +20,10 @@ def test_load_settings_returns_populated_settings():
         discord_bot_token="fake-token",
         discord_guild_id=1524883720350466048,
         database_url="postgresql://threadbare:threadbare@localhost:5432/threadbare_dev",
+        discord_client_id="fake-client-id",
+        discord_client_secret="fake-client-secret",
+        discord_oauth_redirect_uri="http://localhost:5000/oauth/callback",
+        flask_secret_key="fake-secret-key",
     )
 
 
@@ -35,6 +43,10 @@ def test_load_settings_reports_all_missing_vars_at_once():
     assert "DISCORD_BOT_TOKEN" in message
     assert "DISCORD_TEST_GUILD_ID" in message
     assert "DATABASE_URL" in message
+    assert "DISCORD_CLIENT_ID" in message
+    assert "DISCORD_CLIENT_SECRET" in message
+    assert "DISCORD_OAUTH_REDIRECT_URI" in message
+    assert "FLASK_SECRET_KEY" in message
 
 
 def test_load_settings_rejects_non_integer_guild_id():
@@ -48,4 +60,32 @@ def test_load_settings_rejects_blank_bot_token():
     env = dict(VALID_ENV, DISCORD_BOT_TOKEN="   ")
 
     with pytest.raises(ConfigError, match="DISCORD_BOT_TOKEN"):
+        load_settings(env)
+
+
+def test_load_settings_rejects_blank_discord_client_id():
+    env = dict(VALID_ENV, DISCORD_CLIENT_ID="   ")
+
+    with pytest.raises(ConfigError, match="DISCORD_CLIENT_ID"):
+        load_settings(env)
+
+
+def test_load_settings_rejects_blank_discord_client_secret():
+    env = dict(VALID_ENV, DISCORD_CLIENT_SECRET="   ")
+
+    with pytest.raises(ConfigError, match="DISCORD_CLIENT_SECRET"):
+        load_settings(env)
+
+
+def test_load_settings_rejects_blank_oauth_redirect_uri():
+    env = dict(VALID_ENV, DISCORD_OAUTH_REDIRECT_URI="   ")
+
+    with pytest.raises(ConfigError, match="DISCORD_OAUTH_REDIRECT_URI"):
+        load_settings(env)
+
+
+def test_load_settings_rejects_blank_flask_secret_key():
+    env = dict(VALID_ENV, FLASK_SECRET_KEY="   ")
+
+    with pytest.raises(ConfigError, match="FLASK_SECRET_KEY"):
         load_settings(env)

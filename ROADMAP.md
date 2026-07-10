@@ -105,16 +105,49 @@ Everything here targets a single Discord server, public (`@everyone`-readable) c
 
 ## 5. Themes (~1 day)
 
-- [ ] subSilver-ish (default)
+- [x] subSilver-ish (default)
+  - `web/static/theme-subsilver.css`: beveled (`outset`/`inset` border-style) posts/inputs, a
+    navy-gradient category bar, tiny pagination links, zebra-striped tables — same CSS
+    custom-property contract as `theme-plain.css` so `test_css_custom_property_contract_is_present`
+    holds regardless of active theme.
+  - Cookie-based theme switcher shipped alongside it (not itself a checklist item, but needed
+    to make more than one theme reachable): `web/themes.py`'s `resolve_theme()` (query param →
+    cookie → default), wired into `app.py` via `before_request`/`context_processor`/`after_request`,
+    a `<nav class="theme-switcher">` in `base.html`. Unit, integration, and e2e tested.
 - [ ] vBulletin dark
 - [ ] Terminal (green-on-black monospace)
-- [ ] Plain (reference implementation for future theme authors)
-- [ ] `prefers-contrast` and `prefers-reduced-motion` support across all four
+- [x] Plain (reference implementation for future theme authors)
+  - Already existed from §4 (`theme-plain.css` doubled as the CSS-variable-contract reference);
+    now selectable via the theme switcher above rather than being the only stylesheet.
+- [x] `prefers-contrast` and `prefers-reduced-motion` support across both shipped themes so far
+  - Present in both `theme-plain.css` and `theme-subsilver.css`; still needed in vBulletin
+    dark/Terminal when those land.
 
 ## 6. Access control (~1 day)
 
-- [ ] Discord OAuth (`identify` + `guilds` scopes) login gate — any guild member may read
-- [ ] Mod admin page: per-channel indexing toggle, trigger re-backfill, sync health view
+- [x] Discord OAuth (`identify` + `guilds` scopes) login gate — any guild member may read
+  - Hand-rolled (not a library) in `web/discord_rest.py` (`exchange_oauth_code`,
+    `get_current_user`, `get_current_user_guilds`, sharing a new `DiscordRestError` base with
+    the existing attachment-refresh error) and `web/views/auth.py` (`/login`, `/oauth/callback`,
+    `/logout`). Flask's built-in signed-cookie session stores only `user_id`/`display_name`/
+    `is_mod` — never the OAuth token. Login is rejected entirely (not just admin access) for
+    anyone who isn't a member of `DISCORD_TEST_GUILD_ID`. `web/app.py`'s global `before_request`
+    gate covers every existing route for free. Unit, integration, and e2e tested (the e2e tier
+    seeds a signed session cookie directly rather than faking a full Discord OAuth double — see
+    `tests/e2e/conftest.py`'s `LiveServer.session_cookie`).
+- [x] Mod admin page: per-channel indexing toggle, sync health view
+  - Mod = Manage Server or Administrator on the mirrored guild, read from the OAuth
+    `guilds`-scope `permissions` field (`web/authz.py`'s `has_mod_permissions`) — no separate
+    per-role lookup needed. `db/admin_queries.py` (new, deliberately separate from the
+    read-only, member-safe `db/queries.py`) adds `set_channel_indexed` plus reads against
+    `sync_state`/`worker_heartbeat` (previously sync-worker-internal), with a 5-minute
+    heartbeat-staleness threshold. `web/views/admin.py` + `admin.html`. Unit, integration, and
+    e2e tested.
+  - **Trigger re-backfill deliberately deferred**, not built: the web app and sync worker are
+    separate processes with no IPC today (no LISTEN/NOTIFY, no RPC, no polling flag), and
+    bolting that on was explicitly scoped out this round rather than rushed. The admin page
+    renders no such control (guarded by a regression test asserting its absence) — follow-up
+    work, not a gap discovered late.
 
 ## 7. Setup wizard (~1 day)
 

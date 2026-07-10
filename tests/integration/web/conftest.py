@@ -48,14 +48,35 @@ def web_conn(test_database_url):
 @pytest.fixture
 def app(web_conn):
     settings = Settings(
-        discord_bot_token="test-bot-token", discord_guild_id=1, database_url="unused"
+        discord_bot_token="test-bot-token",
+        discord_guild_id=1,
+        database_url="unused",
+        discord_client_id="test-client-id",
+        discord_client_secret="test-client-secret",
+        discord_oauth_redirect_uri="http://localhost:5000/oauth/callback",
+        flask_secret_key="test-secret-key",
     )
     return create_app(settings, FakePool(web_conn))
 
 
 @pytest.fixture
-def client(app):
+def anonymous_client(app):
+    """A test client with no session at all -- for exercising the login
+    gate itself and the login/callback flow. Most tests want `client`
+    instead, which is pre-authenticated as an ordinary (non-mod) member,
+    since the login gate now applies to every route (web/app.py's
+    `require_login` before_request hook).
+    """
     return app.test_client()
+
+
+@pytest.fixture
+def client(anonymous_client):
+    with anonymous_client.session_transaction() as sess:
+        sess["user_id"] = 1
+        sess["display_name"] = "test-user"
+        sess["is_mod"] = False
+    return anonymous_client
 
 
 def run(coro):
