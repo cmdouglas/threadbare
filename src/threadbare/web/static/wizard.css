@@ -1,0 +1,109 @@
+/* Setup wizard styling -- deliberately plain and standalone, not one of
+ * the forum's four themes (there's no forum content to theme yet, and the
+ * wizard is a one-time flow, not a browsing surface). Still honors
+ * prefers-color-scheme/prefers-contrast/prefers-reduced-motion for
+ * baseline accessibility, matching the project's blanket commitment to
+ * those even outside the theme-contract system.
+ */
+
+:root {
+  --wizard-bg: #ffffff;
+  --wizard-fg: #1a1a1a;
+  --wizard-border: #d0d0d5;
+  --wizard-accent: #1a56db;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --wizard-bg: #1a1a1a;
+    --wizard-fg: #e5e5e5;
+    --wizard-border: #3a3a3a;
+    --wizard-accent: #7aa2f7;
+  }
+}
+
+@media (prefers-contrast: more) {
+  :root {
+    --wizard-border: currentColor;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--wizard-bg);
+  color: var(--wizard-fg);
+  font-family: system-ui, sans-serif;
+  line-height: 1.5;
+}
+
+.wizard-header {
+  padding: 1rem;
+  border-bottom: 1px solid var(--wizard-border);
+}
+
+.wizard-title {
+  font-weight: bold;
+  font-size: 1.1rem;
+}
+
+.wizard-main {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 1rem;
+}
+
+.wizard-flash {
+  border: 1px solid var(--wizard-accent);
+  border-radius: 4px;
+  padding: 0.5rem 1rem;
+  margin-bottom: 1rem;
+  list-style: none;
+}
+
+.wizard-steps {
+  padding-left: 1.25rem;
+}
+
+.wizard-form label {
+  display: block;
+  margin-bottom: 0.75rem;
+}
+
+.wizard-form input {
+  display: block;
+  width: 100%;
+  margin-top: 0.25rem;
+  padding: 0.4rem;
+  border: 1px solid var(--wizard-border);
+  border-radius: 4px;
+  font: inherit;
+}
+
+.wizard-channel-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 1rem;
+}
+
+.wizard-channel-table td,
+.wizard-channel-table th {
+  padding: 0.4rem;
+  border-bottom: 1px solid var(--wizard-border);
+  text-align: left;
+}
+
+.wizard-oauth-verified {
+  color: green;
+  font-weight: bold;
+}

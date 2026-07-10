@@ -1,0 +1,20 @@
+{% extends "wizard_base.html" %}
+{% block title %}Welcome — Threadbare setup{% endblock %}
+{% block content %}
+<h1>Welcome to Threadbare</h1>
+<p>This wizard gets your mirror running in a few steps. You'll need access to the
+<a href="https://discord.com/developers/applications">Discord Developer Portal</a>
+for the server you want to mirror.</p>
+<ol class="wizard-steps">
+  <li>Create a Discord application and a Bot under it.</li>
+  <li>Enable the <strong>Message Content</strong> intent on the Bot tab — miss this and
+      every message body silently arrives empty.</li>
+  <li>Copy the bot token and the application's client ID (both on the Bot/OAuth2 tabs).</li>
+  <li>Invite the bot to your server using a generated link (<code>bot</code> scope,
+      <code>View Channels</code> + <code>Read Message History</code> only).</li>
+  <li>Choose which channels get mirrored.</li>
+  <li>Under OAuth2, add the redirect URI this wizard shows you, then paste in the
+      client secret to finish.</li>
+</ol>
+<p><a href="{{ url_for('wizard.token') }}">Get started</a></p>
+{% endblock %}

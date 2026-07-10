@@ -27,3 +27,11 @@ def test_invalid_query_param_theme_falls_back_to_default_and_does_not_set_cookie
 
     assert b"theme-subsilver.css" in resp.data
     assert "Set-Cookie" not in resp.headers
+
+
+def test_query_param_theme_sets_cookie_and_switches_to_vbulletin_dark(client):
+    resp = client.get("/?theme=vbulletin-dark")
+
+    assert b"theme-vbulletin-dark.css" in resp.data
+    set_cookie_headers = resp.headers.get_all("Set-Cookie")
+    assert any("theme=vbulletin-dark" in header for header in set_cookie_headers)

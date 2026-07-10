@@ -1,0 +1,24 @@
+{% extends "wizard_base.html" %}
+{% block title %}Mod-facing summary — Threadbare setup{% endblock %}
+{% block content %}
+<h1>What Threadbare does</h1>
+<p>Hand this to the rest of your mod team.</p>
+<ul>
+  <li>Threadbare mirrors public (@everyone-readable) channels into a searchable,
+      paginated forum view. It's read-only -- it never posts, reacts, or writes back
+      to Discord.</li>
+  <li>Deletions on Discord are removed from the mirror within seconds via the gateway,
+      and a nightly sweep catches anything missed during an outage.</li>
+  <li>Stored per message: content, author display name/avatar, timestamps, attachments
+      (proxied on demand, not mirrored to local storage), and aggregate reaction counts.
+      No per-user reaction identity, no emails, no presence data.</li>
+  <li>Only channels you explicitly confirm as indexed are mirrored -- and if a channel's
+      permissions change so @everyone can no longer read it, its content is automatically
+      removed from the index.</li>
+  <li>There are no backups of mirrored message content. Discord remains the sole source
+      of truth; the mirror can always be rebuilt from scratch.</li>
+  <li>Any member of the server may log in and read. Per-channel indexing and sync health
+      are controlled from the admin page, available to anyone with Manage Server or
+      Administrator on the server.</li>
+</ul>
+{% endblock %}

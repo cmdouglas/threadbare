@@ -1,0 +1,24 @@
+{% extends "wizard_base.html" %}
+{% block title %}Login gate — Threadbare setup{% endblock %}
+{% block content %}
+<h1>Member login gate</h1>
+<p>Under OAuth2 → General → Redirects in the developer portal, add this exact URI:</p>
+<p><code>{{ redirect_uri }}</code></p>
+<p>Then paste in the application's client secret (also on the OAuth2 tab):</p>
+<form method="post" class="wizard-form">
+  <label>Client secret
+    <input type="password" name="client_secret" autocomplete="off" required>
+  </label>
+  <button type="submit">Save</button>
+</form>
+
+{% if state.discord_oauth_redirect_uri %}
+<p><a href="{{ url_for('wizard.oauth_test_login') }}">Test login</a></p>
+{% if oauth_verified %}
+<p class="wizard-oauth-verified">Login test succeeded.</p>
+<form method="get" action="{{ url_for('wizard.finish') }}">
+  <button type="submit">Continue to finish setup</button>
+</form>
+{% endif %}
+{% endif %}
+{% endblock %}

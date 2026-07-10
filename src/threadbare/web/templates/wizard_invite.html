@@ -1,0 +1,24 @@
+{% extends "wizard_base.html" %}
+{% block title %}Invite the bot — Threadbare setup{% endblock %}
+{% block content %}
+<h1>Invite the bot</h1>
+<p>Open this link and add the bot to your server:</p>
+<p><a href="{{ invite_url }}" target="_blank" rel="noopener">{{ invite_url }}</a></p>
+
+{% if guild_choices %}
+<p>The bot is in more than one server -- pick the one to mirror:</p>
+<form method="post" class="wizard-form">
+  {% for guild in guild_choices %}
+  <label>
+    <input type="radio" name="guild_id" value="{{ guild.id }}" required>
+    {{ guild.name }}
+  </label>
+  {% endfor %}
+  <button type="submit">Continue</button>
+</form>
+{% else %}
+<form method="post" class="wizard-form">
+  <button type="submit">I've invited it — check now</button>
+</form>
+{% endif %}
+{% endblock %}

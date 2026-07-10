@@ -2,20 +2,11 @@ from urllib.parse import parse_qs, urlparse
 
 from threadbare.web.views import auth as auth_view
 
+from .conftest import stub_oauth_functions
+
 
 def _stub_oauth(monkeypatch, *, user, guilds):
-    async def fake_exchange(**kwargs):
-        return {"access_token": "tok123"}
-
-    async def fake_get_user(token, **kwargs):
-        return user
-
-    async def fake_get_guilds(token, **kwargs):
-        return guilds
-
-    monkeypatch.setattr(auth_view, "exchange_oauth_code", fake_exchange)
-    monkeypatch.setattr(auth_view, "get_current_user", fake_get_user)
-    monkeypatch.setattr(auth_view, "get_current_user_guilds", fake_get_guilds)
+    stub_oauth_functions(monkeypatch, auth_view, user=user, guilds=guilds)
 
 
 def test_login_redirects_to_discord_authorize_url_with_correct_params(anonymous_client):

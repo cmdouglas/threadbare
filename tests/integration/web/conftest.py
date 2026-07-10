@@ -20,6 +20,7 @@ from psycopg.rows import dict_row
 
 from threadbare.config import Settings
 from threadbare.web.app import create_app
+from threadbare.web.wizard_app import create_wizard_app
 
 
 class FakePool:
@@ -84,3 +85,34 @@ def run(coro):
     seeding/assertion counterpart to web_conn being usable from sync code.
     """
     return asyncio.run(coro)
+
+
+@pytest.fixture
+def wizard_app(web_conn, tmp_path):
+    return create_wizard_app(FakePool(web_conn), env_file_path=tmp_path / ".env")
+
+
+@pytest.fixture
+def wizard_client(wizard_app):
+    return wizard_app.test_client()
+
+
+def stub_oauth_functions(monkeypatch, module, *, user, guilds):
+    """Shared by test_auth.py (the real login gate) and
+    test_wizard_oauth_step.py (the wizard's own test-login round trip) --
+    both call the same three threadbare.web.discord_rest OAuth functions,
+    just from different view modules.
+    """
+
+    async def fake_exchange(**kwargs):
+        return {"access_token": "tok123"}
+
+    async def fake_get_user(token, **kwargs):
+        return user
+
+    async def fake_get_guilds(token, **kwargs):
+        return guilds
+
+    monkeypatch.setattr(module, "exchange_oauth_code", fake_exchange)
+    monkeypatch.setattr(module, "get_current_user", fake_get_user)
+    monkeypatch.setattr(module, "get_current_user_guilds", fake_get_guilds)

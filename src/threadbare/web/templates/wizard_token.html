@@ -1,0 +1,16 @@
+{% extends "wizard_base.html" %}
+{% block title %}Bot token — Threadbare setup{% endblock %}
+{% block content %}
+<h1>Bot token</h1>
+<p>From the Developer Portal's Bot tab, copy the token. From the OAuth2 tab (or the
+General Information tab), copy the application's Client ID.</p>
+<form method="post" class="wizard-form">
+  <label>Bot token
+    <input type="password" name="bot_token" autocomplete="off" required>
+  </label>
+  <label>Client ID
+    <input type="text" name="client_id" value="{{ state.discord_client_id or '' }}" required>
+  </label>
+  <button type="submit">Continue</button>
+</form>
+{% endblock %}

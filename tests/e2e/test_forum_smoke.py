@@ -134,3 +134,13 @@ def test_theme_choice_persists_across_navigation_without_query_param(page, live_
     page.goto(f"{live_server}/")
 
     assert "theme-plain.css" in page.locator("link[rel=stylesheet]").get_attribute("href")
+
+
+def test_vbulletin_dark_theme_is_reachable_via_query_param(page, live_server, seeded):
+    page.goto(f"{live_server}/?theme=vbulletin-dark")
+
+    href = page.locator("link[rel=stylesheet]").get_attribute("href")
+    assert "theme-vbulletin-dark.css" in href
+
+    response = page.request.get(f"{live_server}{href}")
+    assert response.status == 200

@@ -37,7 +37,9 @@ from werkzeug.serving import make_server
 
 from threadbare.config import Settings
 from threadbare.web.app import create_app
+from threadbare.web.app_switcher import AppSwitcher
 from threadbare.web.db import PerRequestConnectionSource
+from threadbare.web.wizard_app import create_wizard_app
 
 load_dotenv()
 
@@ -142,3 +144,63 @@ def anonymous_page(browser):
     page = context.new_page()
     yield page
     context.close()
+
+
+@dataclass
+class WizardLiveServer:
+    """Like LiveServer, but for the setup wizard's own mini Flask app --
+    also exposes the .env path the wizard writes to (a tmp_path file, never
+    the real repo .env) and the Settings the wizard's on_complete callback
+    was actually invoked with, for e2e assertions.
+    """
+
+    base_url: str
+    app: Flask
+    env_path: object
+    completed: dict
+
+    def __str__(self) -> str:
+        return self.base_url
+
+
+@pytest.fixture
+def unconfigured_live_server(tmp_path):
+    """A live server running the wizard app behind an AppSwitcher (the same
+    wiring web/cli.py's main() uses in production) against a freshly
+    truncated wizard_state/channels/guilds -- so each test starts from a
+    genuinely first-run state, independent of the main live_server
+    fixture's session-scoped data, and finishing the wizard for real swaps
+    the SAME base_url over to the real forum app with no restart.
+    """
+    conn = psycopg.connect(TEST_DATABASE_URL)
+    with conn.cursor() as cur:
+        cur.execute("TRUNCATE wizard_state, channels, guilds RESTART IDENTITY CASCADE")
+    conn.commit()
+    conn.close()
+
+    pool = PerRequestConnectionSource(TEST_DATABASE_URL)
+    env_path = tmp_path / ".env"
+    # DATABASE_URL is assumed already present before wizard mode starts
+    # (container-network Postgres, not something a mod hand-enters) --
+    # matches config.get_database_url()'s own assumption.
+    env_path.write_text(f"DATABASE_URL={TEST_DATABASE_URL}\n")
+    completed: dict = {}
+
+    def on_complete(settings):
+        completed["settings"] = settings
+        new_pool = PerRequestConnectionSource(settings.database_url)
+        switcher.switch_to(create_app(settings, new_pool))
+
+    wizard_app = create_wizard_app(pool, on_complete=on_complete, env_file_path=env_path)
+    switcher = AppSwitcher(wizard_app)
+    server = make_server("127.0.0.1", 0, switcher)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    yield WizardLiveServer(
+        base_url=f"http://127.0.0.1:{server.server_port}",
+        app=wizard_app,
+        env_path=env_path,
+        completed=completed,
+    )
+    server.shutdown()
+    thread.join()

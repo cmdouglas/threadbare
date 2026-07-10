@@ -196,6 +196,8 @@ Onboarding is a first-class feature, not documentation. There are two audiences 
 5. Once the bot lands in the guild (the wizard polls and detects the join), it displays the channel list with per-channel indexing toggles, public/gated status, and estimated message counts, then starts the backfill with a visible progress page.
 6. OAuth credentials for the login gate are configured last, with the wizard displaying the exact redirect URI to paste into the developer portal.
 
+**v1 implementation deviations from the above, deliberate rather than discovered late (ROADMAP.md §7 has the full account):** step 2's screenshots are text + numbered steps instead — this pass couldn't produce authentic developer-portal screenshots, and stale placeholders seemed worse than clear copy. Step 5's "estimated message counts" is dropped (no cheap way to compute one without paginating full history, which the wizard exists to avoid pre-confirmation) and it does **not** start a real backfill or show a progress page — the web app and sync worker have no IPC today, so that's deferred; the wizard's last screen instead tells the operator to (re)start the sync worker themselves once `.env` is written, mirroring the same deferral the admin page's "trigger re-backfill" already made (§6).
+
 ### 8.2 Preflight checks and the gotchas they catch
 
 Each of these is a real-world silent failure mode; the wizard tests for all of them explicitly:

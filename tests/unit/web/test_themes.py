@@ -1,4 +1,9 @@
-from threadbare.web.themes import DEFAULT_THEME, resolve_theme
+from threadbare.web.themes import AVAILABLE_THEMES, DEFAULT_THEME, resolve_theme
+
+
+def test_vbulletin_dark_theme_is_registered_and_selectable():
+    assert "vbulletin-dark" in AVAILABLE_THEMES
+    assert resolve_theme(query_param="vbulletin-dark", cookie_value=None) == "vbulletin-dark"
 
 
 def test_resolve_theme_returns_default_when_nothing_set():

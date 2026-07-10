@@ -1,0 +1,26 @@
+{% extends "wizard_base.html" %}
+{% block title %}Finish — Threadbare setup{% endblock %}
+{% block content %}
+{% if already_complete %}
+<h1>Setup already complete</h1>
+<p>This install is already configured.</p>
+{% elif just_finished %}
+<h1>All set</h1>
+<p>Configuration was written. The forum is now available without restarting this
+process. <strong>Restart the sync worker</strong> to pick up the new configuration and
+start backfilling.</p>
+<p><a href="{{ url_for('wizard.pitch_kit') }}">Mod-facing summary</a> — worth sharing
+with the rest of the mod team.</p>
+{% else %}
+<h1>Ready to finish</h1>
+{% if ready %}
+<p>Everything checks out. Finishing writes your configuration to <code>.env</code>.</p>
+<form method="post">
+  <button type="submit">Finish setup</button>
+</form>
+{% else %}
+<p>Complete the login test on the previous step first.</p>
+<p><a href="{{ url_for('wizard.oauth') }}">Back to login gate</a></p>
+{% endif %}
+{% endif %}
+{% endblock %}

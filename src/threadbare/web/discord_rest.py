@@ -30,6 +30,18 @@ class OAuthExchangeError(DiscordRestError):
     pass
 
 
+class BotIdentityError(DiscordRestError):
+    pass
+
+
+class GuildFetchError(DiscordRestError):
+    pass
+
+
+class ChannelMessageFetchError(DiscordRestError):
+    pass
+
+
 def parse_expiry_from_signed_url(url: str) -> datetime:
     """Discord's signed CDN URLs (attachments, refreshed or original) encode
     their own expiry as an `ex=` hex Unix-timestamp query parameter -- no
@@ -153,6 +165,158 @@ async def get_current_user(
             return response.json()
         except ValueError as e:
             raise OAuthExchangeError(f"unexpected response shape: {e}") from e
+
+
+async def get_bot_user(bot_token: str, *, transport: httpx.BaseTransport | None = None) -> dict:
+    """GET /users/@me with Bot auth (vs. get_current_user's Bearer/OAuth-
+    token variant) -- validates the bot token's shape/identity per
+    DESIGN.md §8.2's "token pasted wrong" preflight gotcha.
+    """
+    async with httpx.AsyncClient(transport=transport) as client:
+        try:
+            response = await client.get(
+                f"{DISCORD_API_BASE}/users/@me",
+                headers={"Authorization": f"Bot {bot_token}"},
+            )
+            response.raise_for_status()
+        except httpx.HTTPError as e:
+            raise BotIdentityError(str(e)) from e
+
+        try:
+            return response.json()
+        except ValueError as e:
+            raise BotIdentityError(f"unexpected response shape: {e}") from e
+
+
+async def get_bot_guilds(
+    bot_token: str, *, transport: httpx.BaseTransport | None = None
+) -> list[dict]:
+    """GET /users/@me/guilds with Bot auth -- used by the setup wizard's
+    /invite step to auto-detect which guild the bot landed in, so the mod
+    never has to hand-type a numeric guild ID (which would require
+    enabling Developer Mode first).
+    """
+    async with httpx.AsyncClient(transport=transport) as client:
+        try:
+            response = await client.get(
+                f"{DISCORD_API_BASE}/users/@me/guilds",
+                headers={"Authorization": f"Bot {bot_token}"},
+            )
+            response.raise_for_status()
+        except httpx.HTTPError as e:
+            raise BotIdentityError(str(e)) from e
+
+        try:
+            return response.json()
+        except ValueError as e:
+            raise BotIdentityError(f"unexpected response shape: {e}") from e
+
+
+async def get_guild(
+    bot_token: str, guild_id: int, *, transport: httpx.BaseTransport | None = None
+) -> dict:
+    async with httpx.AsyncClient(transport=transport) as client:
+        try:
+            response = await client.get(
+                f"{DISCORD_API_BASE}/guilds/{guild_id}",
+                headers={"Authorization": f"Bot {bot_token}"},
+            )
+            response.raise_for_status()
+        except httpx.HTTPError as e:
+            raise GuildFetchError(str(e)) from e
+
+        try:
+            return response.json()
+        except ValueError as e:
+            raise GuildFetchError(f"unexpected response shape: {e}") from e
+
+
+async def get_guild_channels(
+    bot_token: str, guild_id: int, *, transport: httpx.BaseTransport | None = None
+) -> list[dict]:
+    async with httpx.AsyncClient(transport=transport) as client:
+        try:
+            response = await client.get(
+                f"{DISCORD_API_BASE}/guilds/{guild_id}/channels",
+                headers={"Authorization": f"Bot {bot_token}"},
+            )
+            response.raise_for_status()
+        except httpx.HTTPError as e:
+            raise GuildFetchError(str(e)) from e
+
+        try:
+            return response.json()
+        except ValueError as e:
+            raise GuildFetchError(f"unexpected response shape: {e}") from e
+
+
+async def get_guild_roles(
+    bot_token: str, guild_id: int, *, transport: httpx.BaseTransport | None = None
+) -> list[dict]:
+    async with httpx.AsyncClient(transport=transport) as client:
+        try:
+            response = await client.get(
+                f"{DISCORD_API_BASE}/guilds/{guild_id}/roles",
+                headers={"Authorization": f"Bot {bot_token}"},
+            )
+            response.raise_for_status()
+        except httpx.HTTPError as e:
+            raise GuildFetchError(str(e)) from e
+
+        try:
+            return response.json()
+        except ValueError as e:
+            raise GuildFetchError(f"unexpected response shape: {e}") from e
+
+
+async def get_guild_member(
+    bot_token: str,
+    guild_id: int,
+    user_id: int,
+    *,
+    transport: httpx.BaseTransport | None = None,
+) -> dict:
+    async with httpx.AsyncClient(transport=transport) as client:
+        try:
+            response = await client.get(
+                f"{DISCORD_API_BASE}/guilds/{guild_id}/members/{user_id}",
+                headers={"Authorization": f"Bot {bot_token}"},
+            )
+            response.raise_for_status()
+        except httpx.HTTPError as e:
+            raise GuildFetchError(str(e)) from e
+
+        try:
+            return response.json()
+        except ValueError as e:
+            raise GuildFetchError(f"unexpected response shape: {e}") from e
+
+
+async def get_recent_channel_message(
+    bot_token: str, channel_id: int, *, transport: httpx.BaseTransport | None = None
+) -> dict | None:
+    """GET /channels/{id}/messages?limit=1 -- None if the channel has no
+    messages yet (inconclusive for the Message Content intent preflight
+    check, not a failure -- see wizard/preflight.py's
+    message_content_intent_ok).
+    """
+    async with httpx.AsyncClient(transport=transport) as client:
+        try:
+            response = await client.get(
+                f"{DISCORD_API_BASE}/channels/{channel_id}/messages",
+                headers={"Authorization": f"Bot {bot_token}"},
+                params={"limit": 1},
+            )
+            response.raise_for_status()
+        except httpx.HTTPError as e:
+            raise ChannelMessageFetchError(str(e)) from e
+
+        try:
+            messages = response.json()
+        except ValueError as e:
+            raise ChannelMessageFetchError(f"unexpected response shape: {e}") from e
+
+        return messages[0] if messages else None
 
 
 async def get_current_user_guilds(

@@ -1,0 +1,48 @@
+{% extends "wizard_base.html" %}
+{% block title %}Choose channels — Threadbare setup{% endblock %}
+{% block content %}
+<h1>Choose channels</h1>
+<p>Check the channels you want mirrored. Public/private and the bot's own access are
+computed below — message counts appear on the admin page once backfill completes.</p>
+{% if intent_status is not none %}
+  {% if intent_status %}
+  <p class="wizard-intent-ok">Message Content intent: enabled.</p>
+  {% else %}
+  <p class="wizard-intent-bad">Message Content intent looks disabled — messages arrived
+  with empty content. Enable it on the Bot tab in the developer portal.</p>
+  {% endif %}
+{% else %}
+<p class="wizard-intent-unknown">Message Content intent: not yet verifiable (no messages
+seen in a readable channel).</p>
+{% endif %}
+<form method="post" class="wizard-form">
+  <table class="wizard-channel-table">
+    <tr>
+      <th></th>
+      <th>Channel</th>
+      <th>Public</th>
+      <th>Bot access</th>
+    </tr>
+    {% for channel in channel_rows %}
+    <tr>
+      <td>
+        <input type="checkbox" name="indexed_channel_id" value="{{ channel.id }}"
+               {% if channel.indexed %}checked{% endif %}>
+      </td>
+      <td>{{ channel.name }}</td>
+      <td>{{ "yes" if channel.is_public else "no" }}</td>
+      <td>
+        {% if channel.bot_ok %}
+          ok
+        {% elif channel.overwrite_denied %}
+          denied by a channel/category overwrite
+        {% else %}
+          denied
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  <button type="submit">Continue</button>
+</form>
+{% endblock %}

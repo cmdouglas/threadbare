@@ -5,6 +5,7 @@ without a request context. web/app.py wires this into a before_request hook.
 AVAILABLE_THEMES = {
     "plain": "theme-plain.css",
     "subsilver": "theme-subsilver.css",
+    "vbulletin-dark": "theme-vbulletin-dark.css",
 }
 DEFAULT_THEME = "subsilver"
 

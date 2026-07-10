@@ -1,0 +1,265 @@
+/* vBulletin dark -- "the other half of forum nostalgia" (DESIGN.md §6):
+ * dark charcoal/navy panels, a saturated blue gradient header/category bar,
+ * rounded-cornered boxes with thin flat borders. Deliberately NOT a
+ * subSilver reskin -- subSilver is light-by-default with beveled
+ * (outset/inset) rectangular borders; this theme is dark-by-default with
+ * flat borders and real border-radius, which is the actual visual
+ * fingerprint that told the two forum families apart. Same CSS
+ * custom-property contract as theme-plain.css/theme-subsilver.css -- every
+ * theme only needs to override the :root values below over the same fixed
+ * semantic classed markup.
+ */
+
+:root {
+  --color-bg: #16191f;
+  --color-bg-alt: #1f242c;
+  --color-fg: #d7dbe0;
+  --color-fg-muted: #8a94a3;
+  --color-border: #2f3742;
+  --color-link: #5b9dd9;
+  --color-link-visited: #9a7fd4;
+  --color-accent: #2e6da4;
+  --color-accent-fg: #ffffff;
+  --color-danger: #e0554f;
+
+  --font-body: "Segoe UI", Tahoma, Arial, sans-serif;
+  --font-mono: Consolas, "Courier New", monospace;
+  --font-size-base: 0.875rem;
+  --font-size-small: 0.75rem;
+  --line-height-base: 1.5;
+
+  --space-xs: 0.25rem;
+  --space-sm: 0.5rem;
+  --space-md: 1rem;
+  --space-lg: 2rem;
+
+  --radius: 6px;
+  --border-width: 1px;
+  --container-max-width: 1000px;
+}
+
+/* Already dark by default -- this block is a near-no-op pass-through
+ * (matching theme-subsilver.css's own convention of always defining the
+ * block, even when there's little left to change) rather than a second,
+ * darker palette on top of an already-dark one.
+ */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg: #16191f;
+    --color-bg-alt: #1f242c;
+    --color-fg: #d7dbe0;
+  }
+}
+
+@media (prefers-contrast: more) {
+  :root {
+    --color-border: currentColor;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-fg);
+  font-family: var(--font-body);
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-base);
+}
+
+a {
+  color: var(--color-link);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+a:visited {
+  color: var(--color-link-visited);
+}
+
+.site-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+  background: linear-gradient(to bottom, #3a7cbf, #244f7a);
+  color: var(--color-accent-fg);
+  border-bottom: var(--border-width) solid var(--color-border);
+}
+
+.site-header .site-title {
+  color: var(--color-accent-fg);
+  font-weight: bold;
+  font-size: 1.15rem;
+  text-decoration: none;
+}
+
+.theme-switcher {
+  font-size: var(--font-size-small);
+  display: flex;
+  gap: var(--space-xs);
+}
+
+.theme-switcher a {
+  color: var(--color-accent-fg);
+}
+
+.site-main {
+  max-width: var(--container-max-width);
+  margin: 0 auto;
+  padding: var(--space-md);
+}
+
+.board-index,
+.board-topic-list,
+.board-week-list {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.board-row,
+.topic-row,
+.week-row {
+  border-bottom: var(--border-width) solid var(--color-border);
+}
+
+.board-row:nth-child(even),
+.topic-row:nth-child(even),
+.week-row:nth-child(even) {
+  background: var(--color-bg-alt);
+}
+
+.board-row td,
+.topic-row td,
+.week-row td {
+  padding: var(--space-sm);
+}
+
+.category-heading {
+  background: linear-gradient(to bottom, #3a7cbf, #1d3f63);
+  color: var(--color-accent-fg);
+  padding: var(--space-sm);
+  font-weight: bold;
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+
+.post {
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius);
+  padding: var(--space-md);
+  margin-bottom: var(--space-md);
+  background: var(--color-bg-alt);
+}
+
+.post-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  color: var(--color-fg-muted);
+  font-size: var(--font-size-small);
+  margin-bottom: var(--space-sm);
+  padding-bottom: var(--space-sm);
+  border-bottom: var(--border-width) solid var(--color-border);
+}
+
+.post-author {
+  font-weight: bold;
+  color: var(--color-link);
+}
+
+.reply-quote,
+.post-reply-quote blockquote {
+  border: var(--border-width) solid var(--color-border);
+  border-left: 3px solid var(--color-accent);
+  border-radius: var(--radius);
+  background: var(--color-bg);
+  padding: var(--space-sm);
+  color: var(--color-fg-muted);
+  margin: var(--space-sm) 0;
+}
+
+.mention {
+  color: var(--color-accent-fg);
+  background: var(--color-accent);
+  border-radius: var(--radius);
+  padding: 0 0.25em;
+}
+
+.spoiler summary {
+  cursor: pointer;
+  color: var(--color-fg-muted);
+}
+
+.reactions {
+  margin-top: var(--space-sm);
+}
+
+.reaction-badge {
+  display: inline-block;
+  border: var(--border-width) solid var(--color-border);
+  border-radius: 999px;
+  padding: 0.1em 0.6em;
+  margin-right: var(--space-xs);
+  font-size: var(--font-size-small);
+  background: var(--color-bg);
+}
+
+.embed {
+  border-left: 4px solid var(--embed-color, var(--color-border));
+  padding: var(--space-sm);
+  margin-top: var(--space-sm);
+  background: var(--color-bg);
+  border-radius: var(--radius);
+}
+
+.attachment img {
+  max-width: 100%;
+  border-radius: var(--radius);
+}
+
+.pagination {
+  display: flex;
+  gap: var(--space-sm);
+  align-items: center;
+  margin: var(--space-md) 0;
+  font-size: var(--font-size-small);
+}
+
+.search-form input[type="search"] {
+  font: inherit;
+  padding: var(--space-xs) var(--space-sm);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-bg);
+  color: var(--color-fg);
+}
+
+code, pre {
+  font-family: var(--font-mono);
+}
+
+pre {
+  background: var(--color-bg);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius);
+  padding: var(--space-sm);
+  overflow-x: auto;
+}

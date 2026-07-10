@@ -1,6 +1,6 @@
 import pytest
 
-from threadbare.config import ConfigError, Settings, load_settings
+from threadbare.config import ConfigError, Settings, get_database_url, is_configured, load_settings
 
 VALID_ENV = {
     "DISCORD_BOT_TOKEN": "fake-token",
@@ -89,3 +89,25 @@ def test_load_settings_rejects_blank_flask_secret_key():
 
     with pytest.raises(ConfigError, match="FLASK_SECRET_KEY"):
         load_settings(env)
+
+
+def test_get_database_url_returns_value_when_present():
+    env = {"DATABASE_URL": "postgresql://threadbare:threadbare@localhost:5432/threadbare_dev"}
+
+    assert get_database_url(env) == "postgresql://threadbare:threadbare@localhost:5432/threadbare_dev"
+
+
+def test_get_database_url_raises_when_missing():
+    with pytest.raises(ConfigError, match="DATABASE_URL"):
+        get_database_url({})
+
+
+def test_is_configured_true_for_full_env():
+    assert is_configured(VALID_ENV) is True
+
+
+def test_is_configured_false_when_discord_bot_token_missing():
+    env = dict(VALID_ENV)
+    del env["DISCORD_BOT_TOKEN"]
+
+    assert is_configured(env) is False

@@ -3,38 +3,29 @@ from dataclasses import dataclass
 import discord
 import psycopg
 
+from threadbare.discord_permissions import (
+    READ_MESSAGE_HISTORY,
+    REQUIRED_PERMISSIONS,
+    VIEW_CHANNEL,
+    compute_is_public,
+)
 from threadbare.sync_worker import repository
 from threadbare.sync_worker.discord_types import OverwriteLike
 
-# Discord permission bit flags (Discord API docs, PERMISSIONS bitwise flags).
-VIEW_CHANNEL = 1 << 10
-READ_MESSAGE_HISTORY = 1 << 16
-
-REQUIRED_PERMISSIONS = VIEW_CHANNEL | READ_MESSAGE_HISTORY
-
-
-def _apply_overwrite(permissions: int, overwrite: OverwriteLike | None) -> int:
-    if overwrite is None:
-        return permissions
-    return (permissions & ~overwrite.deny) | overwrite.allow
-
-
-def compute_is_public(
-    default_role_permissions: int,
-    category_overwrite: OverwriteLike | None,
-    channel_overwrite: OverwriteLike | None,
-) -> bool:
-    """Whether @everyone can view the channel and read its history.
-
-    Resolves Discord's overwrite precedence for the @everyone role: guild
-    base permissions -> category @everyone overwrite -> channel @everyone
-    overwrite. The channel overwrite is applied last, so a bit set there
-    always wins over the same bit set at the category level.
-    """
-    permissions = default_role_permissions
-    permissions = _apply_overwrite(permissions, category_overwrite)
-    permissions = _apply_overwrite(permissions, channel_overwrite)
-    return (permissions & REQUIRED_PERMISSIONS) == REQUIRED_PERMISSIONS
+# VIEW_CHANNEL/READ_MESSAGE_HISTORY/REQUIRED_PERMISSIONS/compute_is_public
+# now live in the top-level, dependency-free threadbare.discord_permissions
+# (so the web app's setup wizard can reuse them without importing discord.py
+# into the web process) -- re-exported here so every existing caller of
+# this module keeps working unchanged.
+__all__ = [
+    "VIEW_CHANNEL",
+    "READ_MESSAGE_HISTORY",
+    "REQUIRED_PERMISSIONS",
+    "compute_is_public",
+    "refresh_channel_public_status",
+    "everyone_overwrite",
+    "should_sync",
+]
 
 
 async def refresh_channel_public_status(

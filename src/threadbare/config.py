@@ -74,3 +74,35 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         discord_oauth_redirect_uri=oauth_redirect_uri,
         flask_secret_key=flask_secret_key,
     )
+
+
+def get_database_url(env: Mapping[str, str] | None = None) -> str:
+    """DATABASE_URL alone, raising ConfigError only for this one var --
+    unlike load_settings(), which is all-or-nothing across every Discord
+    config value too. Used by web/cli.py's wizard-mode boot path:
+    DATABASE_URL is assumed always present (container-network Postgres, not
+    something a mod hand-enters -- DESIGN.md §8), so wizard mode can reach
+    Postgres to persist its own progress even before any Discord config
+    exists.
+    """
+    if env is None:
+        from dotenv import load_dotenv
+
+        load_dotenv()
+        env = os.environ
+
+    database_url = env.get("DATABASE_URL", "").strip()
+    if not database_url:
+        raise ConfigError("Invalid configuration:\n  - DATABASE_URL is required")
+    return database_url
+
+
+def is_configured(env: Mapping[str, str] | None = None) -> bool:
+    """True iff load_settings(env) would succeed -- web/cli.py's branch
+    point between wizard mode and normal mode.
+    """
+    try:
+        load_settings(env)
+    except ConfigError:
+        return False
+    return True

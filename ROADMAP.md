@@ -114,14 +114,23 @@ Everything here targets a single Discord server, public (`@everyone`-readable) c
     to make more than one theme reachable): `web/themes.py`'s `resolve_theme()` (query param →
     cookie → default), wired into `app.py` via `before_request`/`context_processor`/`after_request`,
     a `<nav class="theme-switcher">` in `base.html`. Unit, integration, and e2e tested.
-- [ ] vBulletin dark
+- [x] vBulletin dark
+  - `web/static/theme-vbulletin-dark.css`: dark charcoal/navy palette, a saturated blue
+    gradient header/category bar, rounded (`--radius: 6px`) boxes with thin flat borders —
+    deliberately not a subSilver reskin (subSilver is light-by-default with beveled
+    `outset`/`inset` rectangles; this is dark-by-default with real border-radius, the actual
+    visual fingerprint distinguishing the two forum families). Same CSS custom-property
+    contract; needs no changes to the switcher (`web/themes.py`/`app.py`/`base.html` already
+    iterate `AVAILABLE_THEMES` generically — confirmed, not assumed, before writing this).
+    Unit, integration, and e2e tested.
 - [ ] Terminal (green-on-black monospace)
 - [x] Plain (reference implementation for future theme authors)
   - Already existed from §4 (`theme-plain.css` doubled as the CSS-variable-contract reference);
     now selectable via the theme switcher above rather than being the only stylesheet.
-- [x] `prefers-contrast` and `prefers-reduced-motion` support across both shipped themes so far
-  - Present in both `theme-plain.css` and `theme-subsilver.css`; still needed in vBulletin
-    dark/Terminal when those land.
+- [x] `prefers-contrast` and `prefers-reduced-motion` support across all three shipped themes
+      so far
+  - Present in `theme-plain.css`, `theme-subsilver.css`, and `theme-vbulletin-dark.css`; still
+    needed in Terminal when it lands.
 
 ## 6. Access control (~1 day)
 
@@ -151,13 +160,60 @@ Everything here targets a single Discord server, public (`@everyone`-readable) c
 
 ## 7. Setup wizard (~1 day)
 
-- [ ] First-run detection (unconfigured install serves the wizard, not the forum)
-- [ ] Guided bot-creation walkthrough with inline screenshots
-- [ ] Bot invite URL generation (`bot` scope, minimal permissions: `View Channels` + `Read Message History`)
-- [ ] Preflight checks (§8.2): Message Content intent, per-channel permission verification, OAuth redirect URI round-trip, token shape/identity validation
-- [ ] Channel list with indexing toggles, computed public/gated status, estimated message counts
-- [ ] Resumable wizard state (safe to abandon and re-run)
-- [ ] Generated mod-facing pitch kit (what's stored, how deletions propagate, admin page link)
+- [x] First-run detection (unconfigured install serves the wizard, not the forum)
+  - `config.is_configured()`/`get_database_url()` (purely additive; `load_settings()` itself
+    untouched, so the sync worker's own boot behavior is unaffected). `web/cli.py`'s `main()`
+    branches on it: normal path is byte-for-byte what it was before; unconfigured path builds
+    `web/wizard_app.py`'s standalone mini Flask app (not a blueprint on `create_app()`, since
+    that factory and its `before_request` hooks assume a fully populated `Settings`) wrapped in
+    a new `web/app_switcher.py::AppSwitcher` — a mutable WSGI dispatcher that lets the process
+    drop out of wizard mode into the real forum app in place once `.env` is written, with no
+    restart. Proven end-to-end by an e2e test that finishes the wizard and then confirms `/`
+    is served by the real app's login gate afterward.
+- [x] Guided bot-creation walkthrough — **text + numbered steps, not screenshots** (a deliberate
+  call: authentic Discord developer-portal screenshots aren't something this pass could
+  produce, and stale placeholder images seemed worse than clear numbered copy reusing
+  `DEVELOPMENT.md`'s already-battle-tested portal-navigation wording verbatim).
+- [x] Bot invite URL generation (`bot` scope, minimal permissions: `View Channels` + `Read Message History`)
+  - `wizard/invite.py::build_invite_url`, reusing `discord_permissions.REQUIRED_PERMISSIONS`
+    (66560) rather than a second hand-derived value. The guild isn't asked for by hand (which
+    would require enabling Developer Mode) — the wizard auto-detects which guild the bot landed
+    in via a bot-token `GET /users/@me/guilds` call once the mod confirms the invite.
+- [x] Preflight checks (§8.2): Message Content intent, per-channel permission verification, OAuth redirect URI round-trip, token shape/identity validation
+  - `wizard/preflight.py::compute_bot_effective_permissions`/`compute_channel_permission_table`
+    resolve the *bot's own* effective permissions per channel (base → category overwrites →
+    channel overwrites, with an Administrator short-circuit), distinguishing "guild-level grant
+    insufficient" from "a specific overwrite denies the bot" per DESIGN.md §8.2 — the
+    correctness-critical core of this feature, given the most thorough fixture coverage in the
+    milestone. Token shape/identity via a new bot-token `GET /users/@me` call
+    (`discord_rest.get_bot_user`). The OAuth redirect URI round-trip is the *real* thing, not a
+    synthetic check: the wizard's `/oauth/callback` route is registered at the same literal path
+    `auth_bp` uses in production, so the URI a mod registers in the developer portal never needs
+    to change once the wizard hands off.
+- [x] Channel list with indexing toggles, computed public/gated status
+  - **"Estimated message counts" deliberately dropped**: no per-channel count query exists
+    anywhere in this codebase, Discord's REST API has no such endpoint, and computing one would
+    mean paginating full history — exactly what the wizard exists to avoid before a mod has
+    confirmed the indexed set. Copy instead points at the admin page once backfill completes.
+- [x] Resumable wizard state (safe to abandon and re-run)
+  - New singleton `wizard_state` table (migration `0005`, `worker_heartbeat`'s proven
+    singleton-row idiom) persists every *non-secret* value collected mid-wizard (client ID,
+    redirect URI, guild ID, channel confirmations) — resilient to a completely abandoned and
+    later-resumed session. Deliberately stores **no secrets**: the bot token and OAuth client
+    secret live only in the wizard's ephemeral Flask session between steps, so losing that
+    session (a restarted web process, a closed tab) only ever costs re-pasting those two
+    values, never redoing the guided walkthrough, the bot invite, or channel confirmations —
+    `wizard/steps.py::resolve_resume_step` is what notices a secret went missing and bounces a
+    request back to whichever step re-collects it. E2e tested for both ordinary
+    bookmark/back-button resume and this session-loss scenario specifically (a real redirect-
+    loop bug was found and fixed while writing that test — see the code review for detail).
+  - **"Re-run the wizard" against an already-configured install is explicitly out of scope** —
+    the user asked for this to be deferred pending a decision on what should authorize it (the
+    same Manage Server check `/admin/` uses? something stricter, since it can rewrite
+    `.env`/secrets?). `wizard_state` is never deleted and `is_configured()` still exists, so
+    adding a real entry point later is additive, not a redesign, but no route/button exists yet.
+- [x] Generated mod-facing pitch kit (what's stored, how deletions propagate, admin page link)
+  - `/pitch-kit` — pure template, no new data beyond what DESIGN.md §8.3 already specifies.
 
 ## 8. Deployment (~1–1.5 days, CDK severable as its own 0.5 day)
 
