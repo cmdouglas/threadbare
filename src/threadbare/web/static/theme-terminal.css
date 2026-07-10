@@ -1,0 +1,250 @@
+/* Terminal -- green-on-black monospace BBS mode (DESIGN.md §6), the most
+ * stylistically distinct of the four shipped themes: --font-body itself is
+ * the monospace stack (every other theme only uses it for code/pre), so
+ * the whole page reads like a terminal session, not just its code blocks.
+ * No gradients, no drop shadows, no rounded corners -- real terminal UIs
+ * don't have those, so headers/category bars use inverse video (green
+ * background, black text) instead. Same CSS custom-property contract as
+ * the other three themes; only the :root values below plus a couple of
+ * monochrome-flavored overrides differ.
+ */
+
+:root {
+  --color-bg: #0a0e0a;
+  --color-bg-alt: #10160f;
+  --color-fg: #33ff33;
+  --color-fg-muted: #1f9c1f;
+  --color-border: #2a5c2a;
+  --color-link: #33ff33;
+  --color-link-visited: #26cc26;
+  --color-accent: #33ff33;
+  --color-accent-fg: #0a0e0a;
+  --color-danger: #ff5555;
+
+  --font-body: ui-monospace, "Courier New", Consolas, monospace;
+  --font-mono: ui-monospace, "Courier New", Consolas, monospace;
+  --font-size-base: 0.9375rem;
+  --font-size-small: 0.8125rem;
+  --line-height-base: 1.45;
+
+  --space-xs: 0.25rem;
+  --space-sm: 0.5rem;
+  --space-md: 1rem;
+  --space-lg: 2rem;
+
+  --radius: 0px;
+  --border-width: 1px;
+  --container-max-width: 960px;
+}
+
+/* Already dark-on-black by default -- a near-no-op pass-through, matching
+ * the other two dark-by-default themes' own convention.
+ */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg: #0a0e0a;
+    --color-fg: #33ff33;
+  }
+}
+
+@media (prefers-contrast: more) {
+  :root {
+    --color-fg: #55ff55;
+    --color-border: currentColor;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-fg);
+  font-family: var(--font-body);
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-base);
+}
+
+a {
+  color: var(--color-link);
+  text-decoration: underline;
+}
+
+a:visited {
+  color: var(--color-link-visited);
+}
+
+.site-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+  background: var(--color-accent);
+  color: var(--color-accent-fg);
+  border-bottom: var(--border-width) solid var(--color-border);
+}
+
+.site-header .site-title {
+  color: var(--color-accent-fg);
+  font-weight: bold;
+  text-decoration: none;
+}
+
+.site-header .site-title::before {
+  content: "> ";
+}
+
+.theme-switcher {
+  font-size: var(--font-size-small);
+  display: flex;
+  gap: var(--space-xs);
+}
+
+.theme-switcher a {
+  color: var(--color-accent-fg);
+}
+
+.site-main {
+  max-width: var(--container-max-width);
+  margin: 0 auto;
+  padding: var(--space-md);
+}
+
+.board-index,
+.board-topic-list,
+.board-week-list {
+  width: 100%;
+  border-collapse: collapse;
+  border: var(--border-width) solid var(--color-border);
+}
+
+.board-row,
+.topic-row,
+.week-row {
+  border-bottom: var(--border-width) solid var(--color-border);
+}
+
+.board-row td,
+.topic-row td,
+.week-row td {
+  padding: var(--space-xs) var(--space-sm);
+}
+
+.category-heading {
+  background: var(--color-accent);
+  color: var(--color-accent-fg);
+  padding: var(--space-xs) var(--space-sm);
+  font-weight: bold;
+}
+
+.post {
+  border: var(--border-width) solid var(--color-border);
+  padding: var(--space-md);
+  margin-bottom: var(--space-md);
+  background: var(--color-bg-alt);
+}
+
+.post-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  color: var(--color-fg-muted);
+  font-size: var(--font-size-small);
+  margin-bottom: var(--space-sm);
+  padding-bottom: var(--space-sm);
+  border-bottom: var(--border-width) dashed var(--color-border);
+}
+
+.post-author {
+  font-weight: bold;
+  color: var(--color-fg);
+}
+
+.post-author::before {
+  content: "@";
+  color: var(--color-fg-muted);
+}
+
+.reply-quote,
+.post-reply-quote blockquote {
+  border-left: 2px solid var(--color-border);
+  padding-left: var(--space-sm);
+  color: var(--color-fg-muted);
+  margin: var(--space-sm) 0;
+}
+
+.reply-quote::before,
+.post-reply-quote blockquote::before {
+  content: "> ";
+}
+
+.mention {
+  color: var(--color-accent-fg);
+  background: var(--color-accent);
+  padding: 0 0.25em;
+}
+
+.spoiler summary {
+  cursor: pointer;
+  color: var(--color-fg-muted);
+}
+
+.reactions {
+  margin-top: var(--space-sm);
+}
+
+.reaction-badge {
+  display: inline-block;
+  border: var(--border-width) solid var(--color-border);
+  padding: 0.1em 0.6em;
+  margin-right: var(--space-xs);
+  font-size: var(--font-size-small);
+}
+
+.embed {
+  border: var(--border-width) solid var(--embed-color, var(--color-border));
+  padding: var(--space-sm);
+  margin-top: var(--space-sm);
+}
+
+.attachment img {
+  max-width: 100%;
+  border: var(--border-width) solid var(--color-border);
+}
+
+.pagination {
+  display: flex;
+  gap: var(--space-sm);
+  align-items: center;
+  margin: var(--space-md) 0;
+  font-size: var(--font-size-small);
+}
+
+.search-form input[type="search"] {
+  font: inherit;
+  padding: var(--space-xs) var(--space-sm);
+  border: var(--border-width) solid var(--color-border);
+  background: var(--color-bg);
+  color: var(--color-fg);
+}
+
+code, pre {
+  font-family: var(--font-mono);
+}
+
+pre {
+  background: var(--color-bg-alt);
+  border: var(--border-width) solid var(--color-border);
+  padding: var(--space-sm);
+  overflow-x: auto;
+}

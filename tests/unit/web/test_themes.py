@@ -6,6 +6,11 @@ def test_vbulletin_dark_theme_is_registered_and_selectable():
     assert resolve_theme(query_param="vbulletin-dark", cookie_value=None) == "vbulletin-dark"
 
 
+def test_terminal_theme_is_registered_and_selectable():
+    assert "terminal" in AVAILABLE_THEMES
+    assert resolve_theme(query_param="terminal", cookie_value=None) == "terminal"
+
+
 def test_resolve_theme_returns_default_when_nothing_set():
     assert resolve_theme(query_param=None, cookie_value=None) == DEFAULT_THEME
 

@@ -35,3 +35,11 @@ def test_query_param_theme_sets_cookie_and_switches_to_vbulletin_dark(client):
     assert b"theme-vbulletin-dark.css" in resp.data
     set_cookie_headers = resp.headers.get_all("Set-Cookie")
     assert any("theme=vbulletin-dark" in header for header in set_cookie_headers)
+
+
+def test_query_param_theme_sets_cookie_and_switches_to_terminal(client):
+    resp = client.get("/?theme=terminal")
+
+    assert b"theme-terminal.css" in resp.data
+    set_cookie_headers = resp.headers.get_all("Set-Cookie")
+    assert any("theme=terminal" in header for header in set_cookie_headers)

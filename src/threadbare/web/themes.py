@@ -6,6 +6,7 @@ AVAILABLE_THEMES = {
     "plain": "theme-plain.css",
     "subsilver": "theme-subsilver.css",
     "vbulletin-dark": "theme-vbulletin-dark.css",
+    "terminal": "theme-terminal.css",
 }
 DEFAULT_THEME = "subsilver"
 

@@ -144,3 +144,13 @@ def test_vbulletin_dark_theme_is_reachable_via_query_param(page, live_server, se
 
     response = page.request.get(f"{live_server}{href}")
     assert response.status == 200
+
+
+def test_terminal_theme_is_reachable_via_query_param(page, live_server, seeded):
+    page.goto(f"{live_server}/?theme=terminal")
+
+    href = page.locator("link[rel=stylesheet]").get_attribute("href")
+    assert "theme-terminal.css" in href
+
+    response = page.request.get(f"{live_server}{href}")
+    assert response.status == 200

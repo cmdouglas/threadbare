@@ -123,14 +123,20 @@ Everything here targets a single Discord server, public (`@everyone`-readable) c
     contract; needs no changes to the switcher (`web/themes.py`/`app.py`/`base.html` already
     iterate `AVAILABLE_THEMES` generically — confirmed, not assumed, before writing this).
     Unit, integration, and e2e tested.
-- [ ] Terminal (green-on-black monospace)
+- [x] Terminal (green-on-black monospace)
+  - `web/static/theme-terminal.css`: the most stylistically distinct of the four — `--font-body`
+    itself is the monospace stack (every other theme only uses it for `code`/`pre`), near-black
+    background, phosphor-green foreground used for both text and links (real terminals don't
+    distinguish link color by hue), `--radius: 0`, no gradients/shadows — headers and category
+    bars are inverse-video (green background, black text) instead. Same CSS custom-property
+    contract; no switcher/app.py/base.html changes needed (confirmed generic, as with vBulletin
+    dark). Unit, integration, and e2e tested.
 - [x] Plain (reference implementation for future theme authors)
   - Already existed from §4 (`theme-plain.css` doubled as the CSS-variable-contract reference);
     now selectable via the theme switcher above rather than being the only stylesheet.
-- [x] `prefers-contrast` and `prefers-reduced-motion` support across all three shipped themes
-      so far
-  - Present in `theme-plain.css`, `theme-subsilver.css`, and `theme-vbulletin-dark.css`; still
-    needed in Terminal when it lands.
+- [x] `prefers-contrast` and `prefers-reduced-motion` support across all four shipped themes
+  - Present in `theme-plain.css`, `theme-subsilver.css`, `theme-vbulletin-dark.css`, and
+    `theme-terminal.css` — all four themes in v1's scope (§6) are now shipped.
 
 ## 6. Access control (~1 day)
 
