@@ -23,6 +23,7 @@ class FakeSink:
         self.written_ids: list[int] = []
         self.deleted_ids: list[int] | None = None
         self.reconciled_channel_id: int | None = None
+        self.commit_count = 0
 
     async def write_message(self, message, *, channel_id: int) -> None:
         self.written_ids.append(message.id)
@@ -35,6 +36,9 @@ class FakeSink:
 
     async def mark_reconciled(self, channel_id: int) -> None:
         self.reconciled_channel_id = channel_id
+
+    async def commit(self) -> None:
+        self.commit_count += 1
 
 
 async def test_reconcile_upserts_every_fetched_message():
@@ -108,3 +112,19 @@ async def test_reconcile_converges_after_simulated_downtime():
     assert sink.deleted_ids == [999]
     assert result.upserted == 2
     assert result.deleted == 1
+
+
+async def test_reconcile_commits_once_per_page_plus_once_after_reconcile():
+    # Guards against regressing to a single trailing commit: a crash mid-sweep
+    # should only lose the in-flight page, not the whole sweep.
+    fetcher = FakeFetcher(
+        {
+            100: [FakeMessage(id=101), FakeMessage(id=102)],
+            102: [FakeMessage(id=103)],
+        }
+    )
+    sink = FakeSink(local_ids=set())
+
+    await reconcile_channel(fetcher, sink, channel_id=10, after=100, batch_size=2)
+
+    assert sink.commit_count == 3  # 2 page commits + 1 final commit

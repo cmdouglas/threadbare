@@ -44,6 +44,8 @@ class BackfillSink(Protocol):
         self, channel_id: int, *, last_message_id: int | None, complete: bool
     ) -> None: ...
 
+    async def commit(self) -> None: ...
+
 
 def _estimate_attachment_url_expiry() -> datetime:
     # Discord's signed CDN URLs expire in ~24h (DESIGN.md §3); we don't parse
@@ -169,6 +171,9 @@ class RepositoryBackfillSink:
             self._conn, channel_id, last_message_id=last_message_id, complete=complete
         )
 
+    async def commit(self) -> None:
+        await self._conn.commit()
+
 
 async def backfill_channel(
     fetcher: HistoryFetcher,
@@ -201,6 +206,7 @@ async def backfill_channel(
         await sink.set_checkpoint(
             channel_id, last_message_id=checkpoint, complete=progress.complete
         )
+        await sink.commit()
         after = checkpoint
 
         if progress.complete:

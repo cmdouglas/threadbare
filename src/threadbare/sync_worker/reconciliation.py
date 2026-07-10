@@ -68,6 +68,8 @@ class ReconciliationSink(Protocol):
 
     async def mark_reconciled(self, channel_id: int) -> None: ...
 
+    async def commit(self) -> None: ...
+
 
 class RepositoryReconciliationSink:
     """The real ReconciliationSink. Reuses RepositoryBackfillSink for writes
@@ -89,6 +91,9 @@ class RepositoryReconciliationSink:
 
     async def mark_reconciled(self, channel_id: int) -> None:
         await repository.mark_channel_reconciled(self._conn, channel_id)
+
+    async def commit(self) -> None:
+        await self._writer.commit()
 
 
 async def reconcile_channel(
@@ -114,6 +119,8 @@ async def reconcile_channel(
             await sink.write_message(message, channel_id=channel_id)
             remote_ids.add(message.id)
 
+        await sink.commit()
+
         progress = advance_backfill_progress(
             batch_message_ids=[m.id for m in batch], requested_limit=batch_size
         )
@@ -127,6 +134,7 @@ async def reconcile_channel(
         await sink.delete_messages(list(stale_ids))
 
     await sink.mark_reconciled(channel_id)
+    await sink.commit()
     return ReconciliationResult(upserted=len(remote_ids), deleted=len(stale_ids))
 
 

@@ -33,6 +33,7 @@ class FakeSink:
         self.written_message_ids: list[int] = []
         self._checkpoint = initial_checkpoint
         self.complete: bool | None = None
+        self.commit_count = 0
 
     async def get_checkpoint(self, channel_id: int) -> int | None:
         return self._checkpoint
@@ -43,6 +44,9 @@ class FakeSink:
     async def set_checkpoint(self, channel_id: int, *, last_message_id, complete: bool) -> None:
         self._checkpoint = last_message_id
         self.complete = complete
+
+    async def commit(self) -> None:
+        self.commit_count += 1
 
 
 async def test_backfill_starts_from_beginning_when_no_checkpoint():
@@ -101,3 +105,20 @@ async def test_backfill_marks_complete_and_keeps_checkpoint_on_empty_final_page(
 
     assert sink.complete is True
     assert sink._checkpoint == 2  # not clobbered to None by the empty page
+
+
+async def test_backfill_commits_once_per_batch():
+    # Guards against regressing to a single trailing commit: a crash between
+    # batches should only lose the in-flight batch, not everything before it.
+    author = object()
+    fetcher = FakeFetcher(
+        {
+            None: [FakeMessage(id=1, author=author), FakeMessage(id=2, author=author)],
+            2: [FakeMessage(id=3, author=author)],  # partial batch -> done
+        }
+    )
+    sink = FakeSink()
+
+    await backfill_channel(fetcher, sink, channel_id=10, batch_size=2)
+
+    assert sink.commit_count == len(fetcher.calls) == 2
