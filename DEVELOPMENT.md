@@ -67,7 +67,10 @@ Setup (one-time, manual — this lives outside the repo):
 4. Invite the bot to your test server using the `bot` scope with only `View Channels` + `Read Message History` permissions — the same minimal set the setup wizard will eventually request for real installs.
 5. Under OAuth2, add a redirect URI for local dev (e.g. `http://localhost:5000/oauth/callback`).
 6. Copy the bot token, OAuth client ID/secret, and your test server's guild ID into your local `.env` — never into `.env.example`, and never commit them.
-7. Optional, once the sync worker exists: a small script to post a batch of synthetic messages into the test server, for exercising pagination/backfill/search at volume.
+7. Create a webhook on the test server's `#general` (Server Settings → Integrations → Webhooks → New Webhook), and copy its URL into `.env` as `DISCORD_TEST_WEBHOOK_URL`. This is the test-only posting actor for `tests/live_discord/test_full_lifecycle.py`, which posts, edits, and deletes messages to exercise the sync worker's live gateway handlers (`on_message`, `on_raw_message_edit`, `on_raw_message_delete`) end to end.
+
+   A webhook rather than a second bot application: `discord.Webhook.from_url(...)` gives full CRUD over its own messages (`.send()` / `.edit_message()` / `.delete_message()`) via the same discord.py client, with no second application to register, no extra token to manage, and — critically — no need to grant the sync-worker bot itself any write permissions. The bot's permissions stay exactly `View Channels` + `Read Message History`, matching what the real onboarding wizard requests; the webhook is a separate identity that only this test suite uses.
+8. Optional, once the sync worker exists: a small script to post a batch of synthetic messages into the test server, for exercising pagination/backfill/search at volume.
 
 ## Configuration
 
