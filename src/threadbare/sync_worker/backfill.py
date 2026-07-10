@@ -327,6 +327,45 @@ async def backfill_guild(
     )
 
 
+async def discover_archived_threads(pool, *, channels: list) -> set[int]:
+    """Pure discovery (upsert thread metadata + collect ids), no message
+    backfill — the standalone form of what backfill_guild_threads() used to
+    do inline, now also reusable by reconcile_guild_threads(): a thread
+    created during a gateway outage needs the same archived-thread walk
+    regardless of which orchestrator (one-shot startup backfill, or nightly
+    recurring reconciliation) eventually finds it.
+
+    Only public archived threads are discoverable here — private archived
+    threads the bot hasn't joined require Manage Threads, which the sync
+    worker deliberately doesn't request (minimal-permissions design,
+    DESIGN.md §3 / ROADMAP.md §7). This is a permanent completeness gap for
+    private threads, not a bug.
+    """
+    thread_ids: set[int] = set()
+
+    async def _collect_for(channel) -> None:
+        if channel.type is discord.ChannelType.category or not hasattr(channel, "archived_threads"):
+            return
+        async with pool.connection() as conn:
+            flags = await repository.get_channel_sync_flags(conn, channel.id)
+        if flags is None or not should_sync(is_public=flags[0], indexed=flags[1]):
+            return
+        # ForumChannel.archived_threads() has no private= kwarg at all (forum
+        # threads can never be private) — TextChannel.archived_threads()
+        # does. Calling the wrong shape raises TypeError.
+        if isinstance(channel, discord.ForumChannel):
+            thread_iter = channel.archived_threads()
+        else:
+            thread_iter = channel.archived_threads(private=False)
+        async for thread in thread_iter:
+            async with pool.connection() as conn:
+                await repository.upsert_thread(conn, transform.thread_to_row(thread))
+            thread_ids.add(thread.id)
+
+    await asyncio.gather(*(_collect_for(channel) for channel in channels))
+    return thread_ids
+
+
 async def backfill_guild_threads(
     client: discord.Client,
     pool,
@@ -340,38 +379,17 @@ async def backfill_guild_threads(
     """Backfills every in-scope thread in a guild: active threads
     (rediscovered here via discover_active_threads — not assumed
     pre-populated by on_ready, so this is self-contained) plus archived
-    threads (discovered here, folded into the same walk as backfilling them
-    — no reason to separate "discover this archived thread" from "backfill
-    its messages" into two REST-call passes over the same generator).
+    threads (via discover_archived_threads).
 
     Shares `semaphore` with channel backfill rather than a separate budget:
     a guild can have far more threads than channels, and two independent
     semaphores could jointly exceed the pool's connection limit at once.
-
-    Only public archived threads are discoverable here — private archived
-    threads the bot hasn't joined require Manage Threads, which the sync
-    worker deliberately doesn't request (minimal-permissions design,
-    DESIGN.md §3 / ROADMAP.md §7). This is a permanent completeness gap for
-    private threads, not a bug.
     """
     thread_ids: set[int] = set()
 
     async with pool.connection() as conn:
         thread_ids.update(await discover_active_threads(client, conn, guild_id=guild_id))
-
-    async def _collect_archived_threads_for(channel) -> None:
-        if channel.type in SKIPPED_CHANNEL_TYPES or not hasattr(channel, "archived_threads"):
-            return
-        async with pool.connection() as conn:
-            flags = await repository.get_channel_sync_flags(conn, channel.id)
-        if flags is None or not should_sync(is_public=flags[0], indexed=flags[1]):
-            return
-        async for thread in channel.archived_threads(private=False):
-            async with pool.connection() as conn:
-                await repository.upsert_thread(conn, transform.thread_to_row(thread))
-            thread_ids.add(thread.id)
-
-    await asyncio.gather(*(_collect_archived_threads_for(channel) for channel in channels))
+    thread_ids.update(await discover_archived_threads(pool, channels=channels))
 
     async def _backfill_one(thread_id: int) -> None:
         async with semaphore, pool.connection() as conn:

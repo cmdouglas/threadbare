@@ -70,16 +70,6 @@ async def test_get_channel_sync_flags_returns_is_public_and_indexed(db_conn):
     assert await repository.get_channel_sync_flags(db_conn, 10) == (True, True)
 
 
-async def test_get_channel_sync_flags_and_type_returns_none_for_unknown_channel(db_conn):
-    assert await repository.get_channel_sync_flags_and_type(db_conn, 999) is None
-
-
-async def test_get_channel_sync_flags_and_type_returns_flags_and_type(db_conn):
-    await _seed_guild_and_channel(db_conn, is_public=True)
-
-    assert await repository.get_channel_sync_flags_and_type(db_conn, 10) == (True, True, 0)
-
-
 async def test_get_channel_is_public_returns_none_for_unknown_channel(db_conn):
     assert await repository.get_channel_is_public(db_conn, 999) is None
 
@@ -187,6 +177,66 @@ async def test_upsert_thread_updates_mutable_fields_but_not_parent_or_created_at
     assert row["archived"] is True
     assert row["message_count"] == 9
     assert row["created_at"] == original_created_at
+
+
+async def _seed_thread_message(conn, *, message_id, thread_id, author_id=100):
+    await conn.execute(
+        "INSERT INTO users (id, display_name) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+        (author_id, "someone"),
+    )
+    await conn.execute(
+        """
+        INSERT INTO messages (id, thread_id, author_id, content, posted_at)
+        VALUES (%s, %s, %s, %s, now())
+        """,
+        (message_id, thread_id, author_id, "hello"),
+    )
+
+
+async def test_get_thread_message_ids_since_returns_ids_after_cutoff(db_conn):
+    await _seed_guild_and_channel(db_conn, is_public=True)
+    await _seed_thread(db_conn, thread_id=3000, parent_channel_id=10)
+    await _seed_thread_message(db_conn, message_id=101, thread_id=3000)
+    await _seed_thread_message(db_conn, message_id=102, thread_id=3000)
+
+    assert await repository.get_thread_message_ids_since(db_conn, 3000, 100) == {101, 102}
+    assert await repository.get_thread_message_ids_since(db_conn, 3000, 101) == {102}
+
+
+async def test_mark_thread_reconciled_sets_last_reconciled_at(db_conn):
+    await _seed_guild_and_channel(db_conn, is_public=True)
+    await _seed_thread(db_conn, thread_id=3000, parent_channel_id=10)
+
+    await repository.mark_thread_reconciled(db_conn, 3000)
+
+    async with db_conn.cursor() as cur:
+        await cur.execute("SELECT last_reconciled_at FROM thread_sync_state WHERE thread_id = 3000")
+        row = await cur.fetchone()
+    assert row is not None
+    assert row["last_reconciled_at"] is not None
+
+
+async def test_delete_thread_removes_the_row_and_cascades(db_conn):
+    await _seed_guild_and_channel(db_conn, is_public=True)
+    await _seed_thread(db_conn, thread_id=3000, parent_channel_id=10)
+    await _seed_thread_message(db_conn, message_id=101, thread_id=3000)
+    await repository.set_thread_backfill_checkpoint(
+        db_conn, 3000, last_message_id=101, complete=True
+    )
+
+    await repository.delete_thread(db_conn, 3000)
+
+    async with db_conn.cursor() as cur:
+        await cur.execute("SELECT count(*) AS n FROM threads WHERE id = 3000")
+        assert (await cur.fetchone())["n"] == 0
+        await cur.execute("SELECT count(*) AS n FROM messages WHERE thread_id = 3000")
+        assert (await cur.fetchone())["n"] == 0
+        await cur.execute("SELECT count(*) AS n FROM thread_sync_state WHERE thread_id = 3000")
+        assert (await cur.fetchone())["n"] == 0
+
+
+async def test_delete_thread_is_a_no_op_for_unknown_id(db_conn):
+    await repository.delete_thread(db_conn, 999999)  # should not raise
 
 
 async def test_purge_channel_content_removes_messages_and_cascades(db_conn):

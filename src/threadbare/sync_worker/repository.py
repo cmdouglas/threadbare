@@ -141,25 +141,6 @@ async def get_channel_sync_flags(
     return row["is_public"], row["indexed"]
 
 
-async def get_channel_sync_flags_and_type(
-    conn: psycopg.AsyncConnection, channel_id: int
-) -> tuple[bool, bool, int] | None:
-    """(is_public, indexed, type) for a known channel, or None if unseen.
-    Separate from get_channel_sync_flags (used by channel backfill/
-    reconciliation) because only thread discovery/backfill needs the type,
-    to cheaply tell a forum-parented thread apart without a fresh Discord
-    fetch.
-    """
-    async with conn.cursor() as cur:
-        await cur.execute(
-            "SELECT is_public, indexed, type FROM channels WHERE id = %s", (channel_id,)
-        )
-        row = await cur.fetchone()
-    if row is None:
-        return None
-    return row["is_public"], row["indexed"], row["type"]
-
-
 async def get_backfill_checkpoint(conn: psycopg.AsyncConnection, channel_id: int) -> int | None:
     async with conn.cursor() as cur:
         await cur.execute(
@@ -218,6 +199,35 @@ async def set_thread_backfill_checkpoint(
         """,
         (thread_id, last_message_id, complete),
     )
+
+
+async def get_thread_message_ids_since(
+    conn: psycopg.AsyncConnection, thread_id: int, after: int
+) -> set[int]:
+    async with conn.cursor() as cur:
+        await cur.execute(
+            "SELECT id FROM messages WHERE thread_id = %s AND id > %s", (thread_id, after)
+        )
+        rows = await cur.fetchall()
+    return {row["id"] for row in rows}
+
+
+async def mark_thread_reconciled(conn: psycopg.AsyncConnection, thread_id: int) -> None:
+    await conn.execute(
+        """
+        INSERT INTO thread_sync_state (thread_id, last_reconciled_at)
+        VALUES (%s, now())
+        ON CONFLICT (thread_id) DO UPDATE SET last_reconciled_at = EXCLUDED.last_reconciled_at
+        """,
+        (thread_id,),
+    )
+
+
+async def delete_thread(conn: psycopg.AsyncConnection, thread_id: int) -> None:
+    """Hard delete — messages/thread_sync_state cascade (ON DELETE CASCADE).
+    A no-op if the id is unknown, matching delete_message's convention.
+    """
+    await conn.execute("DELETE FROM threads WHERE id = %s", (thread_id,))
 
 
 async def delete_message(conn: psycopg.AsyncConnection, message_id: int) -> None:

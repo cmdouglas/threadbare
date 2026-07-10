@@ -109,6 +109,73 @@ async def test_handle_message_edit_for_a_thread_reuses_existing_thread_row(db_co
         assert (await cur.fetchone())["content"] == "edited!"
 
 
+async def test_handle_thread_upsert_inserts_a_row_for_an_in_scope_parent(db_conn):
+    await _seed_guild_and_channel(db_conn, channel_id=10, is_public=True)
+    thread = FakeThread(id=3000, parent_id=10, name="a thread")
+
+    await events.handle_thread_upsert(db_conn, thread)
+
+    async with db_conn.cursor() as cur:
+        await cur.execute("SELECT parent_channel_id, name FROM threads WHERE id = 3000")
+        row = await cur.fetchone()
+    assert row == {"parent_channel_id": 10, "name": "a thread"}
+
+
+async def test_handle_thread_upsert_is_a_no_op_for_a_non_public_parent(db_conn):
+    await _seed_guild_and_channel(db_conn, channel_id=10, is_public=False)
+    thread = FakeThread(id=3000, parent_id=10)
+
+    await events.handle_thread_upsert(db_conn, thread)
+
+    async with db_conn.cursor() as cur:
+        await cur.execute("SELECT count(*) AS n FROM threads WHERE id = 3000")
+        assert (await cur.fetchone())["n"] == 0
+
+
+async def test_handle_thread_upsert_is_a_no_op_for_an_unknown_parent(db_conn):
+    thread = FakeThread(id=3000, parent_id=999)
+
+    await events.handle_thread_upsert(db_conn, thread)
+
+    async with db_conn.cursor() as cur:
+        await cur.execute("SELECT count(*) AS n FROM threads WHERE id = 3000")
+        assert (await cur.fetchone())["n"] == 0
+
+
+async def test_handle_thread_upsert_updates_an_existing_thread(db_conn):
+    await _seed_guild_and_channel(db_conn, channel_id=10, is_public=True)
+    await events.handle_thread_upsert(db_conn, FakeThread(id=3000, parent_id=10, name="original"))
+
+    await events.handle_thread_upsert(
+        db_conn, FakeThread(id=3000, parent_id=10, name="renamed", archived=True)
+    )
+
+    async with db_conn.cursor() as cur:
+        await cur.execute("SELECT name, archived FROM threads WHERE id = 3000")
+        row = await cur.fetchone()
+    assert row == {"name": "renamed", "archived": True}
+
+
+async def test_handle_thread_delete_removes_the_row_and_cascades(db_conn):
+    await _seed_guild_and_channel(db_conn, channel_id=10, is_public=True)
+    await events.handle_thread_upsert(db_conn, FakeThread(id=3000, parent_id=10))
+    await events.handle_message_create(
+        db_conn, FakeMessage(id=100, author=FakeAuthor(id=1)), thread_id=3000
+    )
+
+    await events.handle_thread_delete(db_conn, 3000)
+
+    async with db_conn.cursor() as cur:
+        await cur.execute("SELECT count(*) AS n FROM threads WHERE id = 3000")
+        assert (await cur.fetchone())["n"] == 0
+        await cur.execute("SELECT count(*) AS n FROM messages WHERE thread_id = 3000")
+        assert (await cur.fetchone())["n"] == 0
+
+
+async def test_handle_thread_delete_is_a_no_op_for_unknown_id(db_conn):
+    await events.handle_thread_delete(db_conn, 999999)  # should not raise
+
+
 async def test_handle_message_delete_removes_the_row(db_conn):
     await _seed_guild_and_channel(db_conn)
     await events.handle_message_create(

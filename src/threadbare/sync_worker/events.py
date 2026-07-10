@@ -11,7 +11,11 @@ import discord
 from threadbare.sync_worker import repository, transform
 from threadbare.sync_worker.backfill import RepositoryBackfillSink
 from threadbare.sync_worker.discord_types import MessageLike, ThreadLike
-from threadbare.sync_worker.permissions import everyone_overwrite, refresh_channel_public_status
+from threadbare.sync_worker.permissions import (
+    everyone_overwrite,
+    refresh_channel_public_status,
+    should_sync,
+)
 
 
 async def handle_message_create(
@@ -56,6 +60,25 @@ async def handle_message_delete(conn, message_id: int) -> None:
 
 async def handle_bulk_message_delete(conn, message_ids: list[int]) -> None:
     await repository.delete_messages(conn, message_ids)
+
+
+async def handle_thread_upsert(conn, thread: ThreadLike) -> None:
+    """New/renamed/(un)archived thread. Gated on the parent channel being
+    in-scope (should_sync), mirroring discover_active_threads's own gate —
+    unlike handle_message_create's unconditional thread upsert (which always
+    accompanies a real message write and self-heals via that write's own
+    path next time), this can fire with no message ever having been
+    written, so it needs its own gate to avoid seeding a row for a thread
+    whose parent isn't supposed to be mirrored.
+    """
+    flags = await repository.get_channel_sync_flags(conn, thread.parent_id)
+    if flags is None or not should_sync(is_public=flags[0], indexed=flags[1]):
+        return
+    await repository.upsert_thread(conn, transform.thread_to_row(thread))
+
+
+async def handle_thread_delete(conn, thread_id: int) -> None:
+    await repository.delete_thread(conn, thread_id)
 
 
 async def handle_channel_permissions_changed(conn, channel: discord.abc.GuildChannel) -> None:

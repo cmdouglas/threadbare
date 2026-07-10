@@ -66,14 +66,6 @@ async def discover_channels(client: discord.Client, conn, *, guild_id: int) -> l
     for channel in others:
         await repository.upsert_channel(conn, _row_for(channel, guild_id=guild.id))
 
-        # Forum channels have no top-level history (everything lives in
-        # threads — a separate roadmap item from channel backfill) — leave
-        # is_public at its schema default (false) rather than computing it,
-        # matching backfill.py's SKIPPED_CHANNEL_TYPES treatment of forums as
-        # a non-content container.
-        if channel.type is discord.ChannelType.forum:
-            continue
-
         category_overwrite = everyone_overwrite(channel.category) if channel.category else None
         await refresh_channel_public_status(
             conn,
@@ -89,26 +81,22 @@ async def discover_channels(client: discord.Client, conn, *, guild_id: int) -> l
 
 async def discover_active_threads(client: discord.Client, conn, *, guild_id: int) -> list[int]:
     """Upserts a threads row for every active thread whose parent channel is
-    public+indexed and not forum-type (forum-parented threads are a separate
-    roadmap item). One non-paginated REST call (Guild.active_threads())
-    covers every active thread the bot's connection can see, public and
-    private, in one shot. Run on every on_ready, same as discover_channels:
-    cheap, and — absent thread lifecycle live events, deferred until
-    reconciliation covers threads — the only mechanism catching a thread
-    created while disconnected. Returns the ids of the threads upserted.
+    public+indexed — including forum-parented threads, gated the same way as
+    any other channel's threads (a forum "post" is just a discord.Thread).
+    One non-paginated REST call (Guild.active_threads()) covers every active
+    thread the bot's connection can see, public and private, in one shot.
+    Run on every on_ready, same as discover_channels: cheap, and — absent
+    thread lifecycle live events, deferred until reconciliation covers
+    threads — the only mechanism catching a thread created while
+    disconnected. Returns the ids of the threads upserted.
     """
     guild = client.get_guild(guild_id) or await client.fetch_guild(guild_id)
     threads = await guild.active_threads()
 
     discovered_ids = []
     for thread in threads:
-        flags_and_type = await repository.get_channel_sync_flags_and_type(conn, thread.parent_id)
-        if flags_and_type is None:
-            continue
-        is_public, indexed, channel_type = flags_and_type
-        if not should_sync(is_public=is_public, indexed=indexed):
-            continue
-        if channel_type == discord.ChannelType.forum.value:
+        flags = await repository.get_channel_sync_flags(conn, thread.parent_id)
+        if flags is None or not should_sync(is_public=flags[0], indexed=flags[1]):
             continue
         await repository.upsert_thread(conn, transform.thread_to_row(thread))
         discovered_ids.append(thread.id)

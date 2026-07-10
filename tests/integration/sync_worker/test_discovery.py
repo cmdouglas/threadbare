@@ -169,13 +169,14 @@ async def test_discover_channels_computes_is_public_per_channel(db_conn):
     assert await repository.get_channel_is_public(db_conn, 11) is False
 
 
-async def test_discover_channels_never_computes_is_public_for_forum_channels(db_conn):
-    # Forum channels have no top-level history (everything lives in threads,
-    # a separate roadmap item) — backfill.py already treats them as a
-    # skipped container type; discovery must not compute is_public for them
-    # either, or thread discovery couldn't tell "forum, skip" from "public
-    # text channel" just by reading is_public back.
-    role = FakeRole(BOTH_REQUIRED)  # would otherwise compute is_public=True
+async def test_discover_channels_computes_is_public_for_forum_channels_like_any_other_channel(
+    db_conn,
+):
+    # Forum channels have no top-level *messages* of their own (everything
+    # lives in child threads) but they're still a real channel with real
+    # @everyone overwrites — is_public must compute normally so thread
+    # discovery/backfill can gate forum-parented threads off it.
+    role = FakeRole(BOTH_REQUIRED)
     guild = FakeGuild(id=1, name="Test Guild", default_role=role, channels=[])
     forum = FakeChannel(id=10, name="a-forum", guild=guild, type=discord.ChannelType.forum)
     guild._channels = [forum]
@@ -183,12 +184,12 @@ async def test_discover_channels_never_computes_is_public_for_forum_channels(db_
 
     discovered = await discover_channels(client, db_conn, guild_id=1)
 
-    assert discovered == []
+    assert discovered == [10]
     async with db_conn.cursor() as cur:
         await cur.execute("SELECT is_public FROM channels WHERE id = 10")
         row = await cur.fetchone()
     assert row is not None
-    assert row["is_public"] is False
+    assert row["is_public"] is True
 
 
 async def test_discover_channels_does_not_clobber_indexed_on_rediscovery(db_conn):
@@ -264,7 +265,7 @@ async def test_discover_active_threads_skips_a_thread_of_a_non_indexed_channel(d
     assert discovered == []
 
 
-async def test_discover_active_threads_skips_a_thread_of_a_forum_channel(db_conn):
+async def test_discover_active_threads_discovers_a_thread_of_a_forum_channel(db_conn):
     role = FakeRole(BOTH_REQUIRED)
     guild = FakeGuild(id=1, name="Test Guild", default_role=role, channels=[])
     forum = FakeChannel(id=10, name="a-forum", guild=guild, type=discord.ChannelType.forum)
@@ -272,14 +273,14 @@ async def test_discover_active_threads_skips_a_thread_of_a_forum_channel(db_conn
     guild._channels = [forum]
     guild._threads = [thread]
     client = FakeClient(guild)
-    await discover_channels(client, db_conn, guild_id=1)
+    await discover_channels(client, db_conn, guild_id=1)  # now computes is_public=True for forum
 
     discovered = await discover_active_threads(client, db_conn, guild_id=1)
 
-    assert discovered == []
+    assert discovered == [3000]
     async with db_conn.cursor() as cur:
         await cur.execute("SELECT count(*) AS n FROM threads WHERE id = 3000")
-        assert (await cur.fetchone())["n"] == 0
+        assert (await cur.fetchone())["n"] == 1
 
 
 async def test_discover_active_threads_skips_a_thread_of_an_undiscovered_channel(db_conn):

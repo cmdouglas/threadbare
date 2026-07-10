@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 import discord
 
 from threadbare.db.pool import create_pool
-from threadbare.sync_worker.backfill import SKIPPED_CHANNEL_TYPES, backfill_guild_threads
+from threadbare.sync_worker.backfill import backfill_guild_threads
 
 
 @dataclass
@@ -43,6 +43,27 @@ class FakeChannel:
         self._archived = list(archived)
 
     async def archived_threads(self, *, private=False):
+        for thread in self._archived:
+            yield thread
+
+
+class FakeForumChannel(discord.ForumChannel):
+    """Shaped like a real ForumChannel for isinstance purposes — its
+    archived_threads() takes no private= kwarg at all (forum threads can
+    never be private), unlike FakeChannel's TextChannel-shaped fake above.
+    Subclassing the real discord.ForumChannel (rather than duck-typing) is
+    what lets this test actually exercise the isinstance branch in
+    discover_archived_threads() and catch a TypeError if that branch were
+    wrong — a plain duck-typed fake accepting `private` unconditionally is
+    exactly why this bug wasn't caught before.
+    """
+
+    def __init__(self, id, archived=()):
+        self.id = id
+        self._type = discord.ChannelType.forum.value  # ForumChannel.type is a read-only property
+        self._archived = list(archived)
+
+    async def archived_threads(self, *, limit=100, before=None):
         for thread in self._archived:
             yield thread
 
@@ -184,8 +205,18 @@ async def test_backfill_guild_threads_skips_threads_of_a_non_public_channel(
     await _cleanup(db_conn)
 
 
-async def test_backfill_guild_threads_skips_threads_of_a_forum_channel(db_conn, test_database_url):
-    assert discord.ChannelType.forum in SKIPPED_CHANNEL_TYPES
+async def test_backfill_guild_threads_discovers_and_backfills_threads_of_a_forum_channel(
+    db_conn, test_database_url
+):
+    # Forum "posts" are just discord.Thread objects parented to a
+    # ForumChannel — both active and archived ones should be discovered and
+    # backfilled like any other channel's threads, once the parent forum's
+    # own is_public is true. Uses FakeForumChannel (a real ForumChannel
+    # subclass) rather than a duck-typed fake so archived_threads() actually
+    # exercises the isinstance branch discover_archived_threads() needs —
+    # ForumChannel.archived_threads() has no private= kwarg at all, unlike
+    # TextChannel's, and a duck-typed fake accepting it unconditionally is
+    # exactly why this signature mismatch went uncaught before.
     await _seed_channel(
         db_conn,
         guild_id=1,
@@ -196,10 +227,14 @@ async def test_backfill_guild_threads_skips_threads_of_a_forum_channel(db_conn, 
     await db_conn.commit()
 
     active = FakeThread(id=3000, parent_id=10)
-    forum_channel = FakeChannel(id=10, type=discord.ChannelType.forum)
+    archived = FakeThread(id=3001, parent_id=10, archived=True)
+    forum_channel = FakeForumChannel(id=10, archived=[archived])
     guild = FakeGuild([forum_channel], active_threads=[active])
     client = FakeClient(guild)
-    fetcher = ThreadKeyedFetcher({})
+    author = FakeAuthor(id=1)
+    fetcher = ThreadKeyedFetcher(
+        {3000: [FakeMessage(id=100, author=author)], 3001: [FakeMessage(id=101, author=author)]}
+    )
 
     pool = create_pool(test_database_url)
     await pool.open()
@@ -216,10 +251,11 @@ async def test_backfill_guild_threads_skips_threads_of_a_forum_channel(db_conn, 
     finally:
         await pool.close()
 
-    assert 3000 not in fetcher.calls
     async with db_conn.cursor() as cur:
-        await cur.execute("SELECT count(*) AS n FROM threads")
-        assert (await cur.fetchone())["n"] == 0
+        await cur.execute("SELECT id FROM threads ORDER BY id")
+        assert {row["id"] for row in await cur.fetchall()} == {3000, 3001}
+        await cur.execute("SELECT id FROM messages ORDER BY id")
+        assert {row["id"] for row in await cur.fetchall()} == {100, 101}
 
     await _cleanup(db_conn)
 

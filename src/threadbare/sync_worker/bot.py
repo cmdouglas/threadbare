@@ -136,6 +136,37 @@ class ThreadbareClient(discord.Client):
         async with self.pool.connection() as conn:
             await events.handle_bulk_message_delete(conn, list(payload.message_ids))
 
+    async def on_thread_create(self, thread: discord.Thread) -> None:
+        # Reliable for genuine new threads (fires only when THREAD_CREATE's
+        # newly_created flag is set) — unlike update/delete, there's no
+        # cached-vs-uncached ambiguity here since this is the first time the
+        # client learns of the thread at all.
+        if self.pool is None or thread.guild.id != self.guild_id:
+            return
+        async with self.pool.connection() as conn:
+            await events.handle_thread_upsert(conn, thread)
+
+    async def on_raw_thread_update(self, payload: discord.RawThreadUpdateEvent) -> None:
+        # The raw variant always fires, even for threads discord.py hasn't
+        # cached — the cooked on_thread_update doesn't (same reasoning as
+        # using on_raw_message_edit over on_message_edit elsewhere).
+        if self.pool is None or payload.guild_id != self.guild_id:
+            return
+        thread = payload.thread
+        if thread is None:
+            thread = await self.fetch_channel(payload.thread_id)
+        async with self.pool.connection() as conn:
+            await events.handle_thread_upsert(conn, thread)
+
+    async def on_raw_thread_delete(self, payload: discord.RawThreadDeleteEvent) -> None:
+        # The raw variant always fires; the cooked on_thread_delete only
+        # fires for already-cached threads — exactly the unreliability
+        # ROADMAP.md flags for thread deletes.
+        if self.pool is None or payload.guild_id != self.guild_id:
+            return
+        async with self.pool.connection() as conn:
+            await events.handle_thread_delete(conn, payload.thread_id)
+
     async def on_guild_channel_update(
         self, before: discord.abc.GuildChannel, after: discord.abc.GuildChannel
     ) -> None:
