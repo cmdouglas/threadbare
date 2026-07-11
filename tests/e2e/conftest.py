@@ -37,7 +37,6 @@ from werkzeug.serving import make_server
 
 from threadbare.config import Settings
 from threadbare.web.app import create_app
-from threadbare.web.app_switcher import AppSwitcher
 from threadbare.web.db import PerRequestConnectionSource
 from threadbare.web.wizard_app import create_wizard_app
 
@@ -165,12 +164,23 @@ class WizardLiveServer:
 
 @pytest.fixture
 def unconfigured_live_server(tmp_path):
-    """A live server running the wizard app behind an AppSwitcher (the same
-    wiring web/cli.py's main() uses in production) against a freshly
-    truncated wizard_state/channels/guilds -- so each test starts from a
-    genuinely first-run state, independent of the main live_server
-    fixture's session-scoped data, and finishing the wizard for real swaps
-    the SAME base_url over to the real forum app with no restart.
+    """A live server running the wizard app directly (no AppSwitcher --
+    retired along with the in-process hot-swap it existed for; see
+    web/cli.py's on_complete and tests/e2e/test_web_process_restart.py)
+    against a freshly truncated wizard_state/channels/guilds -- so each test
+    starts from a genuinely first-run state, independent of the main
+    live_server fixture's session-scoped data.
+
+    on_complete here only records the Settings it was called with, proving
+    the wizard's half of the hand-off (writes .env, invokes on_complete with
+    the right values). It deliberately does NOT reproduce production's
+    os._exit-based restart -- doing that in-process would kill the test
+    runner itself. That half (a real process exiting and a fresh one coming
+    up already configured, serving under gunicorn) is proven for real, as a
+    real subprocess, in test_web_process_restart.py instead; the actual
+    "Docker restarts the container automatically" glue between the two
+    halves is a Compose-level behavior, verified manually against a real
+    `docker compose up` rather than reimplemented in the test harness.
     """
     conn = psycopg.connect(TEST_DATABASE_URL)
     with conn.cursor() as cur:
@@ -188,12 +198,9 @@ def unconfigured_live_server(tmp_path):
 
     def on_complete(settings):
         completed["settings"] = settings
-        new_pool = PerRequestConnectionSource(settings.database_url)
-        switcher.switch_to(create_app(settings, new_pool))
 
     wizard_app = create_wizard_app(pool, on_complete=on_complete, env_file_path=env_path)
-    switcher = AppSwitcher(wizard_app)
-    server = make_server("127.0.0.1", 0, switcher)
+    server = make_server("127.0.0.1", 0, wizard_app)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     yield WizardLiveServer(

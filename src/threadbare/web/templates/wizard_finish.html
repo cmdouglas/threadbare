@@ -5,10 +5,14 @@
 <h1>Setup already complete</h1>
 <p>This install is already configured.</p>
 {% elif just_finished %}
+<meta http-equiv="refresh" content="8;url=/">
 <h1>All set</h1>
-<p>Configuration was written. The forum is now available without restarting this
-process. <strong>Restart the sync worker</strong> to pick up the new configuration and
-start backfilling.</p>
+<p>Configuration was written. This process is restarting itself now to pick it up — under
+Docker Compose that happens automatically within a few seconds and this page will reload
+into the forum's own login screen on its own. (Running bare, outside Docker? There's no
+restart policy to bring it back — rerun <code>threadbare-web</code> yourself.)
+<strong>Restart the sync worker</strong> too, once the web app is back — it has no way to
+pick up the new configuration on its own.</p>
 <p><a href="{{ url_for('wizard.pitch_kit') }}">Mod-facing summary</a> — worth sharing
 with the rest of the mod team.</p>
 {% else %}

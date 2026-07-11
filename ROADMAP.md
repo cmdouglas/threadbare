@@ -250,9 +250,11 @@ Everything here targets a single Discord server, public (`@everyone`-readable) c
   - **Not exercised**: Caddy's real Let's Encrypt handshake, which needs a real domain + public
     DNS. Flagged as an untested-in-practice gap rather than silently assumed to work, matching
     this project's convention (see DESIGN.md §10's other flagged gaps).
-- [ ] Option A docs: self-host (Tailscale / Cloudflare Tunnel guidance) — **deferred**, by
-      explicit user choice, not discovered-late scope. Same compose stack as Option B; only the
-      reachability docs (Tailscale/Cloudflare Tunnel guidance) are missing.
+- [x] Option A docs: self-host (Tailscale / Cloudflare Tunnel guidance)
+  - New `### Option A` section in `README.md`, same compose stack as Option B — only the
+    reachability guidance differs (Tailscale for a handful of trusted users, Cloudflare Tunnel
+    for public reachability without port-forwarding, classic port-forward/dynamic DNS
+    documented but discouraged since a churning residential IP breaks the OAuth redirect URI).
 - [x] Option B docs: VPS (recommended default) — provision → Docker → DNS → done
   - New `## Deployment` section in `README.md`: provision Ubuntu LTS → install Docker + Compose
     → clone → `cp .env.example .env` (fill in `POSTGRES_PASSWORD`/`THREADBARE_DOMAIN` only —
@@ -260,20 +262,73 @@ Everything here targets a single Discord server, public (`@everyone`-readable) c
     visit the domain. Gotchas called out explicitly per DESIGN.md §8.4: unattended security
     upgrades, Postgres staying internal-only, a VPS snapshot as a stopgap for the (deferred)
     config backup job, and updating the OAuth redirect URI if the domain ever changes.
-- [ ] Option C: `deploy/cdk/` TypeScript CDK app (Fargate ×2, ALB+ACM for web only, Postgres sidecar w/ EBS, RDS as commented-out alt) — **deferred**, by explicit user choice.
+- [x] Option C: `deploy/cdk/` TypeScript CDK app (Fargate ×2, ALB+ACM for web only, Postgres sidecar w/ EBS, RDS as commented-out alt)
+  - `deploy/cdk/` (TypeScript, `aws-cdk-lib` v2): `NetworkStack` (public-subnet-only VPC,
+    `natGateways: 0`), `DatabaseStack` (Postgres on Fargate + a 20GB EBS volume via
+    `ecs.ServiceManagedVolume`, RDS sketched as a commented-out alternative), `WebStack` (ALB +
+    ACM + Fargate via `ApplicationLoadBalancedFargateService`), `SyncWorkerStack`
+    (`desiredCount: 1`, no load balancer at all, zero-inbound security group), and
+    `MigrateStack` (a one-shot `threadbare-migrate` task definition, not in DESIGN.md's literal
+    bullet list but added since the deployment can't function without it — mirrors
+    `docker-compose.yml`'s one-shot `migrate` service).
+  - **The setup wizard doesn't apply to this path, documented explicitly**: Fargate tasks share
+    no filesystem, so the wizard's `.env`-bind-mount hand-off (Options A/B) has nothing to write
+    to across separate `web`/`sync-worker` tasks. Discord config instead comes from an
+    operator-created `threadbare/app-config` Secrets Manager secret, populated before first
+    deploy — both tasks start already configured. See `deploy/cdk/README.md`.
+  - Two operator-provided secrets (`threadbare/database`, `threadbare/app-config`) rather than
+    CDK auto-generating and composing a `DATABASE_URL` from a separately-generated Postgres
+    password — avoids `SecretValue.unsafeUnwrap()`'s string-interpolation escape hatch, which
+    the CDK docs themselves discourage when avoidable. Documented as a deliberate simplicity
+    tradeoff, not a missing feature.
+  - **Verified**: `npm install && npx cdk synth` succeeds with zero errors and zero warnings,
+    producing the expected CloudFormation shape for all five stacks (spot-checked directly:
+    ALB/listener/target-group/service shape in `ThreadbareWeb`; correct
+    `command`/`secrets`/`environment` per task definition; `DesiredCount: 1` and no load-balancer
+    resources at all in `ThreadbareSyncWorker`).
+  - **Not verified, and explicitly flagged rather than assumed**: a real `cdk deploy` against an
+    AWS account — none is available in this environment. ALB reachability, ACM validation, and
+    the EBS volume actually attaching/persisting are unexercised. Recorded in `DESIGN.md` §10.
 - [ ] Nightly dump of Threadbare-native tables only (mod config, setup state) — no message
       backups — **deferred**, by explicit user choice, as its own follow-up (backup script +
       cron mechanism + retention pruning); the VPS docs note a manual VPS snapshot as a stopgap
       in the meantime.
-- [ ] **New follow-up, not part of v1's original checklist**: revisit the production web-server
-      choice. The compose stack currently runs `web` via the same `threadbare-web` entrypoint
-      used everywhere else (Werkzeug's built-in server, single process) rather than a real
-      multi-worker WSGI server like gunicorn, because the setup wizard's `AppSwitcher` (§7)
-      hot-swaps the running Flask app in-process once `.env` is written — that only works
-      within a single long-running process. Introducing a multi-worker server would need
-      redesigning wizard completion first (e.g. a restart-on-finish model instead of the
-      in-process swap). Fine for a single small community on a 2GB VPS; worth revisiting if
-      traffic ever justifies it.
+- [x] Production web-server revisit: gunicorn + a restart-on-finish wizard hand-off
+  - The compose stack previously ran `web` via Werkzeug's built-in dev server (single process)
+    because the setup wizard's `AppSwitcher` hot-swapped the running Flask app in-process once
+    `.env` was written — that only worked within a single long-running process, and a
+    multi-worker server forks separate OS processes the hot-swap couldn't reach.
+  - `web/cli.py` now launches gunicorn (via its documented `BaseApplication` custom-application
+    recipe, loading the already-built Flask app object directly) for the configured branch,
+    with worker count from a new `WEB_CONCURRENCY` env var (default 4) and the port itself now
+    overridable via a new `PORT` env var (needed for testing — the hardcoded production port,
+    5000, isn't reliably bindable in tests, per this project's own established note about macOS
+    AirPlay Receiver squatting it). `AppSwitcher` is deleted entirely (`web/app_switcher.py` and
+    its test) — nothing hot-swaps in-process anymore.
+  - New hand-off: the wizard's `on_complete` schedules a short-delayed `os._exit(0)` (giving the
+    "All set" response time to reach the browser) instead of swapping an app object. Docker
+    Compose's existing `restart: unless-stopped` policy on the `web` service brings the
+    container back up; `main()` re-checks `config.is_configured()`, now true, and takes the
+    gunicorn branch. Bare local `uv run threadbare-web` has no such restart policy — a developer
+    finishing the wizard there has to rerun the command themselves, an accepted tradeoff for a
+    one-time setup flow.
+  - `wizard_finish.html` now explains the self-restart and includes a JS-free meta-refresh back
+    to `/`, matching this project's no-unnecessary-JS convention (same idiom as the spoiler
+    `<details>` disclosure in §3).
+  - Tests: unit tests for the gunicorn wrapper class and the on_complete restart-scheduling
+    behavior; the e2e wizard-completion test now proves only the wizard's own half of the
+    hand-off (writes `.env`, invokes `on_complete`, shows restart messaging) since the
+    in-process app-swap it used to assert on is gone. A new, genuinely-subprocess e2e test
+    (`tests/e2e/test_web_process_restart.py`) proves the other half for real — a real
+    `threadbare-web` process, started fresh against an already-configured environment, serves
+    the real forum app's login gate via gunicorn (not an in-thread fake). What neither test
+    proves (deliberately, not a gap in disguise): that Docker Compose's `restart:
+    unless-stopped` policy itself actually restarts a container after `os._exit(0)` —
+    reimplementing Docker's own supervision behavior in the test harness wasn't worth it.
+    That link was verified manually instead: a real `docker compose build && up` (isolated
+    Compose project, the existing dev stack untouched) showed gunicorn's real boot banner (4
+    worker PIDs), and sending `SIGTERM` to the container's PID 1 showed Compose bringing it
+    back up with a fresh boot banner and worker set within ~2 seconds.
 
 ## v1 acceptance criteria
 

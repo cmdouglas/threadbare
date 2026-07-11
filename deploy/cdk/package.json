@@ -1,0 +1,21 @@
+{
+  "name": "threadbare-cdk",
+  "version": "0.1.0",
+  "private": true,
+  "description": "DESIGN.md §8.4 Option C: cloud deployment via infrastructure-as-code (Fargate x2, ALB+ACM for web, Postgres sidecar). See README.md in this directory for setup and known gaps.",
+  "scripts": {
+    "build": "tsc",
+    "synth": "cdk synth",
+    "watch": "tsc -w"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "aws-cdk": "^2.1130.0",
+    "ts-node": "^10.9.0",
+    "typescript": "~5.6.0"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "^2.261.0",
+    "constructs": "^10.0.0"
+  }
+}

@@ -9,10 +9,10 @@ Threadbare is a **cache**, not an archive. Deletions on Discord propagate to Thr
 ## Status
 
 v1 is built: sync worker, forum web app, four themes, the Discord OAuth login gate + mod
-admin page, and a guided first-run setup wizard are all in place. Docker Compose deployment
-and VPS hosting docs (below) are done too. See [`ROADMAP.md`](./ROADMAP.md) for exactly
-what's shipped, what's left (self-host and cloud/CDK hosting docs, a nightly config-table
-backup job), and in what order it was built.
+admin page, and a guided first-run setup wizard are all in place. Docker Compose deployment,
+self-host/VPS/cloud-CDK hosting docs (below), and a production-grade (gunicorn) web server are
+done too. See [`ROADMAP.md`](./ROADMAP.md) for exactly what's shipped, what's left (a nightly
+config-table backup job), and in what order it was built.
 
 ## Why
 
@@ -72,9 +72,12 @@ A $5–10/month instance (Hetzner, DigitalOcean, Vultr, etc.) is comfortable at 
 4. `docker compose up -d`.
 5. Visit `https://<your-domain>` — the setup wizard takes it from there (bot creation,
    preflight checks, the bot invite link, channel selection, then the OAuth login gate). When
-   it finishes, run `docker compose restart sync-worker` once — the web app already picks up
-   the new configuration in place with no restart, but the sync worker only reads config at
-   its own startup.
+   it finishes, the `web` container restarts itself automatically within a few seconds (the
+   wizard hands off by exiting the process; Compose's `restart: unless-stopped` policy brings
+   it back up already configured, now served by gunicorn instead of the wizard's dev server) —
+   the finish page redirects itself once that's done. You still need to run
+   `docker compose restart sync-worker` once by hand — it only reads configuration at its own
+   startup and has no way to notice the change on its own.
 
 Gotchas worth knowing before you go further:
 
@@ -89,13 +92,51 @@ Gotchas worth knowing before you go further:
 - If the domain ever changes, update `THREADBARE_DOMAIN` in `.env` **and** the OAuth redirect
   URI registered in the Discord developer portal — they have to match exactly.
 
-### Options A and C
+### Option A — Self-host on your own hardware
 
-Self-hosting on your own hardware (Tailscale/Cloudflare Tunnel guidance) and a cloud/CDK
-deployment path are both designed (see [`DESIGN.md` §8.4](./DESIGN.md#84-hosting-options)) but
-not yet documented here — tracked in [`ROADMAP.md`](./ROADMAP.md) §8. Option B's Docker Compose
-stack is the same stack either path would use; only the docs and (for Option C) an IaC template
-are missing.
+The cheapest option: run `docker compose up` on any machine that stays on — a desktop, a home
+server, or a Raspberry Pi–class box (the whole stack idles under 1GB RAM). Same
+`docker-compose.yml` as Option B; the only real difference is *reachability*.
+
+1. Install Docker + the Compose plugin on the machine, clone the repo, `cp .env.example .env`
+   and fill in `POSTGRES_PASSWORD` (`THREADBARE_DOMAIN` only matters once you've picked a
+   reachability option below).
+2. Pick how the outside world reaches the box:
+   - **Tailscale** — install the client on the box and on every device that should have
+     access. Zero config beyond that, and it's the simplest option for a handful of trusted
+     users (e.g. just the mod team). No public exposure at all.
+   - **Cloudflare Tunnel** — gives you a real public hostname with TLS and no port forwarding,
+     the better choice if the whole community should be able to reach it from anywhere. Point
+     `THREADBARE_DOMAIN` at the hostname Cloudflare gives you and run `cloudflared` alongside
+     the compose stack.
+   - Classic port-forwarding + dynamic DNS works too, but isn't recommended: residential IPs
+     churn, and every time yours changes you have to update both `THREADBARE_DOMAIN` and the
+     OAuth redirect URI registered in the Discord developer portal, or logins start failing
+     with an opaque error.
+3. `docker compose up -d`, then visit whichever hostname you set up — the setup wizard takes
+   it from there exactly as in Option B.
+
+A couple of things worth knowing:
+
+- If you're only ever accessing this from the same machine, `localhost` as the domain works
+  fine and needs none of the above — just skip straight to `docker compose up -d`.
+- The sync worker needs no inbound ports at all, ever — only the web app does, so Tailscale/
+  Cloudflare Tunnel only need to reach the `web` (really, `caddy`) container.
+- Some residential ISP terms technically prohibit "running a server." In practice this never
+  comes up at hobby scale, but it's worth knowing before you tell people about it.
+
+### Option C — Cloud via infrastructure-as-code
+
+A TypeScript CDK app lives in [`deploy/cdk/`](./deploy/cdk/README.md): Fargate for the web app
+and sync worker, an ALB + ACM certificate for the web app only, and Postgres as a Fargate
+service with an EBS-backed volume (RDS documented as a commented-out alternative). See that
+directory's own README for setup, secrets, and — importantly — why the first-run setup wizard
+doesn't apply to this path (Fargate tasks share no filesystem for it to write `.env` to).
+
+**Verified**: `cdk synth` produces valid CloudFormation for all five stacks. **Not verified**:
+a real `cdk deploy` — no AWS account is available in this environment, so ALB reachability,
+ACM validation, and the EBS volume actually attaching are unexercised. Flagged here rather than
+assumed working; see `DESIGN.md` §10.
 
 ## License
 

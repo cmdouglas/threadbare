@@ -89,7 +89,7 @@ def test_monkeypatch_is_visible_to_the_background_thread_server(
     assert page.url == f"{unconfigured_live_server.base_url}/invite"
 
 
-def test_wizard_first_run_completes_and_switches_to_the_real_forum_app(
+def test_wizard_first_run_completes_and_hands_off_for_restart(
     page, unconfigured_live_server, monkeypatch
 ):
     _stub_everything(monkeypatch, page)
@@ -127,9 +127,10 @@ def test_wizard_first_run_completes_and_switches_to_the_real_forum_app(
     settings = unconfigured_live_server.completed["settings"]
     assert settings.discord_bot_token == "real-bot-token"
 
-    # The AppSwitcher has now swapped in the real forum app in-process, with
-    # no server restart -- proven by "/" now redirecting through the forum's
-    # own login gate (a route that doesn't exist in the wizard app at all)
-    # and on to Discord's real OAuth authorize page.
-    page.goto(f"{base}/")
-    assert page.url.startswith("https://discord.com/oauth2/authorize")
+    # This process doesn't hot-swap to the real forum app in-process anymore
+    # (see conftest.py's unconfigured_live_server docstring) -- it tells the
+    # operator the app is restarting itself instead, via a JS-free
+    # meta-refresh back to "/". The actual restart-and-serve-the-real-app
+    # half is proven for real, as a real subprocess, in
+    # test_web_process_restart.py.
+    assert 'http-equiv="refresh"' in page.content()

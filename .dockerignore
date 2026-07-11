@@ -8,6 +8,13 @@ __pycache__
 tests/
 docker/
 docker-compose.dev.yml
+# deploy/cdk's own build/dependency output -- irrelevant to the app image,
+# and cdk.out nested under the repo root it's built from will otherwise
+# recursively copy itself into itself when CDK stages this directory as a
+# Docker build context (confirmed: an ENAMETOOLONG crash during `cdk synth`
+# without this exclusion).
+deploy/cdk/node_modules
+deploy/cdk/cdk.out
 DEVELOPMENT.md
 DESIGN.md
 ROADMAP.md
