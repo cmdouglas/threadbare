@@ -1,3 +1,4 @@
+import asyncio
 import os
 import sys
 import threading
@@ -5,7 +6,9 @@ import threading
 from gunicorn.app.base import BaseApplication
 from werkzeug.serving import run_simple
 
+import threadbare
 from threadbare import config
+from threadbare.db.migrate import MigrationError, check_schema_up_to_date
 from threadbare.web.app import create_app
 from threadbare.web.db import PerRequestConnectionSource
 from threadbare.web.wizard_app import create_wizard_app
@@ -50,11 +53,20 @@ def _run_gunicorn(app, host: str, port: int, workers: int) -> None:
 
 
 def main() -> None:
+    if "--version" in sys.argv[1:]:
+        print(f"threadbare {threadbare.__version__}")
+        raise SystemExit(0)
+
     host = os.environ.get("HOST", DEFAULT_HOST)
     port = int(os.environ.get("PORT", DEFAULT_PORT))
 
     if config.is_configured():
         settings = config.load_settings()
+        try:
+            asyncio.run(check_schema_up_to_date(settings.database_url))
+        except MigrationError as e:
+            print(e, file=sys.stderr)
+            raise SystemExit(1) from e
         # Not db.pool.create_pool()'s AsyncConnectionPool -- it doesn't survive
         # Flask's async_to_sync bridge (see web/db.py's docstring).
         pool = PerRequestConnectionSource(settings.database_url)
@@ -74,6 +86,13 @@ def main() -> None:
     except config.ConfigError as e:
         print(e, file=sys.stderr)
         raise SystemExit(1) from e
+
+    try:
+        asyncio.run(check_schema_up_to_date(database_url))
+    except MigrationError as e:
+        print(e, file=sys.stderr)
+        raise SystemExit(1) from e
+
     pool = PerRequestConnectionSource(database_url)
 
     def on_complete(new_settings: config.Settings) -> None:

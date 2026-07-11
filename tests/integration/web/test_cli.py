@@ -18,6 +18,7 @@ below for that handoff itself.
 """
 
 import psycopg
+import pytest
 
 from threadbare.web import cli
 
@@ -226,6 +227,64 @@ def test_main_configured_mode_uses_web_concurrency_env_var_when_set(
     cli.main()
 
     assert captured["workers"] == 2
+
+
+def test_main_configured_mode_exits_when_schema_check_fails(
+    monkeypatch, test_database_url, capsys
+):
+    monkeypatch.setattr("dotenv.load_dotenv", lambda *args, **kwargs: None)
+    monkeypatch.setenv("DATABASE_URL", test_database_url)
+    monkeypatch.setenv("DISCORD_BOT_TOKEN", "tok")
+    monkeypatch.setenv("DISCORD_CLIENT_ID", "cid")
+    monkeypatch.setenv("DISCORD_CLIENT_SECRET", "secret")
+    monkeypatch.setenv("DISCORD_OAUTH_REDIRECT_URI", "http://localhost:5000/oauth/callback")
+    monkeypatch.setenv("DISCORD_TEST_GUILD_ID", "1")
+    monkeypatch.setenv("FLASK_SECRET_KEY", "test-key")
+
+    async def fake_check_schema_up_to_date(dsn):
+        raise cli.MigrationError("1 pending migration(s) not yet applied: 9999_fake")
+
+    monkeypatch.setattr(cli, "check_schema_up_to_date", fake_check_schema_up_to_date)
+    monkeypatch.setattr(cli, "create_app", lambda settings, pool: object())
+    monkeypatch.setattr(cli, "_run_gunicorn", lambda app, host, port, workers: None)
+
+    with pytest.raises(SystemExit) as exc_info:
+        cli.main()
+
+    assert exc_info.value.code == 1
+    assert "9999_fake" in capsys.readouterr().err
+
+
+def test_main_wizard_mode_exits_when_schema_check_fails(monkeypatch, test_database_url, capsys):
+    conn = psycopg.connect(test_database_url)
+    with conn.cursor() as cur:
+        cur.execute("TRUNCATE wizard_state")
+    conn.commit()
+    conn.close()
+
+    monkeypatch.setattr("dotenv.load_dotenv", lambda *args, **kwargs: None)
+    for var in (
+        "DISCORD_BOT_TOKEN",
+        "DISCORD_CLIENT_ID",
+        "DISCORD_CLIENT_SECRET",
+        "DISCORD_OAUTH_REDIRECT_URI",
+        "DISCORD_TEST_GUILD_ID",
+        "FLASK_SECRET_KEY",
+    ):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("DATABASE_URL", test_database_url)
+
+    async def fake_check_schema_up_to_date(dsn):
+        raise cli.MigrationError("1 pending migration(s) not yet applied: 9999_fake")
+
+    monkeypatch.setattr(cli, "check_schema_up_to_date", fake_check_schema_up_to_date)
+    monkeypatch.setattr(cli, "run_simple", lambda *args, **kwargs: None)
+
+    with pytest.raises(SystemExit) as exc_info:
+        cli.main()
+
+    assert exc_info.value.code == 1
+    assert "9999_fake" in capsys.readouterr().err
 
 
 def test_main_wizard_on_complete_schedules_a_delayed_restart(monkeypatch, test_database_url):

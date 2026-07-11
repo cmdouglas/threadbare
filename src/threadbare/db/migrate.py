@@ -75,6 +75,30 @@ async def apply_migration(conn: psycopg.AsyncConnection, migration: Migration) -
     )
 
 
+async def check_schema_up_to_date(dsn: str, directory: Path = DEFAULT_MIGRATIONS_DIR) -> None:
+    """Raises MigrationError if any migration this code ships with hasn't
+    been applied to the database at `dsn` yet. Read-only sibling of
+    run_migrations() -- reuses the same discovery/applied-check machinery
+    but never calls apply_migration.
+
+    Called at boot by web/cli.py and sync_worker/cli.py so a forgotten
+    `threadbare-migrate` step fails fast and loudly with a clear error,
+    instead of surfacing later as scattered mid-request SQL errors against
+    columns/tables that don't exist yet.
+    """
+    discovered = discover_migrations(directory)
+    async with await psycopg.AsyncConnection.connect(dsn) as conn:
+        await _ensure_schema_migrations_table(conn)
+        applied = await _applied_migrations(conn)
+    pending = pending_migrations(discovered, applied)
+    if pending:
+        names = ", ".join(migration.version for migration in pending)
+        raise MigrationError(
+            f"{len(pending)} pending migration(s) not yet applied: {names}. "
+            "Run `threadbare-migrate` before starting this process."
+        )
+
+
 async def run_migrations(dsn: str, directory: Path = DEFAULT_MIGRATIONS_DIR) -> list[str]:
     discovered = discover_migrations(directory)
     applied_versions: list[str] = []
@@ -95,6 +119,12 @@ def main() -> None:
     import sys
 
     from dotenv import load_dotenv
+
+    import threadbare
+
+    if "--version" in sys.argv[1:]:
+        print(f"threadbare {threadbare.__version__}")
+        raise SystemExit(0)
 
     load_dotenv()
     dsn = os.environ.get("DATABASE_URL", "").strip()

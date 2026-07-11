@@ -3,6 +3,11 @@
 {% block content %}
 <h1>Admin</h1>
 
+<section class="admin-version">
+  <h2>Version</h2>
+  <p>Threadbare {{ app_version }} — schema: {{ schema_version or "no migrations applied" }}</p>
+</section>
+
 <section class="admin-sync-health">
   <h2>Sync health</h2>
   {% if heartbeat_stale %}

@@ -138,6 +138,22 @@ a real `cdk deploy` — no AWS account is available in this environment, so ALB 
 ACM validation, and the EBS volume actually attaching are unexercised. Flagged here rather than
 assumed working; see `DESIGN.md` §10.
 
+## Upgrading
+
+The full contract any future release must honor (additive-only migrations, config
+backward-compatibility, the app refusing to boot on a stale schema rather than misbehaving) is
+in [`DESIGN.md` §7](./DESIGN.md#upgrade-contract). In practice:
+
+- **Options A/B (Docker Compose)**: `./scripts/upgrade.sh` — fetches, fast-forwards, rebuilds,
+  and restarts the stack. Migrations apply automatically (the existing `depends_on` gate
+  already runs `migrate` before `web`/`sync-worker` start on every `docker compose up`).
+- **Option C (CDK)**: `./deploy/cdk/upgrade.sh -c ...` (same context flags as `cdk deploy`) —
+  deploys every stack, then automatically runs the migrate task via the run-command CDK
+  already prints, instead of you having to copy-paste it by hand.
+
+Either way, check the admin page's **Version** section (`/admin/`) afterward to confirm the
+running version and latest applied migration match what you expect.
+
 ## License
 
 TBD.

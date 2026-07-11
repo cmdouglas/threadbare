@@ -2,10 +2,13 @@ import hashlib
 from pathlib import Path
 
 import psycopg
+import pytest
 
 from threadbare.db.migrate import (
     Migration,
+    MigrationError,
     apply_migration,
+    check_schema_up_to_date,
     run_migrations,
 )
 from threadbare.db.migrate import _applied_migrations as applied_migrations
@@ -49,6 +52,27 @@ async def test_run_migrations_against_real_schema_is_idempotent(test_database_ur
 
     assert second_run == []
     assert isinstance(first_run, list)
+
+
+async def test_check_schema_up_to_date_passes_when_everything_applied(test_database_url):
+    # The real migrations directory is already fully applied against
+    # test_database_url by the time any test runs (test_run_migrations_...
+    # above proves that) -- so this should be a silent no-op.
+    await check_schema_up_to_date(test_database_url)
+
+
+async def test_check_schema_up_to_date_raises_when_a_migration_is_pending(
+    test_database_url, tmp_path
+):
+    # Points at a throwaway directory containing one migration that's
+    # nowhere in test_database_url's real schema_migrations table -- proves
+    # the "forgot to run threadbare-migrate" case fails loudly rather than
+    # being silently ignored. Read-only: never calls apply_migration, so
+    # this never actually creates the table it names.
+    (tmp_path / "9999_not_yet_applied.sql").write_text("CREATE TABLE never_applied (id int)")
+
+    with pytest.raises(MigrationError, match="9999_not_yet_applied"):
+        await check_schema_up_to_date(test_database_url, directory=tmp_path)
 
 
 async def test_initial_schema_tables_exist(db_conn):

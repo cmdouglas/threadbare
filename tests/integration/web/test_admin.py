@@ -1,5 +1,7 @@
 from datetime import UTC, datetime, timedelta
 
+import threadbare
+
 from .conftest import run
 
 
@@ -99,6 +101,20 @@ def test_admin_shows_healthy_status_when_heartbeat_is_recent(client, web_conn):
     resp = client.get("/admin/")
 
     assert b"sync-health-healthy" in resp.data
+
+
+def test_admin_index_shows_app_version_and_latest_schema_migration(client, web_conn):
+    run(_seed_guild(web_conn))
+    _make_mod(client)
+
+    resp = client.get("/admin/")
+
+    body = resp.data.decode()
+    assert threadbare.__version__ in body
+    # The real test DB has every real migration applied (see
+    # tests/integration/db/test_migrate.py's idempotency test) --
+    # 0005_wizard_state is the current latest by filename ordering.
+    assert "0005_wizard_state" in body
 
 
 def test_admin_does_not_render_a_rebackfill_trigger_control(client, web_conn):

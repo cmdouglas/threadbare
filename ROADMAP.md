@@ -330,6 +330,58 @@ Everything here targets a single Discord server, public (`@everyone`-readable) c
     worker PIDs), and sending `SIGTERM` to the container's PID 1 showed Compose bringing it
     back up with a fresh boot banner and worker set within ~2 seconds.
 
+## 9. Upgrade path (~0.5–1 day)
+
+A new, final v1 item, added by explicit user request after §8: before v1 is "complete," an
+operator running a real instance needs a documented, at-least-partially-enforced way to
+upgrade to whatever ships next (`DESIGN.md` §7's migration-path phases), not manual data
+surgery. Full "contract shape" is in `DESIGN.md` §7's new "Upgrade contract" subsection; this
+tracks what got built to back it.
+
+- [x] Schema-compatibility startup check (the core enforcement mechanism)
+  - `db/migrate.py::check_schema_up_to_date()` — a read-only sibling of `run_migrations()`,
+    reusing the same `discover_migrations()`/`_ensure_schema_migrations_table()`/
+    `_applied_migrations()`/`pending_migrations()` machinery — raises `MigrationError` if any
+    migration the running code ships with hasn't been applied yet.
+  - Wired into both `web/cli.py::main()` (both the configured and wizard branches, right after
+    the DSN is known) and `sync_worker/cli.py::_run()` (as the first line). `MigrationError` is
+    caught at the top level and turned into a clear stderr message plus `SystemExit(1)`, same
+    shape as the existing `ConfigError` handling.
+  - This protects all three deployment paths uniformly: a no-op for Compose in the normal case
+    (the `migrate` service already runs first via `depends_on`), the real safety net for Option
+    C operators who forget `aws ecs run-task`, and a genuine dev-UX improvement for bare local
+    `uv run threadbare-web`/`threadbare-sync-worker` without having run `threadbare-migrate`
+    first (previously a confusing failure, now a clear one).
+  - Unit + integration tested (`tests/integration/db/test_migrate.py`,
+    `tests/integration/web/test_cli.py`, `tests/integration/sync_worker/test_cli.py`).
+- [x] Version exposure
+  - `threadbare/__init__.py`: `__version__` from installed package metadata
+    (`importlib.metadata.version`) — works today since `uv sync` already installs real
+    metadata, confirmed rather than assumed.
+  - `--version` on all three CLI entry points (`threadbare-migrate`, `threadbare-web`,
+    `threadbare-sync-worker`), short-circuiting before any config/DB access — unit tested.
+  - Mod admin page (`db/admin_queries.py::get_latest_migration_version` +
+    `web/views/admin.py` + `admin.html`): a new "Version" section showing the running app
+    version and the latest applied migration — the concrete way an operator confirms an
+    upgrade actually took effect. Integration tested.
+- [x] Upgrade scripts, one per deployment path
+  - `scripts/upgrade.sh` (Options A/B): clean-tree check → `git fetch`/`pull --ff-only` →
+    `docker compose build` → `docker compose up -d` (migrations apply automatically via the
+    existing `depends_on` gate) → tails the migrate log. Verified manually against a real,
+    isolated (`-p`-namespaced) Docker Compose stack — not automated-tested, since it's shell
+    orchestration over real infrastructure, same convention as the rest of this project's
+    live-only verifications.
+  - `deploy/cdk/upgrade.sh` (Option C): `cdk deploy --all` (forwarding whatever `-c` context
+    flags are passed) then automatically fetches and runs `ThreadbareMigrate`'s
+    `RunTaskCommand` CloudFormation output — closes the "operator must remember to re-run
+    migrate" gap `deploy/cdk/README.md` previously documented as manual-only. Verified via
+    `bash -n` plus confirming `cdk synth` still emits the `RunTaskCommand` output it depends
+    on; not deployable/verifiable here (no AWS account), same documented gap as the rest of
+    Option C.
+- [x] Documentation: `DESIGN.md` §7's new "Upgrade contract" subsection (the six hard rules
+      plus the recommended, not-yet-acted-on, version-bump/tag release convention),
+      `README.md`'s per-deployment-option "Upgrading" guidance pointing at the two scripts.
+
 ## v1 acceptance criteria
 
 Pulled from `DESIGN.md` §6 — the milestone isn't done until these hold:

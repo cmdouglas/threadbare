@@ -62,6 +62,17 @@ async def get_worker_heartbeat(conn: psycopg.AsyncConnection) -> dict | None:
         return await cur.fetchone()
 
 
+async def get_latest_migration_version(conn: psycopg.AsyncConnection) -> str | None:
+    """The most recently applied migration's version string -- the
+    concrete way an operator confirms an upgrade's migration step actually
+    took effect (paired with threadbare.__version__ on the admin page).
+    """
+    async with conn.cursor() as cur:
+        await cur.execute("SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1")
+        row = await cur.fetchone()
+    return row["version"] if row else None
+
+
 def is_heartbeat_stale(heartbeat: dict | None, *, now: datetime | None = None) -> bool:
     """True if the worker has never beaten at all, or hasn't beaten
     recently enough -- the sync worker is presumed dead either way.

@@ -10,6 +10,7 @@ scope for this pass -- see ROADMAP.md §6.
 
 from flask import Blueprint, abort, current_app, redirect, render_template, url_for
 
+import threadbare
 from threadbare.db import admin_queries
 from threadbare.web.authz import mod_required
 
@@ -26,12 +27,15 @@ async def index():
             conn, settings.discord_guild_id
         )
         heartbeat = await admin_queries.get_worker_heartbeat(conn)
+        schema_version = await admin_queries.get_latest_migration_version(conn)
 
     return render_template(
         "admin.html",
         channels=channels,
         heartbeat=heartbeat,
         heartbeat_stale=admin_queries.is_heartbeat_stale(heartbeat),
+        app_version=threadbare.__version__,
+        schema_version=schema_version,
     )
 
 

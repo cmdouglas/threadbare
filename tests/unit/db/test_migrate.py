@@ -2,6 +2,8 @@ from pathlib import Path
 
 import pytest
 
+import threadbare
+from threadbare.db import migrate
 from threadbare.db.migrate import MigrationError, discover_migrations, pending_migrations
 
 
@@ -55,3 +57,16 @@ def test_pending_migrations_raises_on_checksum_mismatch(tmp_path):
 
     with pytest.raises(MigrationError, match="0001_first"):
         pending_migrations(discovered, applied)
+
+
+def test_main_version_flag_prints_version_and_exits_cleanly(monkeypatch, capsys):
+    # No DATABASE_URL set at all -- --version must short-circuit before any
+    # config/DB access, not just happen to work when one's present.
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setattr("sys.argv", ["threadbare-migrate", "--version"])
+
+    with pytest.raises(SystemExit) as exc_info:
+        migrate.main()
+
+    assert exc_info.value.code == 0
+    assert threadbare.__version__ in capsys.readouterr().out
