@@ -121,10 +121,13 @@ def main() -> None:
     from dotenv import load_dotenv
 
     import threadbare
+    from threadbare.logging_config import configure_logging
 
     if "--version" in sys.argv[1:]:
         print(f"threadbare {threadbare.__version__}")
         raise SystemExit(0)
+
+    configure_logging()
 
     load_dotenv()
     dsn = os.environ.get("DATABASE_URL", "").strip()

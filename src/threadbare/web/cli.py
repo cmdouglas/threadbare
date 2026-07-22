@@ -9,6 +9,7 @@ from werkzeug.serving import run_simple
 import threadbare
 from threadbare import config
 from threadbare.db.migrate import MigrationError, check_schema_up_to_date
+from threadbare.logging_config import configure_logging
 from threadbare.web.app import create_app
 from threadbare.web.db import PerRequestConnectionSource
 from threadbare.web.wizard_app import create_wizard_app
@@ -56,6 +57,8 @@ def main() -> None:
     if "--version" in sys.argv[1:]:
         print(f"threadbare {threadbare.__version__}")
         raise SystemExit(0)
+
+    configure_logging()
 
     host = os.environ.get("HOST", DEFAULT_HOST)
     port = int(os.environ.get("PORT", DEFAULT_PORT))

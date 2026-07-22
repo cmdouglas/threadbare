@@ -5,6 +5,7 @@ import threadbare
 from threadbare.config import ConfigError, load_settings
 from threadbare.db.migrate import MigrationError, check_schema_up_to_date
 from threadbare.db.pool import create_pool
+from threadbare.logging_config import configure_logging
 from threadbare.sync_worker.bot import ThreadbareClient
 
 
@@ -24,6 +25,8 @@ def main() -> None:
     if "--version" in sys.argv[1:]:
         print(f"threadbare {threadbare.__version__}")
         raise SystemExit(0)
+
+    configure_logging()
 
     try:
         settings = load_settings()

@@ -1,5 +1,7 @@
 import asyncio
+import logging
 from datetime import UTC, datetime
+from functools import partial
 
 import discord
 from psycopg_pool import AsyncConnectionPool
@@ -9,6 +11,25 @@ from threadbare.sync_worker.backfill import backfill_guild
 from threadbare.sync_worker.discovery import discover_active_threads, discover_channels
 from threadbare.sync_worker.heartbeat import heartbeat_loop
 from threadbare.sync_worker.reconciliation import reconciliation_loop
+
+logger = logging.getLogger(__name__)
+
+
+def _log_if_failed(task: asyncio.Task, *, name: str) -> None:
+    """Attached via add_done_callback to each of on_ready's three
+    fire-and-forget background loops (backfill/reconciliation/heartbeat) --
+    none of discord.py's own exception handling covers a bare
+    asyncio.create_task the way it covers gateway event dispatch (on_error),
+    so without this a crashed loop would otherwise go unnoticed until the
+    whole process exits (asyncio only logs an orphaned task's exception at
+    garbage-collection time, and self._backfill_task etc. keep it referenced
+    for the client's entire lifetime).
+    """
+    if task.cancelled():
+        return
+    exc = task.exception()
+    if exc is not None:
+        logger.error("%s task crashed", name, exc_info=exc)
 
 
 async def _resolve_container(
@@ -84,9 +105,13 @@ class ThreadbareClient(discord.Client):
             self._backfill_task = asyncio.create_task(
                 backfill_guild(self, self.pool, guild_id=self.guild_id)
             )
+            self._backfill_task.add_done_callback(partial(_log_if_failed, name="backfill"))
         if self._reconciliation_task is None:
             self._reconciliation_task = asyncio.create_task(
                 reconciliation_loop(self, self.pool, guild_id=self.guild_id)
+            )
+            self._reconciliation_task.add_done_callback(
+                partial(_log_if_failed, name="reconciliation")
             )
         if self._heartbeat_task is None:
             self._heartbeat_task = asyncio.create_task(
@@ -94,6 +119,7 @@ class ThreadbareClient(discord.Client):
                     self.pool, get_last_gateway_event_at=lambda: self.last_gateway_event_at
                 )
             )
+            self._heartbeat_task.add_done_callback(partial(_log_if_failed, name="heartbeat"))
 
     async def on_socket_event_type(self, event_type: str) -> None:
         self.last_gateway_event_at = datetime.now(UTC)
