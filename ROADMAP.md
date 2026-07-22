@@ -262,6 +262,12 @@ Everything here targets a single Discord server, public (`@everyone`-readable) c
     visit the domain. Gotchas called out explicitly per DESIGN.md §8.4: unattended security
     upgrades, Postgres staying internal-only, a VPS snapshot as a stopgap for the (deferred)
     config backup job, and updating the OAuth redirect URI if the domain ever changes.
+  - **2026-07-22 revisit**: this content was expanded into a beginner-friendly walkthrough (SSH
+    basics, what a DNS `A` record is and where to add one, firewall/security-group ports,
+    concrete `unattended-upgrades` commands, a troubleshooting section) and moved to
+    [`docs/self-hosting.md`](./docs/self-hosting.md), since the original README prose assumed
+    the reader already knew VPS/DNS/reverse-proxy concepts. `README.md`'s `## Deployment` section
+    now holds only a short summary + link for Options A/B; Option C is untouched.
 - [x] Option C: `deploy/cdk/` TypeScript CDK app (Fargate ×2, ALB+ACM for web only, Postgres sidecar w/ EBS, RDS as commented-out alt)
   - `deploy/cdk/` (TypeScript, `aws-cdk-lib` v2): `NetworkStack` (public-subnet-only VPC,
     `natGateways: 0`), `DatabaseStack` (Postgres on Fargate + a 20GB EBS volume via

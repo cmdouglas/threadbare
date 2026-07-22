@@ -10,8 +10,9 @@ Threadbare is a **cache**, not an archive. Deletions on Discord propagate to Thr
 
 v1 is built: sync worker, forum web app, four themes, the Discord OAuth login gate + mod
 admin page, and a guided first-run setup wizard are all in place. Docker Compose deployment,
-self-host/VPS/cloud-CDK hosting docs (below), and a production-grade (gunicorn) web server are
-done too. See [`ROADMAP.md`](./ROADMAP.md) for exactly what's shipped, what's left (a nightly
+self-host/VPS/cloud-CDK hosting docs (see [Deployment](#deployment) below and
+[`docs/self-hosting.md`](./docs/self-hosting.md)), and a production-grade (gunicorn) web server
+are done too. See [`ROADMAP.md`](./ROADMAP.md) for exactly what's shipped, what's left (a nightly
 config-table backup job), and in what order it was built.
 
 ## Why
@@ -60,70 +61,21 @@ thing: web, sync worker, Postgres (internal-only, never exposed to the host), an
 
 ### Option B — VPS (recommended)
 
-A $5–10/month instance (Hetzner, DigitalOcean, Vultr, etc.) is comfortable at 2GB RAM.
-
-1. Provision a box running Ubuntu LTS, and [install Docker + the Compose
-   plugin](https://docs.docker.com/engine/install/).
-2. Clone this repo onto the box, then `cp .env.example .env` and fill in **at minimum**
-   `POSTGRES_PASSWORD` (any strong random value) and `THREADBARE_DOMAIN` (the domain you're
-   pointing at this box). Everything Discord-specific is collected by the setup wizard once
-   the stack is up — don't fill those in by hand.
-3. Point a DNS `A` record for that domain at the box's public IP.
-4. `docker compose up -d`.
-5. Visit `https://<your-domain>` — the setup wizard takes it from there (bot creation,
-   preflight checks, the bot invite link, channel selection, then the OAuth login gate). When
-   it finishes, the `web` container restarts itself automatically within a few seconds (the
-   wizard hands off by exiting the process; Compose's `restart: unless-stopped` policy brings
-   it back up already configured, now served by gunicorn instead of the wizard's dev server) —
-   the finish page redirects itself once that's done. You still need to run
-   `docker compose restart sync-worker` once by hand — it only reads configuration at its own
-   startup and has no way to notice the change on its own.
-
-Gotchas worth knowing before you go further:
-
-- Set up unattended security upgrades on the box — it's the internet-facing part of this
-  stack that isn't Threadbare's own code.
-- Postgres has no published port in `docker-compose.yml` on purpose (internal Docker network
-  only) — don't "fix" this by exposing it.
-- There's no automated backup job yet (see [`ROADMAP.md`](./ROADMAP.md) §8) — mirrored message
-  content is never backed up by design (Discord is the source of truth), but the small
-  Threadbare-native config isn't backed up automatically either yet. An occasional VPS
-  snapshot is a reasonable stopgap in the meantime.
-- If the domain ever changes, update `THREADBARE_DOMAIN` in `.env` **and** the OAuth redirect
-  URI registered in the Discord developer portal — they have to match exactly.
+A $5–10/month instance (Hetzner, DigitalOcean, Vultr, etc.) is comfortable at 2GB RAM: provision
+an Ubuntu box, install Docker, point a DNS record at it, `docker compose up -d`, then let the
+setup wizard take it from there. This is the easiest path if you don't already have a machine
+that's always on.
 
 ### Option A — Self-host on your own hardware
 
-The cheapest option: run `docker compose up` on any machine that stays on — a desktop, a home
-server, or a Raspberry Pi–class box (the whole stack idles under 1GB RAM). Same
-`docker-compose.yml` as Option B; the only real difference is *reachability*.
+The cheapest option: run the same `docker-compose.yml` on any machine that stays on — a desktop,
+a home server, or a Raspberry Pi–class box (the whole stack idles under 1GB RAM). The only real
+difference from Option B is *reachability* — how the outside world (or just your mod team)
+gets to a box that isn't sitting behind a real public IP and domain already.
 
-1. Install Docker + the Compose plugin on the machine, clone the repo, `cp .env.example .env`
-   and fill in `POSTGRES_PASSWORD` (`THREADBARE_DOMAIN` only matters once you've picked a
-   reachability option below).
-2. Pick how the outside world reaches the box:
-   - **Tailscale** — install the client on the box and on every device that should have
-     access. Zero config beyond that, and it's the simplest option for a handful of trusted
-     users (e.g. just the mod team). No public exposure at all.
-   - **Cloudflare Tunnel** — gives you a real public hostname with TLS and no port forwarding,
-     the better choice if the whole community should be able to reach it from anywhere. Point
-     `THREADBARE_DOMAIN` at the hostname Cloudflare gives you and run `cloudflared` alongside
-     the compose stack.
-   - Classic port-forwarding + dynamic DNS works too, but isn't recommended: residential IPs
-     churn, and every time yours changes you have to update both `THREADBARE_DOMAIN` and the
-     OAuth redirect URI registered in the Discord developer portal, or logins start failing
-     with an opaque error.
-3. `docker compose up -d`, then visit whichever hostname you set up — the setup wizard takes
-   it from there exactly as in Option B.
-
-A couple of things worth knowing:
-
-- If you're only ever accessing this from the same machine, `localhost` as the domain works
-  fine and needs none of the above — just skip straight to `docker compose up -d`.
-- The sync worker needs no inbound ports at all, ever — only the web app does, so Tailscale/
-  Cloudflare Tunnel only need to reach the `web` (really, `caddy`) container.
-- Some residential ISP terms technically prohibit "running a server." In practice this never
-  comes up at hobby scale, but it's worth knowing before you tell people about it.
+**Full step-by-step instructions for both options — including DNS, firewall, SSH, and
+troubleshooting, written for admins who haven't run a server before — are in
+[`docs/self-hosting.md`](./docs/self-hosting.md).**
 
 ### Option C — Cloud via infrastructure-as-code
 

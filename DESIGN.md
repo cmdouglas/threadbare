@@ -233,7 +233,7 @@ Since the operator usually isn't the server owner, onboarding includes a generat
 
 ### 8.4 Hosting options
 
-The repo ships with three supported deployment paths, each with its own README section and its own gotchas called out. One architectural fact drives all of them: **the sync worker holds a persistent gateway websocket, so Threadbare needs an always-on process.** Serverless platforms (Lambda, Cloud Run scale-to-zero, Vercel/Netlify) are structurally wrong for the sync worker no matter how attractive they look for the web app — this is called out prominently because it's the most common architectural false start for Discord bots.
+The repo ships with three supported deployment paths, each with its own gotchas called out: Options A/B in [`docs/self-hosting.md`](./docs/self-hosting.md) (a beginner-friendly walkthrough, linked from a short summary in `README.md`), Option C in `deploy/cdk/README.md`. One architectural fact drives all of them: **the sync worker holds a persistent gateway websocket, so Threadbare needs an always-on process.** Serverless platforms (Lambda, Cloud Run scale-to-zero, Vercel/Netlify) are structurally wrong for the sync worker no matter how attractive they look for the web app — this is called out prominently because it's the most common architectural false start for Discord bots.
 
 **Option A — Self-host on your own machine (cheapest, most gotchas).**
 `docker compose up` on any box that stays on: a desktop, home server, or Raspberry Pi–class machine (the whole stack idles under 1GB RAM; ARM images are provided). The gotchas are all about *reachability*, and they're front-loaded in the docs:
