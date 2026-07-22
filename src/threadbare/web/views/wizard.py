@@ -438,10 +438,12 @@ async def finish():
     env_path = current_app.config["ENV_FILE_PATH"]
     write_env_updates(env_path, updates)
 
-    # load_dotenv()'s default (override=False) only fills in keys ABSENT
-    # from os.environ -- exactly the Discord-specific ones that put us in
-    # wizard mode to begin with, so this reliably picks up what was just
-    # written regardless of any stale blank values left over from earlier.
+    # Unconditional override, not config.reload_env_file()'s blank-only
+    # fill: this file was JUST written above, so its values must always win
+    # over whatever's currently in os.environ (including a stale blank
+    # placeholder), which is a different need than reload_env_file()'s
+    # job of safely recovering settings in a freshly restarted process
+    # without clobbering a real, deliberately-set value like DATABASE_URL.
     load_dotenv(dotenv_path=env_path, override=True)
 
     try:

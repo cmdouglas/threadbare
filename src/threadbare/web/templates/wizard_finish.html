@@ -5,7 +5,7 @@
 <h1>Setup already complete</h1>
 <p>This install is already configured.</p>
 {% elif just_finished %}
-<meta http-equiv="refresh" content="8;url=/">
+<meta http-equiv="refresh" content="8;url={{ request.script_root }}/">
 <h1>All set</h1>
 <p>Configuration was written. This process is restarting itself now to pick it up — under
 Docker Compose that happens automatically within a few seconds and this page will reload

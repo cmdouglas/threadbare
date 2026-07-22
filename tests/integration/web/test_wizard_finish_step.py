@@ -93,6 +93,27 @@ def test_finish_post_writes_env_file_and_calls_on_complete(
         os.environ.update(environ_snapshot)
 
 
+def test_finish_post_meta_refresh_respects_forwarded_prefix(
+    wizard_app, wizard_client, web_conn, tmp_path
+):
+    # Same real-os.environ mutation as the test above -- same snapshot/restore.
+    environ_snapshot = dict(os.environ)
+    try:
+        env_path = tmp_path / ".env"
+        env_path.write_text("DATABASE_URL=postgresql://x\n")
+        wizard_app.config["ENV_FILE_PATH"] = env_path
+
+        _seed_ready_to_finish(wizard_client, web_conn)
+
+        resp = wizard_client.post("/finish", headers={"X-Forwarded-Prefix": "/discord-mirror"})
+
+        assert resp.status_code == 200
+        assert b'content="8;url=/discord-mirror/"' in resp.data
+    finally:
+        os.environ.clear()
+        os.environ.update(environ_snapshot)
+
+
 def test_finish_post_without_preconditions_redirects_to_oauth(wizard_client, web_conn):
     run(_seed(web_conn, step="oauth", discord_client_id="cid", discord_guild_id=GUILD_ID))
     with wizard_client.session_transaction() as sess:

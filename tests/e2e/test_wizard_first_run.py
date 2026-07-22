@@ -130,7 +130,9 @@ def test_wizard_first_run_completes_and_hands_off_for_restart(
     # This process doesn't hot-swap to the real forum app in-process anymore
     # (see conftest.py's unconfigured_live_server docstring) -- it tells the
     # operator the app is restarting itself instead, via a JS-free
-    # meta-refresh back to "/". The actual restart-and-serve-the-real-app
-    # half is proven for real, as a real subprocess, in
-    # test_web_process_restart.py.
+    # meta-refresh back to the site root (request.script_root-aware, so it
+    # still lands correctly under a sub-path deployment -- see
+    # test_wizard_finish_step.py's forwarded-prefix test for that case).
+    # The actual restart-and-serve-the-real-app half is proven for real, as a
+    # real subprocess, in test_web_process_restart.py.
     assert 'http-equiv="refresh"' in page.content()

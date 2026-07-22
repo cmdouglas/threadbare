@@ -18,11 +18,43 @@ class Settings:
     flask_secret_key: str
 
 
+def reload_env_file(dotenv_path: str | os.PathLike | None = None) -> None:
+    """Loads a .env file into os.environ, treating a key that's *present but
+    blank* the same as one that's absent -- unlike plain load_dotenv()'s
+    default (override=False), which only fills in genuinely absent keys.
+
+    This matters because docker-compose.yml's `env_file: - .env` bakes
+    .env.example's empty Discord-config placeholders into the container's
+    environment at container-creation time; when the setup wizard later
+    writes real values into the on-disk .env file and the container
+    restarts (web/cli.py's on_complete + `restart: unless-stopped`), the new
+    process's os.environ still has those original blank values, and plain
+    load_dotenv() would never pick up the real ones now on disk.
+
+    Deliberately does NOT use load_dotenv(override=True): that would also
+    clobber keys that hold a real, non-blank value for a reason unrelated to
+    this file -- e.g. DATABASE_URL, which docker-compose.yml sets directly
+    via `environment:` (always taking precedence over `env_file:`) while
+    .env itself may still carry .env.example's local-dev default. Only
+    blank-vs-absent is treated as equivalent; a real value already in
+    os.environ is never overwritten.
+
+    Deletes blank keys first and leans on load_dotenv()'s own
+    fill-only-absent default, rather than also calling dotenv_values() to
+    inspect the file's contents directly -- tests that need to suppress
+    file-based env loading only ever have to mock the one function
+    (load_dotenv) they already know about (see test_cli.py's docstring).
+    """
+    from dotenv import load_dotenv
+
+    for key in [k for k, v in os.environ.items() if not v.strip()]:
+        del os.environ[key]
+    load_dotenv(dotenv_path=dotenv_path)
+
+
 def load_settings(env: Mapping[str, str] | None = None) -> Settings:
     if env is None:
-        from dotenv import load_dotenv
-
-        load_dotenv()
+        reload_env_file()
         env = os.environ
 
     errors: list[str] = []
@@ -86,9 +118,7 @@ def get_database_url(env: Mapping[str, str] | None = None) -> str:
     exists.
     """
     if env is None:
-        from dotenv import load_dotenv
-
-        load_dotenv()
+        reload_env_file()
         env = os.environ
 
     database_url = env.get("DATABASE_URL", "").strip()

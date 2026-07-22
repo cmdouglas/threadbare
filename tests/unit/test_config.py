@@ -1,6 +1,15 @@
+import os
+
 import pytest
 
-from threadbare.config import ConfigError, Settings, get_database_url, is_configured, load_settings
+from threadbare.config import (
+    ConfigError,
+    Settings,
+    get_database_url,
+    is_configured,
+    load_settings,
+    reload_env_file,
+)
 
 VALID_ENV = {
     "DISCORD_BOT_TOKEN": "fake-token",
@@ -111,3 +120,36 @@ def test_is_configured_false_when_discord_bot_token_missing():
     del env["DISCORD_BOT_TOKEN"]
 
     assert is_configured(env) is False
+
+
+def test_reload_env_file_fills_blank_env_var_from_file(tmp_path, monkeypatch):
+    env_path = tmp_path / ".env"
+    env_path.write_text("DISCORD_BOT_TOKEN=real-token-from-file\n")
+    monkeypatch.setenv("DISCORD_BOT_TOKEN", "")
+
+    reload_env_file(env_path)
+
+    assert os.environ["DISCORD_BOT_TOKEN"] == "real-token-from-file"
+
+
+def test_reload_env_file_leaves_non_blank_env_var_untouched(tmp_path, monkeypatch):
+    # Simulates docker-compose.yml's `environment:` block setting DATABASE_URL
+    # directly (which always wins over `env_file:` at container creation) --
+    # reload_env_file must never let the file's value clobber it.
+    env_path = tmp_path / ".env"
+    env_path.write_text("DATABASE_URL=postgresql://should-not-be-used\n")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://real-container-db")
+
+    reload_env_file(env_path)
+
+    assert os.environ["DATABASE_URL"] == "postgresql://real-container-db"
+
+
+def test_reload_env_file_fills_genuinely_absent_env_var(tmp_path, monkeypatch):
+    env_path = tmp_path / ".env"
+    env_path.write_text("FLASK_SECRET_KEY=from-file\n")
+    monkeypatch.delenv("FLASK_SECRET_KEY", raising=False)
+
+    reload_env_file(env_path)
+
+    assert os.environ["FLASK_SECRET_KEY"] == "from-file"
