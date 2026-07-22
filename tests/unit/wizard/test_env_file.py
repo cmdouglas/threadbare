@@ -1,3 +1,8 @@
+import errno
+
+import pytest
+
+import threadbare.wizard.env_file as env_file
 from threadbare.wizard.env_file import rewrite_env_text, write_env_updates
 
 
@@ -88,9 +93,47 @@ def test_write_env_updates_overwrites_existing_file_in_place(tmp_path):
 def test_write_env_updates_raises_when_no_file_or_template_exists(tmp_path):
     target = tmp_path / ".env"
 
-    import pytest
-
     from threadbare.wizard.env_file import EnvFileError
 
     with pytest.raises(EnvFileError):
         write_env_updates(target, {"FOO": "bar"}, template_path=tmp_path / "nope.example")
+
+
+@pytest.mark.parametrize("errno_code", [errno.EBUSY, errno.EXDEV])
+def test_write_env_updates_falls_back_to_in_place_write_when_replace_cant_swap_target(
+    tmp_path, monkeypatch, errno_code
+):
+    # Simulates the real production failure: `docker-compose.yml` bind-mounts
+    # a single file (`./.env:/app/.env`), and Linux refuses to rename()
+    # something onto an active bind-mount point -- os.replace surfaces this
+    # as EBUSY (or EXDEV on some kernel/storage-driver combinations).
+    target = tmp_path / ".env"
+    target.write_text("DISCORD_BOT_TOKEN=old\n")
+
+    def fake_replace(src, dst):
+        raise OSError(errno_code, "simulated bind-mount rename failure")
+
+    monkeypatch.setattr(env_file.os, "replace", fake_replace)
+
+    write_env_updates(target, {"DISCORD_BOT_TOKEN": "new"})
+
+    assert target.read_text() == "DISCORD_BOT_TOKEN=new\n"
+    leftover = [p for p in tmp_path.iterdir() if p.name != ".env"]
+    assert leftover == []
+
+
+def test_write_env_updates_reraises_other_os_errors_and_cleans_up_temp_file(tmp_path, monkeypatch):
+    target = tmp_path / ".env"
+    target.write_text("DISCORD_BOT_TOKEN=old\n")
+
+    def fake_replace(src, dst):
+        raise OSError(errno.EACCES, "simulated unrelated failure")
+
+    monkeypatch.setattr(env_file.os, "replace", fake_replace)
+
+    with pytest.raises(OSError):
+        write_env_updates(target, {"DISCORD_BOT_TOKEN": "new"})
+
+    leftover = [p for p in tmp_path.iterdir() if p.name != ".env"]
+    assert leftover == []
+    assert target.read_text() == "DISCORD_BOT_TOKEN=old\n"

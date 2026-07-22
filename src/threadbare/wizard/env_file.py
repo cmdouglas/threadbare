@@ -5,8 +5,13 @@ given the single-operator deployment assumption (DESIGN.md §2), matching
 this project's convention of naming known-not-solved gaps rather than
 silently assuming them away (see DESIGN.md §10's private-archived-threads
 entry for the same pattern).
+
+The atomic write in `write_env_updates` falls back to a non-atomic
+in-place write when the target is a single-file Docker bind mount (see
+that function's docstring) -- another instance of the same convention.
 """
 
+import errno
 import os
 import re
 import tempfile
@@ -72,6 +77,14 @@ def write_env_updates(
     in memory, writes to a temp file in the same directory, then
     os.replace()s it over the target -- avoids a half-written .env if the
     process dies mid-write.
+
+    Falls back to a non-atomic in-place write (no rename) if the rename
+    itself fails with EBUSY or EXDEV -- the signature of `path` being an
+    active single-file Docker bind mount (as in this project's own
+    docker-compose.yml: `./.env:/app/.env`), which Linux refuses to
+    replace via rename() no matter the storage driver. Losing atomicity
+    in that one topology is an accepted tradeoff, matching this module's
+    existing no-file-locking gap.
     """
     if path.exists():
         text = path.read_text()
@@ -87,7 +100,14 @@ def write_env_updates(
     try:
         with os.fdopen(fd, "w") as f:
             f.write(new_text)
-        os.replace(tmp_name, path)
+        try:
+            os.replace(tmp_name, path)
+        except OSError as e:
+            if e.errno not in (errno.EBUSY, errno.EXDEV):
+                raise
+            with open(path, "w") as f:
+                f.write(new_text)
+            os.remove(tmp_name)
     except BaseException:
         if os.path.exists(tmp_name):
             os.remove(tmp_name)

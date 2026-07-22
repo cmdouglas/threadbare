@@ -241,6 +241,12 @@ Everything here targets a single Discord server, public (`@everyone`-readable) c
     its writes back to the *host* filesystem so a later `docker compose restart sync-worker`
     picks them up; `env_file:` alone only populates env vars at container start, it isn't a
     live file the container can write through.
+  - This single-file bind mount turned out to be incompatible with `write_env_updates()`'s
+    atomic rename (Linux refuses to `rename()` over an active mountpoint) — a real production
+    crash, since the local verification below only confirmed the wizard serves `/intro` inside
+    the container, never that `finish` completes a write through the real bind mount. Fixed
+    with a fallback in-place write; documented gap, not a bug left unaddressed — see
+    `DESIGN.md` §10.
   - Build and boot verified directly: image builds cleanly, both `threadbare-migrate` and the
     other entrypoints import and run inside the container, `docker compose config` validates,
     and a full local run (`postgres`/`migrate`/`web`/`sync-worker`, no real domain/Caddy needed
