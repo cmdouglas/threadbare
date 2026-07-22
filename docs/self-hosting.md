@@ -69,6 +69,7 @@ Replace the `Caddyfile`'s `reverse_proxy` block with:
 
 ```
 {$THREADBARE_DOMAIN} {
+	redir /discord-mirror /discord-mirror/
 	handle_path /discord-mirror/* {
 		reverse_proxy web:5000 {
 			header_up X-Forwarded-Prefix /discord-mirror
@@ -77,11 +78,17 @@ Replace the `Caddyfile`'s `reverse_proxy` block with:
 }
 ```
 
-(Swap `/discord-mirror` for whatever path you want, but keep it identical in all three places it
+(Swap `/discord-mirror` for whatever path you want, but keep it identical in all four places it
 appears above.) `handle_path` strips that prefix before the request reaches the `web` container,
 so Threadbare's own routes stay simple and unprefixed internally — the `X-Forwarded-Prefix` header
 is what tells Threadbare to add the prefix back into every link it renders, so pages, pagination,
 and stylesheets all come back as `/discord-mirror/...` in the browser.
+
+The `redir` line matters: Caddy's `/discord-mirror/*` matcher requires the trailing slash, so a
+bare `https://www.example.com/discord-mirror` (no trailing slash — the URL someone would naturally
+type or bookmark) would 404 even though `https://www.example.com/discord-mirror/` works fine
+without it. The `redir` sends the bare path to its trailing-slash form first, so both ways of
+reaching the site work identically.
 
 A couple of things to get right:
 
