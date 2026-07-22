@@ -92,8 +92,12 @@ reaching the site work identically.
 
 A couple of things to get right:
 
-- `THREADBARE_DOMAIN`/DNS setup is exactly as described above — still just the bare domain. The
-  path is handled entirely inside the `Caddyfile`, not DNS.
+- `THREADBARE_DOMAIN` in `.env` does **not** change — it stays the bare domain only (e.g.
+  `www.example.com`), exactly as it would be for a root deployment. Don't append `/discord-mirror`
+  to it: Caddy only uses `THREADBARE_DOMAIN` to know which host to request a TLS certificate for
+  and which `Host` header to match, neither of which involves a path — the path lives solely in
+  the `Caddyfile` snippet above (and in DNS, nothing changes either — same bare-domain `A` record
+  as **Before you start** describes).
 - `DISCORD_OAUTH_REDIRECT_URI` in `.env`, and the redirect URI registered in the Discord developer
   portal, must both include the full path (e.g.
   `https://www.example.com/discord-mirror/oauth/callback`) — same byte-for-byte requirement called
