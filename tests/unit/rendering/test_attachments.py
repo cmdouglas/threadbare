@@ -83,6 +83,21 @@ def test_render_attachment_html_uses_the_attachment_id_in_the_proxy_url():
 
 
 def test_render_attachment_html_escapes_filename():
-    html = render_attachment_html(_row(filename='<script>.txt', content_type="text/plain"))
+    html = render_attachment_html(_row(filename="<script>.txt", content_type="text/plain"))
 
     assert "<script>" not in html
+
+
+def test_render_attachment_html_prefixes_urls_with_script_root():
+    html = render_attachment_html(
+        _row(filename="cat.png", content_type="image/png"), script_root="/mirror"
+    )
+
+    assert 'href="/mirror/att/1"' in html
+    assert 'src="/mirror/att/1"' in html
+
+
+def test_render_attachment_html_script_root_defaults_empty():
+    html = render_attachment_html(_row(filename="cat.png", content_type="image/png"))
+
+    assert 'href="/att/1"' in html

@@ -20,13 +20,16 @@ def display_filename(filename: str) -> str:
     return filename
 
 
-def render_attachment_html(row: dict) -> str:
+def render_attachment_html(row: dict, *, script_root: str = "") -> str:
     is_image = (row["content_type"] or "").startswith("image/")
     safe_filename = html.escape(display_filename(row["filename"]))
     # Routed through the /att/{id} proxy, not row["cached_url"] directly --
     # Discord's signed CDN URLs expire (~24h) and are frequently already
     # dead by the time a page is viewed; the proxy refreshes on demand.
-    safe_url = html.escape(urls.attachment_proxy_url(row["id"]), quote=True)
+    # script_root (request.script_root under a subpath deployment, "" at
+    # root) is prepended here rather than in urls.py itself, which must stay
+    # importable outside a Flask request context (see urls.py's docstring).
+    safe_url = html.escape(script_root + urls.attachment_proxy_url(row["id"]), quote=True)
 
     if is_image:
         inner = (

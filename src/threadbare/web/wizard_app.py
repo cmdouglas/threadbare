@@ -15,6 +15,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from flask import Flask
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from threadbare.config import Settings
 from threadbare.web.views.wizard import bp as wizard_bp
@@ -38,5 +39,9 @@ def create_wizard_app(
     # Postgres-backed progress in wizard_state -- an explicit tradeoff, not
     # an oversight (see db/wizard_queries.py and migrations/0005).
     app.secret_key = secrets.token_hex(32)
+    # See create_app()'s matching ProxyFix comment (web/app.py) -- same
+    # subpath-deployment mechanism, needed here too since the wizard is
+    # what's actually reachable on a fresh, unconfigured install.
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_prefix=1)
     app.register_blueprint(wizard_bp)
     return app

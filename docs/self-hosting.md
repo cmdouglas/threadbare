@@ -55,6 +55,47 @@ A few terms and tools come up repeatedly below. If you already know these, skip 
   - `docker compose restart <service>` — restart a single service without touching the rest
   - `docker compose down` — stop the stack (data in the `postgres` volume is preserved)
 
+## Running at a subpath
+
+Both options above assume Threadbare owns the whole domain (`https://forum.example.com/`). If
+you'd rather share one domain across several things — say `https://www.example.com/` is already
+your main site and you want the mirror at `https://www.example.com/discord-mirror` — Threadbare
+supports that too, with one small edit to the `Caddyfile` (already bind-mounted onto the box in
+`docker-compose.yml`, so this is a file edit, not a rebuild). This applies the same way whether
+you got here via Option A or Option B — it's Caddy-side routing, unrelated to how the domain
+itself is reached.
+
+Replace the `Caddyfile`'s `reverse_proxy` block with:
+
+```
+{$THREADBARE_DOMAIN} {
+	handle_path /discord-mirror/* {
+		reverse_proxy web:5000 {
+			header_up X-Forwarded-Prefix /discord-mirror
+		}
+	}
+}
+```
+
+(Swap `/discord-mirror` for whatever path you want, but keep it identical in all three places it
+appears above.) `handle_path` strips that prefix before the request reaches the `web` container,
+so Threadbare's own routes stay simple and unprefixed internally — the `X-Forwarded-Prefix` header
+is what tells Threadbare to add the prefix back into every link it renders, so pages, pagination,
+and stylesheets all come back as `/discord-mirror/...` in the browser.
+
+A couple of things to get right:
+
+- `THREADBARE_DOMAIN`/DNS setup is exactly as described above — still just the bare domain. The
+  path is handled entirely inside the `Caddyfile`, not DNS.
+- `DISCORD_OAUTH_REDIRECT_URI` in `.env`, and the redirect URI registered in the Discord developer
+  portal, must both include the full path (e.g.
+  `https://www.example.com/discord-mirror/oauth/callback`) — same byte-for-byte requirement called
+  out in the domain-change gotcha below, just with a path included this time.
+- `docker compose restart caddy` after editing the file for the change to take effect.
+
+If you don't need this, skip it entirely — the `Caddyfile` and `docker-compose.yml` this repo
+ships work unmodified for a normal domain-root deployment.
+
 ## Option B — VPS (recommended)
 
 A $5–10/month instance (Hetzner, DigitalOcean, Vultr, etc.) is comfortable at 2GB RAM.

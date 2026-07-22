@@ -1,4 +1,4 @@
-from flask import Blueprint, abort, current_app, render_template
+from flask import Blueprint, abort, current_app, render_template, request
 
 from threadbare.db import queries
 from threadbare.pagination import page_number_for_offset
@@ -19,7 +19,7 @@ async def user_page(user_id: int):
 
         posts = []
         for row in recent_rows:
-            rendered = await render_message_for_display(conn, row)
+            rendered = await render_message_for_display(conn, row, script_root=request.script_root)
             # Each recent post can live in a different topic/board, so
             # (unlike topic.html/board_continuous.html) there's no single
             # shared page number -- compute each post's own permalink page.

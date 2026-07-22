@@ -20,7 +20,9 @@ def truncate_snippet(text: str, limit: int = DEFAULT_SNIPPET_LIMIT) -> str:
     return text[:limit].rstrip() + "…"
 
 
-async def render_reply_quote(conn: psycopg.AsyncConnection, message_row: dict) -> str | None:
+async def render_reply_quote(
+    conn: psycopg.AsyncConnection, message_row: dict, *, script_root: str = ""
+) -> str | None:
     reply_to_id = message_row.get("reply_to_id")
     if reply_to_id is None:
         return None
@@ -39,7 +41,9 @@ async def render_reply_quote(conn: psycopg.AsyncConnection, message_row: dict) -
         before=(target["posted_at"], target["id"]),
     )
     page = page_number_for_offset(preceding)
-    href = html.escape(urls.permalink_for_message(target, page=page), quote=True)
+    # script_root prepended here, not in urls.py, which must stay importable
+    # outside a Flask request context (see urls.py's docstring).
+    href = html.escape(script_root + urls.permalink_for_message(target, page=page), quote=True)
 
     author = html.escape(target["author_display_name"])
     snippet = html.escape(truncate_snippet(target["content"]))

@@ -67,7 +67,10 @@ async def board_continuous_page(channel_id: int, page: int):
         rows = await queries.get_messages_page(
             conn, channel_id=channel_id, page=page, page_size=DEFAULT_PAGE_SIZE
         )
-        posts = [(row, await render_message_for_display(conn, row)) for row in rows]
+        posts = [
+            (row, await render_message_for_display(conn, row, script_root=request.script_root))
+            for row in rows
+        ]
 
     total_pages = page_number_for_offset(total - 1) if total > 0 else 1
 
@@ -130,7 +133,10 @@ async def board_week_page(channel_id: int, week_id: str, page: int):
             since=since,
             until=until,
         )
-        posts = [(row, await render_message_for_display(conn, row)) for row in rows]
+        posts = [
+            (row, await render_message_for_display(conn, row, script_root=request.script_root))
+            for row in rows
+        ]
 
     total_pages = page_number_for_offset(total - 1) if total > 0 else 1
 

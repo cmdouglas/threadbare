@@ -3,6 +3,7 @@ Views live under web/views/ and register themselves as blueprints here.
 """
 
 from flask import Flask, g, redirect, request, url_for
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from threadbare import urls
 from threadbare.config import Settings
@@ -34,6 +35,11 @@ def create_app(settings: Settings, pool) -> Flask:
     app.config["SETTINGS"] = settings
     app.config["POOL"] = pool
     app.secret_key = settings.flask_secret_key
+    # Trusts X-Forwarded-Prefix from Caddy so url_for(...) emits correctly
+    # prefixed links when self-hosting.md's subpath deployment option is in
+    # use -- a no-op (SCRIPT_NAME stays "") when the header isn't sent, so
+    # a root deployment is unaffected.
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_prefix=1)
 
     app.jinja_env.globals["urls"] = urls
     app.jinja_env.globals["guild_id"] = settings.discord_guild_id

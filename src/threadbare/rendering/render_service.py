@@ -26,7 +26,7 @@ class RenderedMessage:
 
 
 async def render_message_for_display(
-    conn: psycopg.AsyncConnection, message_row: dict
+    conn: psycopg.AsyncConnection, message_row: dict, *, script_root: str = ""
 ) -> RenderedMessage:
     message_id = message_row["id"]
 
@@ -34,10 +34,12 @@ async def render_message_for_display(
     refs = await build_resolved_refs(conn, referenced_ids)
 
     content_html = render_message_content(message_row["content"], refs=refs)
-    reply_quote_html = await render_reply_quote(conn, message_row)
+    reply_quote_html = await render_reply_quote(conn, message_row, script_root=script_root)
 
     attachments = await queries.get_attachments_for_message(conn, message_id)
-    attachments_html = "".join(render_attachment_html(row) for row in attachments)
+    attachments_html = "".join(
+        render_attachment_html(row, script_root=script_root) for row in attachments
+    )
 
     embeds = await queries.get_embeds_for_message(conn, message_id)
     embeds_html = "".join(render_embed_html(row, refs=refs) for row in embeds)

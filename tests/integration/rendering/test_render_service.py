@@ -79,6 +79,33 @@ async def test_render_message_for_display_with_every_optional_piece_present(db_c
     assert "🎉" in rendered.reactions_html
 
 
+async def test_render_message_for_display_threads_script_root_through_attachments_and_quotes(
+    db_conn,
+):
+    await _seed_guild_and_channel(db_conn)
+    await _seed_user(db_conn, user_id=1, display_name="alice")
+    await _seed_user(db_conn, user_id=2, display_name="bob")
+    await _seed_message(db_conn, message_id=100, channel_id=10, author_id=1, content="original")
+    await _seed_message(
+        db_conn, message_id=101, channel_id=10, author_id=2, content="a reply", reply_to_id=100
+    )
+    await db_conn.execute(
+        """
+        INSERT INTO attachments (
+            id, message_id, filename, content_type, size, cached_url, url_expires_at
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        """,
+        (2000, 101, "cat.png", "image/png", 1024, "https://cdn.example/cat.png", EXPIRES_AT),
+    )
+
+    message_row = await queries.get_message_for_render(db_conn, 101)
+    rendered = await render_message_for_display(db_conn, message_row, script_root="/mirror")
+
+    assert 'href="/mirror/board/10/continuous/page/1#post-100"' in rendered.reply_quote_html
+    assert 'href="/mirror/att/2000"' in rendered.attachments_html
+
+
 async def test_render_message_for_display_with_no_optional_pieces(db_conn):
     await _seed_guild_and_channel(db_conn)
     await _seed_user(db_conn, user_id=1, display_name="alice")

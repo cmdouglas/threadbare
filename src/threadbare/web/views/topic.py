@@ -25,7 +25,10 @@ async def topic_page(thread_id: int, page: int):
         rows = await queries.get_messages_page(
             conn, thread_id=thread_id, page=page, page_size=DEFAULT_PAGE_SIZE
         )
-        posts = [(row, await render_message_for_display(conn, row)) for row in rows]
+        posts = [
+            (row, await render_message_for_display(conn, row, script_root=request.script_root))
+            for row in rows
+        ]
 
     total_pages = page_number_for_offset(total - 1) if total > 0 else 1
 

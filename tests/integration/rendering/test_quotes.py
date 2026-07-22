@@ -133,6 +133,20 @@ async def test_render_reply_quote_returns_none_when_not_a_reply(db_conn):
     assert await render_reply_quote(db_conn, message_row) is None
 
 
+async def test_render_reply_quote_href_prefixed_with_script_root(db_conn):
+    await _seed_guild_and_channel(db_conn)
+    await _seed_user(db_conn, user_id=1, display_name="alice")
+    await _seed_message(db_conn, message_id=100, channel_id=10, author_id=1, content="original")
+    await _seed_message(
+        db_conn, message_id=101, channel_id=10, author_id=1, content="a reply", reply_to_id=100
+    )
+    message_row = await queries.get_message_for_render(db_conn, 101)
+
+    html = await render_reply_quote(db_conn, message_row, script_root="/mirror")
+
+    assert 'href="/mirror/board/10/continuous/page/1#post-100"' in html
+
+
 async def test_render_reply_quote_returns_none_when_target_no_longer_exists(db_conn):
     # reply_to_id is ON DELETE SET NULL, so a genuinely deleted target can
     # never be observed here -- this instead simulates the FK pointing at an

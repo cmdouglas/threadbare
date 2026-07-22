@@ -14,7 +14,7 @@
 <ul class="search-results">
   {% for row in results %}
   <li class="search-result">
-    <a href="{{ urls.permalink_for_message(row, page=row.page) }}">
+    <a href="{{ request.script_root }}{{ urls.permalink_for_message(row, page=row.page) }}">
       <span class="search-result-author">{{ row.author_display_name }}</span>
       <span class="search-result-snippet">{{ row.snippet | safe }}</span>
     </a>
