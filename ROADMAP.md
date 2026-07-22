@@ -335,6 +335,17 @@ Everything here targets a single Discord server, public (`@everyone`-readable) c
     Compose project, the existing dev stack untouched) showed gunicorn's real boot banner (4
     worker PIDs), and sending `SIGTERM` to the container's PID 1 showed Compose bringing it
     back up with a fresh boot banner and worker set within ~2 seconds.
+- [ ] `install.sh`: a one-command installer for Options A/B, automating the manual
+      `cp .env.example .env` → edit → `docker compose up -d` walkthrough that
+      `docs/self-hosting.md` currently spells out by hand. Prompts for the site's URL and parses
+      it into `THREADBARE_DOMAIN` plus an optional subpath, rewriting the `Caddyfile`'s
+      `redir`/`handle_path`/`header_up` block only if a subpath was given (see "Running at a
+      subpath" in `docs/self-hosting.md`) — a root deployment leaves the shipped `Caddyfile`
+      untouched. Generates a random `POSTGRES_PASSWORD` and writes a `.env` with just that and
+      `THREADBARE_DOMAIN` populated (everything Discord-specific still comes from the setup
+      wizard afterward, unchanged), then runs `docker compose up -d`. Fails fast with a clear
+      message on missing prerequisites (Docker/Compose not installed, port 80/443 already bound)
+      rather than a confusing failure partway through.
 
 ## 9. Upgrade path (~0.5–1 day)
 
