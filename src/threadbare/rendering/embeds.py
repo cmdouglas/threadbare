@@ -20,6 +20,17 @@ ALLOWED_ATTRIBUTES = {
 }
 
 
+def _thumbnail_css_class(embed_type: str | None) -> str:
+    """Discord only shrinks a thumbnail to a small floated accent for "rich"
+    (bot-crafted) embeds with real body content beside it. A bare
+    auto-unfurl link preview (type "link"/"article"/etc., or missing type
+    on edge cases) has no such content, so Discord renders its lone
+    thumbnail large -- visually identical to embed-image, so reuse that
+    class rather than inventing a new one.
+    """
+    return "embed-thumbnail" if embed_type == "rich" else "embed-image"
+
+
 def render_embed_html(embed_row: dict, *, refs: ResolvedRefs) -> str:
     parts: list[str] = []
 
@@ -54,7 +65,8 @@ def render_embed_html(embed_row: dict, *, refs: ResolvedRefs) -> str:
 
     if embed_row.get("thumbnail_url"):
         safe_url = html.escape(embed_row["thumbnail_url"], quote=True)
-        parts.append(f'<img class="embed-thumbnail" src="{safe_url}" alt="">')
+        thumb_class = _thumbnail_css_class(embed_row.get("type"))
+        parts.append(f'<img class="{thumb_class}" src="{safe_url}" alt="">')
 
     if embed_row.get("footer_text"):
         parts.append(f'<div class="embed-footer">{html.escape(embed_row["footer_text"])}</div>')

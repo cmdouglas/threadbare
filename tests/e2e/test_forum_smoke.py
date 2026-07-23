@@ -9,6 +9,7 @@ THREAD_ID = 900010
 USER_ID = 900002
 ATTACHMENT_ID = 900300
 EMBED_MESSAGE_ID = 900201
+LINK_EMBED_MESSAGE_ID = 900202
 BASE = datetime(2026, 1, 1, tzinfo=UTC)
 
 
@@ -76,6 +77,20 @@ def _seed(conn):
         """,
         (EMBED_MESSAGE_ID, 0, "https://cdn.example/wide-screenshot.png"),
     )
+    conn.execute(
+        """
+        INSERT INTO messages (id, channel_id, author_id, content, posted_at)
+        VALUES (%s, %s, %s, %s, now())
+        """,
+        (LINK_EMBED_MESSAGE_ID, CHANNEL_ID, USER_ID, "https://example.com/vox-article"),
+    )
+    conn.execute(
+        """
+        INSERT INTO embeds (message_id, position, type, thumbnail_url)
+        VALUES (%s, %s, %s, %s)
+        """,
+        (LINK_EMBED_MESSAGE_ID, 0, "link", "https://cdn.example/vox-thumb.png"),
+    )
     conn.commit()
 
 
@@ -100,7 +115,7 @@ def test_board_index_shows_seeded_board_and_post_count(page, live_server, seeded
 
     row = page.locator(".board-row", has_text="general")
     assert row.count() == 1
-    assert "32" in row.locator(".board-post-count").inner_text()
+    assert "33" in row.locator(".board-post-count").inner_text()
 
 
 def test_topic_pagination_and_permalink_round_trip(page, live_server, seeded):
@@ -146,6 +161,19 @@ def test_embed_image_does_not_overflow_the_post_box(page, live_server, seeded):
     post_box = page.locator(f"#post-{EMBED_MESSAGE_ID}")
     image = post_box.locator(".embed-image")
     assert image.count() == 1
+
+    post_right_edge = post_box.evaluate("el => el.getBoundingClientRect().right")
+    image_right_edge = image.evaluate("el => el.getBoundingClientRect().right")
+    assert image_right_edge <= post_right_edge + 1
+
+
+def test_link_unfurl_thumbnail_renders_large_not_small_and_floated(page, live_server, seeded):
+    page.goto(f"{live_server}/board/{CHANNEL_ID}/continuous/page/1")
+
+    post_box = page.locator(f"#post-{LINK_EMBED_MESSAGE_ID}")
+    image = post_box.locator(".embed-image")
+    assert image.count() == 1
+    assert post_box.locator(".embed-thumbnail").count() == 0
 
     post_right_edge = post_box.evaluate("el => el.getBoundingClientRect().right")
     image_right_edge = image.evaluate("el => el.getBoundingClientRect().right")

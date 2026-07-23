@@ -87,3 +87,26 @@ def test_render_embed_html_escapes_field_content():
     )
 
     assert "<script>" not in html
+
+
+def test_render_embed_html_link_type_lone_thumbnail_renders_large():
+    row = _empty_embed_row(type="link", thumbnail_url="https://example.com/thumb.png")
+    html = render_embed_html(row, refs=EMPTY_REFS)
+
+    assert 'class="embed-image"' in html
+    assert 'class="embed-thumbnail"' not in html
+
+
+def test_render_embed_html_rich_type_thumbnail_renders_small_and_floated():
+    row = _empty_embed_row(type="rich", thumbnail_url="https://example.com/thumb.png")
+    html = render_embed_html(row, refs=EMPTY_REFS)
+
+    assert 'class="embed-thumbnail"' in html
+    assert 'class="embed-image"' not in html
+
+
+def test_render_embed_html_missing_type_lone_thumbnail_renders_large():
+    row = _empty_embed_row(type=None, thumbnail_url="https://example.com/thumb.png")
+    html = render_embed_html(row, refs=EMPTY_REFS)
+
+    assert 'class="embed-image"' in html
