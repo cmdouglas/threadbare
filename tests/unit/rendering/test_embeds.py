@@ -134,3 +134,17 @@ def test_render_embed_html_video_takes_precedence_over_the_static_image():
 
     assert "<video" in html
     assert 'class="embed-image"' not in html
+
+
+def test_render_embed_html_video_takes_precedence_over_the_static_thumbnail():
+    # A real "gifv"-style unfurl commonly carries a static preview in
+    # *thumbnail*, not image -- the video must still win, otherwise the
+    # animated clip and its own still-frame preview both render.
+    row = _empty_embed_row(
+        video_url="https://example.com/clip.mp4", thumbnail_url="https://example.com/preview.png"
+    )
+    html = render_embed_html(row, refs=EMPTY_REFS)
+
+    assert "<video" in html
+    assert 'class="embed-image"' not in html
+    assert 'class="embed-thumbnail"' not in html

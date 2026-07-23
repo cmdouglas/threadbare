@@ -110,10 +110,16 @@ def _seed(conn):
     )
     conn.execute(
         """
-        INSERT INTO embeds (message_id, position, type, video_url)
-        VALUES (%s, %s, %s, %s)
+        INSERT INTO embeds (message_id, position, type, video_url, thumbnail_url)
+        VALUES (%s, %s, %s, %s, %s)
         """,
-        (VIDEO_EMBED_MESSAGE_ID, 0, "gifv", "https://cdn.example/clip.mp4"),
+        (
+            VIDEO_EMBED_MESSAGE_ID,
+            0,
+            "gifv",
+            "https://cdn.example/clip.mp4",
+            "https://cdn.example/clip-preview.png",
+        ),
     )
     conn.commit()
 
@@ -305,6 +311,9 @@ def test_gifv_embed_renders_an_autoplaying_video_not_a_static_image(page, live_s
     assert video.get_attribute("src") == "https://cdn.example/clip.mp4"
     assert video.evaluate("el => el.autoplay && el.loop && el.muted")
     assert post_box.locator(".embed-image").count() == 0
+    # This embed also carries a static thumbnail, matching a real gifv
+    # unfurl -- only the video should render, not both.
+    assert post_box.locator(".embed-thumbnail").count() == 0
 
 
 def test_link_unfurl_thumbnail_renders_large_not_small_and_floated(page, live_server, seeded):

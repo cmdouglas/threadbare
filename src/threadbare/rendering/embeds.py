@@ -61,10 +61,12 @@ def render_embed_html(embed_row: dict, *, refs: ResolvedRefs) -> str:
         )
         parts.append(f'<dl class="embed-fields">{field_items}</dl>')
 
-    if embed_row.get("video_url"):
+    has_video = bool(embed_row.get("video_url"))
+
+    if has_video:
         # gifv/video-type unfurls (e.g. Tenor/Giphy): image/thumbnail are
         # just a static preview frame of this same clip, so the video
-        # replaces the image rather than rendering both.
+        # replaces both rather than rendering alongside either.
         safe_url = html.escape(embed_row["video_url"], quote=True)
         parts.append(
             f'<video class="embed-video" src="{safe_url}" autoplay loop muted playsinline></video>'
@@ -73,7 +75,7 @@ def render_embed_html(embed_row: dict, *, refs: ResolvedRefs) -> str:
         safe_url = html.escape(embed_row["image_url"], quote=True)
         parts.append(f'<img class="embed-image" src="{safe_url}" alt="">')
 
-    if embed_row.get("thumbnail_url"):
+    if not has_video and embed_row.get("thumbnail_url"):
         safe_url = html.escape(embed_row["thumbnail_url"], quote=True)
         thumb_class = _thumbnail_css_class(embed_row.get("type"))
         parts.append(f'<img class="{thumb_class}" src="{safe_url}" alt="">')
