@@ -104,7 +104,8 @@ async def upsert_message(conn: psycopg.AsyncConnection, row: dict) -> None:
             content = EXCLUDED.content,
             reply_to_id = EXCLUDED.reply_to_id,
             edited_at = EXCLUDED.edited_at,
-            flags = EXCLUDED.flags
+            flags = EXCLUDED.flags,
+            type = EXCLUDED.type
         """,
         row,
     )

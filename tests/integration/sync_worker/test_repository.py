@@ -90,14 +90,21 @@ async def test_upsert_message_persists_type(db_conn):
         assert (await cur.fetchone())["type"] == 7
 
 
-async def test_upsert_message_type_is_immutable_on_conflict(db_conn):
+async def test_upsert_message_type_is_updated_on_conflict(db_conn):
+    # Unlike posted_at/author_id (genuinely immutable facts), type is
+    # updated on every upsert -- it's a Discord-side fact that can never
+    # actually change after a message is created, but this project didn't
+    # capture it before migration 0006, so every pre-existing row started
+    # out wrong (defaulted to 0). Re-including it here is what lets a
+    # re-backfill actually repair historical rows; excluding it (as an
+    # earlier version of this function did) would make that impossible.
     await _seed_guild_and_channel(db_conn, is_public=True)
     await db_conn.execute(
         "INSERT INTO users (id, display_name) VALUES (%s, %s)", (100, "someone")
     )
-    await repository.upsert_message(db_conn, _message_row(type=7))
+    await repository.upsert_message(db_conn, _message_row(type=0))
 
-    await repository.upsert_message(db_conn, _message_row(type=0, content="edited"))
+    await repository.upsert_message(db_conn, _message_row(type=7, content="edited"))
 
     async with db_conn.cursor() as cur:
         await cur.execute("SELECT type, content FROM messages WHERE id = %s", (2000,))
