@@ -1,6 +1,13 @@
 {% extends "base.html" %}
 {% block content %}
 <table class="board-index">
+<thead>
+  <tr>
+    <th class="board-name">Board</th>
+    <th class="board-post-count">Posts</th>
+    <th class="board-last-post">Last post</th>
+  </tr>
+</thead>
 {% for group in groups %}
   {% if group.category %}
   <tr class="category-heading"><td colspan="3">{{ group.category.name }}</td></tr>
@@ -12,7 +19,7 @@
     <td class="board-post-count">{{ agg.post_count }}</td>
     <td class="board-last-post">
       {% if agg.last_posted_at %}
-        <time datetime="{{ agg.last_posted_at.isoformat() }}">{{ agg.last_posted_at }}</time>
+        <time datetime="{{ agg.last_posted_at.isoformat() }}" title="{{ agg.last_posted_at }}">{{ relative_time.relative_time(agg.last_posted_at) }}</time>
         by {{ authors.get(agg.last_author_id, "unknown") }}
       {% endif %}
     </td>
@@ -22,21 +29,23 @@
     {% set mode = board_tree.board_view_mode(board) %}
   <tr class="board-row board-pagination-row">
     <td colspan="3">
-      <nav class="pagination">
-        <span class="pagination-label">Page</span>
-        {% for p in pagination.page_window(1, total_pages) %}
-          {% if p is none %}
-            <span class="pagination-ellipsis">&hellip;</span>
-          {% else %}
-            {% set href = urls.continuous_url(board.id, page=p) if mode == "freeform" else urls.topics_url(board.id, page=p) %}
-            <a class="pagination-page" href="{{ request.script_root }}{{ href }}">{{ p }}</a>
-          {% endif %}
-        {% endfor %}
-      </nav>
-      <form class="jump-to-page" action="{{ board_jump_action[board.id] }}" method="get">
-        <label>Jump to page <input type="number" name="page" min="1" max="{{ total_pages }}" value="1"></label>
-        <button type="submit">Go</button>
-      </form>
+      <div class="pagination-bar">
+        <nav class="pagination">
+          <span class="pagination-label">Page</span>
+          {% for p in pagination.page_window(1, total_pages) %}
+            {% if p is none %}
+              <span class="pagination-ellipsis">&hellip;</span>
+            {% else %}
+              {% set href = urls.continuous_url(board.id, page=p) if mode == "freeform" else urls.topics_url(board.id, page=p) %}
+              <a class="pagination-page" href="{{ request.script_root }}{{ href }}">{{ p }}</a>
+            {% endif %}
+          {% endfor %}
+        </nav>
+        <form class="jump-to-page" action="{{ board_jump_action[board.id] }}" method="get">
+          <label>Jump to page <input type="number" name="page" min="1" max="{{ total_pages }}" value="1"></label>
+          <button type="submit">Go</button>
+        </form>
+      </div>
     </td>
   </tr>
   {% endif %}

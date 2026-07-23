@@ -288,6 +288,28 @@ def test_board_continuous_page_renders_message_with_unmatched_markdown_delimiter
     assert b"wait ** hold on" in resp.data
 
 
+def test_board_continuous_page_shows_pagination_and_jump_form_on_a_shared_bar(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10))
+    run(_seed_user(web_conn))
+    for i in range(30):
+        run(
+            _seed_message(
+                web_conn,
+                message_id=i + 1,
+                channel_id=10,
+                content=f"message {i}",
+                posted_at=T1 + timedelta(days=i),
+            )
+        )
+
+    resp = client.get("/board/10/continuous/page/1")
+
+    assert resp.status_code == 200
+    assert b'class="pagination-bar"' in resp.data
+    assert b'class="jump-to-page"' in resp.data
+
+
 def test_board_continuous_jump_redirects_to_the_right_page(client, web_conn):
     run(_seed_guild(web_conn))
     run(_seed_board(web_conn, channel_id=10))

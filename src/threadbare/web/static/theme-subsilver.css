@@ -292,11 +292,25 @@ a:visited {
   color: var(--color-fg-muted);
 }
 
+.pagination-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm);
+  margin: var(--space-sm) 0;
+}
+
 .pagination {
   display: flex;
   gap: var(--space-xs);
   align-items: center;
-  margin: var(--space-sm) 0;
+  font-size: var(--font-size-small);
+}
+
+.jump-to-page {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
   font-size: var(--font-size-small);
 }
 

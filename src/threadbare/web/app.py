@@ -8,7 +8,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from threadbare import pagination, urls
 from threadbare.config import Settings
 from threadbare.db import queries
-from threadbare.rendering import avatars, user_display
+from threadbare.rendering import avatars, relative_time, user_display
 from threadbare.web import authz, board_tree, preferences, themes
 from threadbare.web.views.admin import bp as admin_bp
 from threadbare.web.views.attachments import bp as attachments_bp
@@ -65,6 +65,7 @@ def create_app(settings: Settings, pool) -> Flask:
     app.jinja_env.globals["urls"] = urls
     app.jinja_env.globals["avatars"] = avatars
     app.jinja_env.globals["user_display"] = user_display
+    app.jinja_env.globals["relative_time"] = relative_time
     app.jinja_env.globals["pagination"] = pagination
     app.jinja_env.globals["board_tree"] = board_tree
     app.jinja_env.globals["guild_id"] = settings.discord_guild_id
