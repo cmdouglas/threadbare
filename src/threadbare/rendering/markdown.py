@@ -38,7 +38,7 @@ ALLOWED_TAGS = {
 ALLOWED_ATTRIBUTES = {
     "span": {"class", "data-channel-id"},
     "a": {"href"},
-    "img": {"class", "src", "alt"},
+    "img": {"class", "src", "alt", "title"},
     "code": {"class"},
     "details": {"class"},
 }

@@ -12,9 +12,11 @@ CUSTOM_EMOJI_TOKEN_RE = re.compile(r"^<(?P<animated>a)?:(?P<name>\w+):(?P<id>\d+
 def render_custom_emoji_html(*, emoji_id: int, name: str, animated: bool) -> str:
     ext = "gif" if animated else "png"
     safe_name = html.escape(name)
+    # title (not just alt) is what browsers show as a hover tooltip once the
+    # image has actually loaded -- alt text alone only shows on load failure.
     return (
         f'<img class="emoji" src="https://cdn.discordapp.com/emojis/{emoji_id}.{ext}" '
-        f'alt=":{safe_name}:">'
+        f'alt=":{safe_name}:" title=":{safe_name}:">'
     )
 
 

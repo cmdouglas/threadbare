@@ -108,7 +108,8 @@ def test_render_message_content_custom_emoji():
     html = render_message_content("hi <:pog:123>", refs=EMPTY_REFS)
 
     assert html == (
-        'hi <img class="emoji" src="https://cdn.discordapp.com/emojis/123.png" alt=":pog:">'
+        'hi <img class="emoji" src="https://cdn.discordapp.com/emojis/123.png" '
+        'alt=":pog:" title=":pog:">'
     )
 
 
@@ -121,7 +122,8 @@ def test_render_message_content_animated_custom_emoji_renders_animated():
     html = render_message_content("hi <a:pog:123>", refs=EMPTY_REFS)
 
     assert html == (
-        'hi <img class="emoji" src="https://cdn.discordapp.com/emojis/123.gif" alt=":pog:">'
+        'hi <img class="emoji" src="https://cdn.discordapp.com/emojis/123.gif" '
+        'alt=":pog:" title=":pog:">'
     )
 
 
