@@ -8,6 +8,7 @@ from threadbare.pagination import DEFAULT_PAGE_SIZE, page_number_for_offset
 from threadbare.pseudotopics import week_bounds
 from threadbare.rendering.render_service import render_message_for_display
 from threadbare.web.board_tree import board_view_mode
+from threadbare.web.breadcrumbs import board_breadcrumbs
 
 bp = Blueprint("board", __name__)
 
@@ -43,6 +44,7 @@ async def board_topics(channel_id: int):
     async with pool.connection() as conn:
         channel = await _get_board_or_404(conn, channel_id)
         mode = board_view_mode(channel)
+        breadcrumbs = await board_breadcrumbs(conn, channel, script_root=request.script_root)
 
         total_topics = await queries.count_topics_for_board(conn, channel_id)
         threads = await queries.get_threads_for_board(
@@ -61,6 +63,7 @@ async def board_topics(channel_id: int):
         "board_topic_list.html",
         channel=channel,
         mode=mode,
+        breadcrumbs=breadcrumbs,
         threads=threads,
         aggregates=aggregates,
         authors=authors,
@@ -81,6 +84,7 @@ async def board_continuous_page(channel_id: int, page: int):
     pool = current_app.config["POOL"]
     async with pool.connection() as conn:
         channel = await _get_board_or_404(conn, channel_id)
+        breadcrumbs = await board_breadcrumbs(conn, channel, script_root=request.script_root)
         total = await queries.count_messages_before(conn, channel_id=channel_id)
         rows = await queries.get_messages_page(
             conn, channel_id=channel_id, page=page, page_size=g.posts_per_page
@@ -104,6 +108,7 @@ async def board_continuous_page(channel_id: int, page: int):
         "board_continuous.html",
         channel=channel,
         heading=channel["name"],
+        breadcrumbs=breadcrumbs,
         posts=posts,
         page=page,
         total_pages=total_pages,
@@ -141,9 +146,12 @@ async def board_weeks_index(channel_id: int):
     pool = current_app.config["POOL"]
     async with pool.connection() as conn:
         channel = await _get_board_or_404(conn, channel_id)
+        breadcrumbs = await board_breadcrumbs(conn, channel, script_root=request.script_root)
         weeks = await queries.get_weeks_for_board(conn, channel_id)
 
-    return render_template("board_weeks.html", channel=channel, weeks=weeks)
+    return render_template(
+        "board_weeks.html", channel=channel, breadcrumbs=breadcrumbs, weeks=weeks
+    )
 
 
 @bp.route("/board/<int:channel_id>/week/<week_id>/page/<int:page>")
@@ -152,6 +160,7 @@ async def board_week_page(channel_id: int, week_id: str, page: int):
     pool = current_app.config["POOL"]
     async with pool.connection() as conn:
         channel = await _get_board_or_404(conn, channel_id)
+        breadcrumbs = await board_breadcrumbs(conn, channel, script_root=request.script_root)
         total = await queries.count_messages_before(
             conn, channel_id=channel_id, since=since, until=until
         )
@@ -182,6 +191,7 @@ async def board_week_page(channel_id: int, week_id: str, page: int):
         "board_continuous.html",
         channel=channel,
         heading=f"{channel['name']} — week {week_id}",
+        breadcrumbs=breadcrumbs,
         posts=posts,
         page=page,
         total_pages=total_pages,

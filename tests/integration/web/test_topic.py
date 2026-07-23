@@ -5,14 +5,25 @@ from .conftest import run
 T1 = datetime(2026, 1, 1, tzinfo=UTC)
 
 
-async def _seed_guild_and_channel(conn, *, guild_id=1, channel_id=10):
+async def _seed_guild(conn, *, guild_id=1):
     await conn.execute("INSERT INTO guilds (id, name) VALUES (%s, %s)", (guild_id, "Test Guild"))
+
+
+async def _seed_guild_and_channel(conn, *, guild_id=1, channel_id=10, parent_id=None):
+    await _seed_guild(conn, guild_id=guild_id)
     await conn.execute(
         """
-        INSERT INTO channels (id, guild_id, type, name, is_public)
-        VALUES (%s, %s, 0, 'general', true)
+        INSERT INTO channels (id, guild_id, parent_id, type, name, is_public)
+        VALUES (%s, %s, %s, 0, 'general', true)
         """,
-        (channel_id, guild_id),
+        (channel_id, guild_id, parent_id),
+    )
+
+
+async def _seed_category(conn, *, category_id, guild_id=1, name="A Category"):
+    await conn.execute(
+        "INSERT INTO channels (id, guild_id, type, name) VALUES (%s, %s, 4, %s)",
+        (category_id, guild_id, name),
     )
 
 
@@ -74,6 +85,38 @@ def test_topic_page_renders_messages_with_permalink_anchor(client, web_conn):
     assert b"my thread" in resp.data
     assert b"View on Discord" in resp.data
     assert b'class="jump-to-page" action="/topic/3000/jump_to_page"' in resp.data
+
+
+def test_topic_page_shows_breadcrumb_to_home_and_channel(client, web_conn):
+    run(_seed_guild_and_channel(web_conn))
+    run(_seed_thread(web_conn, thread_id=3000, parent_channel_id=10, name="my thread"))
+
+    resp = client.get("/topic/3000/page/1")
+
+    assert b'class="breadcrumbs"' in resp.data
+    assert b'<a href="/">Home</a>' in resp.data
+    assert b'<a href="/board/10">general</a>' in resp.data
+
+
+async def _seed_channel(conn, *, channel_id, guild_id=1, parent_id=None, name="general"):
+    await conn.execute(
+        """
+        INSERT INTO channels (id, guild_id, parent_id, type, name, is_public)
+        VALUES (%s, %s, %s, 0, %s, true)
+        """,
+        (channel_id, guild_id, parent_id, name),
+    )
+
+
+def test_topic_page_shows_breadcrumb_category_as_unlinked_text(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_category(web_conn, category_id=1, name="Text Channels"))
+    run(_seed_channel(web_conn, channel_id=10, parent_id=1))
+    run(_seed_thread(web_conn, thread_id=3000, parent_channel_id=10, name="my thread"))
+
+    resp = client.get("/topic/3000/page/1")
+
+    assert b"<span>Text Channels</span>" in resp.data
 
 
 def test_topic_page_shows_the_author_avatar_by_default(client, web_conn):

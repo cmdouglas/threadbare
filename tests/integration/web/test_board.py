@@ -9,13 +9,20 @@ async def _seed_guild(conn, *, guild_id=1):
     await conn.execute("INSERT INTO guilds (id, name) VALUES (%s, %s)", (guild_id, "Test Guild"))
 
 
-async def _seed_board(conn, *, channel_id, guild_id=1, type=0, name="general"):
+async def _seed_board(conn, *, channel_id, guild_id=1, type=0, name="general", parent_id=None):
     await conn.execute(
         """
-        INSERT INTO channels (id, guild_id, type, name, is_public, indexed)
-        VALUES (%s, %s, %s, %s, true, true)
+        INSERT INTO channels (id, guild_id, parent_id, type, name, is_public, indexed)
+        VALUES (%s, %s, %s, %s, %s, true, true)
         """,
-        (channel_id, guild_id, type, name),
+        (channel_id, guild_id, parent_id, type, name),
+    )
+
+
+async def _seed_category(conn, *, category_id, guild_id=1, name="A Category"):
+    await conn.execute(
+        "INSERT INTO channels (id, guild_id, type, name) VALUES (%s, %s, 4, %s)",
+        (category_id, guild_id, name),
     )
 
 
@@ -228,6 +235,47 @@ def test_board_continuous_page_shows_freeform_nav_links(client, web_conn):
     assert b"View topics list" in resp.data
 
 
+def test_board_continuous_page_shows_breadcrumb_to_home_when_uncategorized(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10, type=0, name="general"))
+
+    resp = client.get("/board/10/continuous/page/1")
+
+    assert b'class="breadcrumbs"' in resp.data
+    assert b'<a href="/">Home</a>' in resp.data
+
+
+def test_board_continuous_page_shows_breadcrumb_category_as_unlinked_text(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_category(web_conn, category_id=1, name="Text Channels"))
+    run(_seed_board(web_conn, channel_id=10, type=0, name="general", parent_id=1))
+
+    resp = client.get("/board/10/continuous/page/1")
+
+    assert b"<span>Text Channels</span>" in resp.data
+    assert b">Text Channels</a>" not in resp.data
+
+
+def test_board_topics_shows_breadcrumb_category(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_category(web_conn, category_id=1, name="Forums"))
+    run(_seed_board(web_conn, channel_id=10, type=15, name="a forum", parent_id=1))
+
+    resp = client.get("/board/10/topics")
+
+    assert b"<span>Forums</span>" in resp.data
+
+
+def test_board_weeks_index_shows_breadcrumb_category(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_category(web_conn, category_id=1, name="Text Channels"))
+    run(_seed_board(web_conn, channel_id=10, type=0, name="general", parent_id=1))
+
+    resp = client.get("/board/10/weeks")
+
+    assert b"<span>Text Channels</span>" in resp.data
+
+
 def test_board_week_page_shows_freeform_nav_links(client, web_conn):
     run(_seed_guild(web_conn))
     run(_seed_board(web_conn, channel_id=10, type=0, name="general"))
@@ -311,9 +359,7 @@ def test_board_continuous_page_does_not_color_username_when_no_colored_role(clie
     assert b"style=" not in resp.data
 
 
-def test_board_continuous_page_renders_message_with_unmatched_markdown_delimiter(
-    client, web_conn
-):
+def test_board_continuous_page_renders_message_with_unmatched_markdown_delimiter(client, web_conn):
     # Regression test: discord-markdown-ast-parser 1.0.6 raised a TypeError
     # on an unmatched **, __, or ``` instead of falling back to literal text,
     # crashing this whole route with a 500 (see markdown.py's

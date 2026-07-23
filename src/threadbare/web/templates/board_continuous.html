@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ heading }} — {{ site_title }}{% endblock %}
 {% block content %}
+{% include "_breadcrumbs.html" %}
 <h1 class="board-title">{{ heading }}</h1>
 {% include "_freeform_controls.html" %}
 <form class="jump-to-date" action="{{ url_for('board.board_continuous_jump', channel_id=channel.id) }}" method="get">

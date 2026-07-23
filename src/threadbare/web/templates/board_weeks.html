@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ channel.name }} by week — {{ site_title }}{% endblock %}
 {% block content %}
+{% include "_breadcrumbs.html" %}
 <h1 class="board-title">{{ channel.name }} — by week</h1>
 <table class="board-week-list">
 {% for week in weeks %}

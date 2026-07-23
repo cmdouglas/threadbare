@@ -1,0 +1,10 @@
+{# Expects: breadcrumbs (list of {"label", "href"} -- href is None for a
+   container with no page of its own, e.g. a category) #}
+{% if breadcrumbs %}
+<nav class="breadcrumbs" aria-label="Breadcrumb">
+  {% for crumb in breadcrumbs %}
+    {% if crumb.href %}<a href="{{ crumb.href }}">{{ crumb.label }}</a>{% else %}<span>{{ crumb.label }}</span>{% endif %}
+    {%- if not loop.last %} <span class="breadcrumb-sep" aria-hidden="true">&rsaquo;</span> {% endif %}
+  {% endfor %}
+</nav>
+{% endif %}

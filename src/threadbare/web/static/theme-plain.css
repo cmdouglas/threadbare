@@ -103,6 +103,16 @@ a:visited {
   padding: var(--space-md);
 }
 
+.breadcrumbs {
+  font-size: var(--font-size-small);
+  margin-bottom: var(--space-sm);
+}
+
+.breadcrumbs span,
+.breadcrumb-sep {
+  color: var(--color-fg-muted);
+}
+
 .board-index,
 .board-topic-list,
 .board-week-list {
