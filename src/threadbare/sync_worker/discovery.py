@@ -18,18 +18,6 @@ from threadbare.sync_worker.permissions import (
 )
 
 
-def _row_for(channel, *, guild_id: int) -> dict:
-    return {
-        "id": channel.id,
-        "guild_id": guild_id,
-        "parent_id": channel.category_id,
-        "type": channel.type.value,
-        "name": channel.name,
-        "position": channel.position,
-        "topic": getattr(channel, "topic", None),
-    }
-
-
 async def discover_channels(client: discord.Client, conn, *, guild_id: int) -> list[int]:
     """Upserts the guild row and every channel's row (including categories —
     channels.parent_id is a self-referencing FK, so a category needs its own
@@ -68,13 +56,13 @@ async def discover_channels(client: discord.Client, conn, *, guild_id: int) -> l
     # row that already exists, and fetch_channels() doesn't guarantee any
     # particular order.
     for category in categories:
-        await repository.upsert_channel(conn, _row_for(category, guild_id=guild.id))
+        await repository.upsert_channel(conn, transform.channel_to_row(category, guild_id=guild.id))
 
     default_role_permissions = guild.default_role.permissions.value
     discovered_ids = []
 
     for channel in others:
-        await repository.upsert_channel(conn, _row_for(channel, guild_id=guild.id))
+        await repository.upsert_channel(conn, transform.channel_to_row(channel, guild_id=guild.id))
 
         category_overwrite = everyone_overwrite(channel.category) if channel.category else None
         await refresh_channel_public_status(

@@ -4,7 +4,11 @@ from datetime import UTC, datetime
 import discord
 
 from threadbare.sync_worker import repository
-from threadbare.sync_worker.discovery import discover_active_threads, discover_channels, discover_roles
+from threadbare.sync_worker.discovery import (
+    discover_active_threads,
+    discover_channels,
+    discover_roles,
+)
 from threadbare.sync_worker.permissions import READ_MESSAGE_HISTORY, VIEW_CHANNEL
 
 BOTH_REQUIRED = VIEW_CHANNEL | READ_MESSAGE_HISTORY

@@ -135,6 +135,58 @@ async def handle_reaction_clear_emoji(conn, *, message_id: int, emoji: str) -> N
     await repository.clear_reaction_emoji(conn, message_id=message_id, emoji=emoji)
 
 
+# Voice/stage-voice channels never get a channels row at all -- a stated
+# non-goal (DESIGN.md §2), matching discover_channels()'s own exclusion.
+_NO_ROW_CHANNEL_TYPES = (discord.ChannelType.voice, discord.ChannelType.stage_voice)
+
+
+async def handle_channel_upsert(conn, channel: discord.abc.GuildChannel, *, guild_id: int) -> None:
+    """New/renamed/moved channel -- keeps name/topic/position fresh without
+    waiting for the next discover_channels() pass. Self-heals the parent
+    category's row first: a mod can create a category and move a channel
+    into it in two separate gateway events, so channel.category may not
+    have a channels row yet -- same FK-ordering hazard discover_channels()
+    itself hit once (see ROADMAP.md), just live instead of at
+    batch-discovery time. No should_sync gating needed -- upsert_channel
+    never touches is_public/indexed on conflict, so this is safe to call
+    unconditionally, same reasoning as handle_role_upsert.
+    """
+    if channel.type in _NO_ROW_CHANNEL_TYPES:
+        return
+    if channel.category is not None:
+        await repository.upsert_channel(
+            conn, transform.channel_to_row(channel.category, guild_id=guild_id)
+        )
+    await repository.upsert_channel(conn, transform.channel_to_row(channel, guild_id=guild_id))
+
+
+async def handle_channel_create(conn, channel: discord.abc.GuildChannel, *, guild_id: int) -> None:
+    """New channel: made visible in the admin panel (so a mod can review
+    and opt it in) but never auto-indexed/imported -- indexed is forced
+    false regardless of the table's normal schema-default-true INSERT (see
+    repository.insert_new_channel), a deliberate opt-in gate distinct from
+    is_public (computed from permissions, below) and requiring an explicit
+    admin action before any content is ever fetched. Same category
+    self-heal and voice/stage-voice exclusion as handle_channel_upsert.
+    """
+    if channel.type in _NO_ROW_CHANNEL_TYPES:
+        return
+    if channel.category is not None:
+        await repository.upsert_channel(
+            conn, transform.channel_to_row(channel.category, guild_id=guild_id)
+        )
+    await repository.insert_new_channel(conn, transform.channel_to_row(channel, guild_id=guild_id))
+    # Purely informational for the admin table (is_public is computed from
+    # permissions, indexed is the separate mod-controlled import gate
+    # above) -- without this the new row would show is_public=false even
+    # when the channel is actually publicly readable, which would mislead.
+    await handle_channel_permissions_changed(conn, channel)
+
+
+async def handle_channel_delete(conn, channel_id: int) -> None:
+    await repository.delete_channel(conn, channel_id)
+
+
 async def handle_channel_permissions_changed(conn, channel: discord.abc.GuildChannel) -> None:
     category_overwrite = everyone_overwrite(channel.category) if channel.category else None
     await refresh_channel_public_status(

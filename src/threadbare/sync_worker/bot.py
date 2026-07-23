@@ -8,7 +8,11 @@ from psycopg_pool import AsyncConnectionPool
 
 from threadbare.sync_worker import events
 from threadbare.sync_worker.backfill import backfill_guild
-from threadbare.sync_worker.discovery import discover_active_threads, discover_channels, discover_roles
+from threadbare.sync_worker.discovery import (
+    discover_active_threads,
+    discover_channels,
+    discover_roles,
+)
 from threadbare.sync_worker.heartbeat import heartbeat_loop
 from threadbare.sync_worker.reconciliation import reconciliation_loop
 
@@ -243,13 +247,26 @@ class ThreadbareClient(discord.Client):
                 conn, message_id=payload.message_id, emoji=str(payload.emoji)
             )
 
+    async def on_guild_channel_create(self, channel: discord.abc.GuildChannel) -> None:
+        if self.pool is None or channel.guild.id != self.guild_id:
+            return
+        async with self.pool.connection() as conn:
+            await events.handle_channel_create(conn, channel, guild_id=self.guild_id)
+
     async def on_guild_channel_update(
         self, before: discord.abc.GuildChannel, after: discord.abc.GuildChannel
     ) -> None:
         if self.pool is None or after.guild.id != self.guild_id:
             return
         async with self.pool.connection() as conn:
+            await events.handle_channel_upsert(conn, after, guild_id=self.guild_id)
             await events.handle_channel_permissions_changed(conn, after)
+
+    async def on_guild_channel_delete(self, channel: discord.abc.GuildChannel) -> None:
+        if self.pool is None or channel.guild.id != self.guild_id:
+            return
+        async with self.pool.connection() as conn:
+            await events.handle_channel_delete(conn, channel.id)
 
     async def on_guild_role_create(self, role: discord.Role) -> None:
         if self.pool is None or role.guild.id != self.guild_id:

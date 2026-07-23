@@ -9,6 +9,7 @@ import discord
 
 from threadbare.sync_worker.discord_types import (
     AttachmentLike,
+    ChannelLike,
     EmbedLike,
     MessageLike,
     RoleLike,
@@ -58,6 +59,18 @@ def role_to_row(role: RoleLike, *, guild_id: int) -> dict:
         "name": role.name,
         "color": role.color.value,
         "position": role.position,
+    }
+
+
+def channel_to_row(channel: ChannelLike, *, guild_id: int) -> dict:
+    return {
+        "id": channel.id,
+        "guild_id": guild_id,
+        "parent_id": channel.category_id,
+        "type": channel.type.value,
+        "name": channel.name,
+        "position": channel.position,
+        "topic": getattr(channel, "topic", None),
     }
 
 

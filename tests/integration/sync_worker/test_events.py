@@ -405,10 +405,30 @@ class FakePermissionPair:
 
 
 class FakeGuildChannelForOverwrites:
-    def __init__(self, *, id, guild, category=None, allow=0, deny=0, type=discord.ChannelType.text):
+    def __init__(
+        self,
+        *,
+        id,
+        guild,
+        category=None,
+        category_id=None,
+        name="a channel",
+        position=0,
+        topic=None,
+        allow=0,
+        deny=0,
+        type=discord.ChannelType.text,
+    ):
         self.id = id
         self.guild = guild
         self.category = category
+        if category_id is not None:
+            self.category_id = category_id
+        else:
+            self.category_id = category.id if category else None
+        self.name = name
+        self.position = position
+        self.topic = topic
         self.type = type
         self._allow = allow
         self._deny = deny
@@ -455,6 +475,169 @@ async def test_handle_channel_permissions_changed_purges_on_revoke(db_conn):
     async with db_conn.cursor() as cur:
         await cur.execute("SELECT count(*) AS n FROM messages WHERE channel_id = 10")
         assert (await cur.fetchone())["n"] == 0
+
+
+async def _channel_row(conn, channel_id):
+    async with conn.cursor() as cur:
+        await cur.execute(
+            "SELECT id, parent_id, type, name, position, topic, is_public, indexed "
+            "FROM channels WHERE id = %s",
+            (channel_id,),
+        )
+        return await cur.fetchone()
+
+
+async def test_handle_channel_upsert_inserts_a_new_row(db_conn):
+    await db_conn.execute("INSERT INTO guilds (id, name) VALUES (%s, %s)", (1, "Test Guild"))
+    guild = FakeGuild(default_role=FakeRole(BOTH_REQUIRED), channels=[])
+    channel = FakeGuildChannelForOverwrites(
+        id=10, guild=guild, name="general", position=2, topic="chat here"
+    )
+
+    await events.handle_channel_upsert(db_conn, channel, guild_id=1)
+
+    row = await _channel_row(db_conn, 10)
+    assert row["name"] == "general"
+    assert row["position"] == 2
+    assert row["topic"] == "chat here"
+
+
+async def test_handle_channel_upsert_updates_existing_topic_and_name(db_conn):
+    await _seed_guild_and_channel(db_conn, is_public=True)
+    guild = FakeGuild(default_role=FakeRole(BOTH_REQUIRED), channels=[])
+    channel = FakeGuildChannelForOverwrites(
+        id=10, guild=guild, name="renamed", position=1, topic="a new topic"
+    )
+
+    await events.handle_channel_upsert(db_conn, channel, guild_id=1)
+
+    row = await _channel_row(db_conn, 10)
+    assert row["name"] == "renamed"
+    assert row["topic"] == "a new topic"
+
+
+async def test_handle_channel_upsert_skips_voice_and_stage_voice(db_conn):
+    await db_conn.execute("INSERT INTO guilds (id, name) VALUES (%s, %s)", (1, "Test Guild"))
+    guild = FakeGuild(default_role=FakeRole(BOTH_REQUIRED), channels=[])
+    channel = FakeGuildChannelForOverwrites(id=20, guild=guild, type=discord.ChannelType.voice)
+
+    await events.handle_channel_upsert(db_conn, channel, guild_id=1)
+
+    assert await _channel_row(db_conn, 20) is None
+
+
+async def test_handle_channel_upsert_self_heals_missing_parent_category(db_conn):
+    # A mod can create a category and move an existing channel into it in
+    # two separate gateway events -- the category may not have a channels
+    # row yet when the moved channel's update event arrives.
+    await db_conn.execute("INSERT INTO guilds (id, name) VALUES (%s, %s)", (1, "Test Guild"))
+    guild = FakeGuild(default_role=FakeRole(BOTH_REQUIRED), channels=[])
+    category = FakeGuildChannelForOverwrites(
+        id=5, guild=guild, name="New Category", type=discord.ChannelType.category
+    )
+    channel = FakeGuildChannelForOverwrites(id=10, guild=guild, category=category, name="general")
+
+    await events.handle_channel_upsert(db_conn, channel, guild_id=1)
+
+    assert (await _channel_row(db_conn, 5))["name"] == "New Category"
+    assert (await _channel_row(db_conn, 10))["parent_id"] == 5
+
+
+async def test_handle_channel_create_inserts_with_indexed_false(db_conn):
+    await db_conn.execute("INSERT INTO guilds (id, name) VALUES (%s, %s)", (1, "Test Guild"))
+    guild = FakeGuild(default_role=FakeRole(BOTH_REQUIRED), channels=[])
+    channel = FakeGuildChannelForOverwrites(id=10, guild=guild, name="new-channel")
+
+    await events.handle_channel_create(db_conn, channel, guild_id=1)
+
+    row = await _channel_row(db_conn, 10)
+    assert row is not None
+    assert row["indexed"] is False
+
+
+async def test_handle_channel_create_computes_is_public(db_conn):
+    await db_conn.execute("INSERT INTO guilds (id, name) VALUES (%s, %s)", (1, "Test Guild"))
+    guild = FakeGuild(default_role=FakeRole(BOTH_REQUIRED), channels=[])
+    channel = FakeGuildChannelForOverwrites(id=10, guild=guild, name="new-channel")
+
+    await events.handle_channel_create(db_conn, channel, guild_id=1)
+
+    assert (await _channel_row(db_conn, 10))["is_public"] is True
+
+
+async def test_handle_channel_create_skips_voice_and_stage_voice(db_conn):
+    await db_conn.execute("INSERT INTO guilds (id, name) VALUES (%s, %s)", (1, "Test Guild"))
+    guild = FakeGuild(default_role=FakeRole(BOTH_REQUIRED), channels=[])
+    channel = FakeGuildChannelForOverwrites(
+        id=20, guild=guild, type=discord.ChannelType.stage_voice
+    )
+
+    await events.handle_channel_create(db_conn, channel, guild_id=1)
+
+    assert await _channel_row(db_conn, 20) is None
+
+
+async def test_handle_channel_create_self_heals_missing_parent_category(db_conn):
+    await db_conn.execute("INSERT INTO guilds (id, name) VALUES (%s, %s)", (1, "Test Guild"))
+    guild = FakeGuild(default_role=FakeRole(BOTH_REQUIRED), channels=[])
+    category = FakeGuildChannelForOverwrites(
+        id=5, guild=guild, name="New Category", type=discord.ChannelType.category
+    )
+    channel = FakeGuildChannelForOverwrites(id=10, guild=guild, category=category, name="general")
+
+    await events.handle_channel_create(db_conn, channel, guild_id=1)
+
+    assert (await _channel_row(db_conn, 5))["name"] == "New Category"
+    assert (await _channel_row(db_conn, 10))["parent_id"] == 5
+
+
+async def test_handle_channel_create_does_not_reset_indexed_on_a_duplicate_event(db_conn):
+    await _seed_guild_and_channel(db_conn, is_public=True)
+    await db_conn.execute("UPDATE channels SET indexed = true WHERE id = 10")
+    guild = FakeGuild(default_role=FakeRole(BOTH_REQUIRED), channels=[])
+    channel = FakeGuildChannelForOverwrites(id=10, guild=guild, name="general")
+
+    await events.handle_channel_create(db_conn, channel, guild_id=1)
+
+    assert (await _channel_row(db_conn, 10))["indexed"] is True
+
+
+async def test_handle_channel_delete_removes_the_row_and_cascades(db_conn):
+    await _seed_guild_and_channel(db_conn, is_public=True)
+    await db_conn.execute("INSERT INTO users (id, display_name) VALUES (%s, %s)", (1, "a"))
+    await db_conn.execute(
+        "INSERT INTO messages (id, channel_id, author_id, content, posted_at) "
+        "VALUES (%s, %s, %s, %s, now())",
+        (1000, 10, 1, "hi"),
+    )
+
+    await events.handle_channel_delete(db_conn, 10)
+
+    assert await _channel_row(db_conn, 10) is None
+    async with db_conn.cursor() as cur:
+        await cur.execute("SELECT count(*) AS n FROM messages WHERE channel_id = 10")
+        assert (await cur.fetchone())["n"] == 0
+
+
+async def test_handle_channel_delete_is_a_no_op_for_unknown_id(db_conn):
+    await events.handle_channel_delete(db_conn, 999999)
+
+
+async def test_handle_channel_delete_uncategorizes_rather_than_deletes_children(db_conn):
+    await db_conn.execute("INSERT INTO guilds (id, name) VALUES (%s, %s)", (1, "Test Guild"))
+    await db_conn.execute(
+        "INSERT INTO channels (id, guild_id, type, name) VALUES (%s, %s, 4, %s)",
+        (1, 1, "A Category"),
+    )
+    await db_conn.execute(
+        "INSERT INTO channels (id, guild_id, parent_id, type, name) VALUES (%s, %s, %s, 0, %s)",
+        (10, 1, 1, "general"),
+    )
+
+    await events.handle_channel_delete(db_conn, 1)
+
+    assert await _channel_row(db_conn, 1) is None
+    assert (await _channel_row(db_conn, 10))["parent_id"] is None
 
 
 async def test_handle_role_permissions_changed_recomputes_every_channel(db_conn):

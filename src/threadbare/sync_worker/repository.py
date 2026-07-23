@@ -45,6 +45,30 @@ async def upsert_channel(conn: psycopg.AsyncConnection, row: dict) -> None:
     )
 
 
+async def insert_new_channel(conn: psycopg.AsyncConnection, row: dict) -> None:
+    """Inserts a brand-new channel discovered live (CHANNEL_CREATE), always
+    with indexed=false regardless of the table's normal schema-default-true
+    INSERT (see upsert_channel above) -- a channel just created on Discord
+    needs an explicit mod opt-in via the admin panel's existing
+    toggle-indexed control before any of its content is ever fetched.
+    is_public is unaffected (computed separately, same as upsert_channel).
+    ON CONFLICT DO NOTHING: if the row already exists (e.g. a duplicate
+    event, or it was already created via another channel's category
+    self-heal), leave whatever indexed value is already there alone rather
+    than resetting a mod's prior choice back to false.
+    """
+    await conn.execute(
+        """
+        INSERT INTO channels (id, guild_id, parent_id, type, name, position, topic, indexed)
+        VALUES (
+            %(id)s, %(guild_id)s, %(parent_id)s, %(type)s, %(name)s, %(position)s, %(topic)s, false
+        )
+        ON CONFLICT (id) DO NOTHING
+        """,
+        row,
+    )
+
+
 async def upsert_thread(conn: psycopg.AsyncConnection, row: dict) -> None:
     """Insert a thread, or update its metadata if already known. parent_channel_id
     and created_at are immutable facts about a thread and are never
@@ -317,6 +341,16 @@ async def delete_thread(conn: psycopg.AsyncConnection, thread_id: int) -> None:
     A no-op if the id is unknown, matching delete_message's convention.
     """
     await conn.execute("DELETE FROM threads WHERE id = %s", (thread_id,))
+
+
+async def delete_channel(conn: psycopg.AsyncConnection, channel_id: int) -> None:
+    """Hard delete — messages/threads/sync_state cascade (ON DELETE
+    CASCADE); a child channel's parent_id is set to NULL instead of being
+    deleted too (ON DELETE SET NULL), matching Discord's own behavior when
+    a category is deleted (its channels survive, just uncategorized). A
+    no-op if the id is unknown.
+    """
+    await conn.execute("DELETE FROM channels WHERE id = %s", (channel_id,))
 
 
 async def delete_message(conn: psycopg.AsyncConnection, message_id: int) -> None:

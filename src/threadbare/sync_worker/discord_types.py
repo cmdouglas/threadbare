@@ -121,6 +121,19 @@ class RoleLike(Protocol):
     position: int
 
 
+class ChannelLike(Protocol):
+    id: int
+    category_id: int | None
+    # discord.py's ChannelType enum; only .value (int) is ever read.
+    type: object
+    name: str
+    position: int
+    # NOT part of this Protocol: .topic only exists on TextChannel/
+    # NewsChannel/ForumChannel/StageChannel, not on the GuildChannel ABC or
+    # CategoryChannel -- callers must use getattr(channel, "topic", None),
+    # matching this project's existing convention for exactly this field.
+
+
 class ThreadLike(Protocol):
     id: int
     parent_id: int

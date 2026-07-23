@@ -5,6 +5,7 @@ import discord
 
 from threadbare.sync_worker.transform import (
     attachment_to_row,
+    channel_to_row,
     embed_to_row,
     message_to_row,
     role_to_row,
@@ -116,6 +117,34 @@ class FakeEmbed:
     thumbnail: FakeEmbedMedia | None = None
     video: FakeEmbedMedia | None = None
     fields: list = field(default_factory=list)
+
+
+@dataclass
+class FakeChannelType:
+    value: int
+
+
+@dataclass
+class FakeChannel:
+    id: int
+    category_id: int | None
+    type: FakeChannelType
+    name: str
+    position: int = 0
+    topic: str | None = None
+
+
+@dataclass
+class FakeCategoryChannel:
+    # No `topic` field at all -- a real discord.py CategoryChannel has no
+    # such attribute (unlike TextChannel/ForumChannel), so this exercises
+    # channel_to_row's getattr(channel, "topic", None) fallback for real,
+    # not just a field defaulted to None.
+    id: int
+    category_id: None
+    type: FakeChannelType
+    name: str
+    position: int = 0
 
 
 @dataclass
@@ -361,6 +390,35 @@ def test_embed_to_row_serializes_multiple_fields_in_order():
         {"name": "first", "value": "1", "inline": False},
         {"name": "second", "value": "2", "inline": True},
     ]
+
+
+def test_channel_to_row_maps_basic_fields():
+    channel = FakeChannel(
+        id=10, category_id=1, type=FakeChannelType(0), name="general", position=2, topic="chat here"
+    )
+
+    row = channel_to_row(channel, guild_id=999)
+
+    assert row == {
+        "id": 10,
+        "guild_id": 999,
+        "parent_id": 1,
+        "type": 0,
+        "name": "general",
+        "position": 2,
+        "topic": "chat here",
+    }
+
+
+def test_channel_to_row_topic_is_none_when_attribute_is_absent():
+    category = FakeCategoryChannel(
+        id=1, category_id=None, type=FakeChannelType(4), name="A Category"
+    )
+
+    row = channel_to_row(category, guild_id=999)
+
+    assert row["topic"] is None
+    assert row["parent_id"] is None
 
 
 def test_thread_to_row_maps_basic_fields():
