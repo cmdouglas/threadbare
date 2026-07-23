@@ -86,9 +86,7 @@ async def test_get_current_user_guilds_returns_list_including_permissions_field(
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.headers["authorization"] == "Bearer tok123"
         assert request.url.path == "/api/v10/users/@me/guilds"
-        return httpx.Response(
-            200, json=[{"id": "999", "name": "Test Guild", "permissions": "40"}]
-        )
+        return httpx.Response(200, json=[{"id": "999", "name": "Test Guild", "permissions": "40"}])
 
     transport = httpx.MockTransport(handler)
 

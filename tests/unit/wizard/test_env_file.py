@@ -7,21 +7,11 @@ from threadbare.wizard.env_file import rewrite_env_text, write_env_updates
 
 
 def test_rewrite_env_text_replaces_matching_key_preserves_everything_else():
-    text = (
-        "# a comment\n"
-        "DISCORD_BOT_TOKEN=\n"
-        "\n"
-        "DATABASE_URL=postgresql://x\n"
-    )
+    text = "# a comment\nDISCORD_BOT_TOKEN=\n\nDATABASE_URL=postgresql://x\n"
 
     result = rewrite_env_text(text, {"DISCORD_BOT_TOKEN": "real-token"})
 
-    assert result == (
-        "# a comment\n"
-        "DISCORD_BOT_TOKEN=real-token\n"
-        "\n"
-        "DATABASE_URL=postgresql://x\n"
-    )
+    assert result == ("# a comment\nDISCORD_BOT_TOKEN=real-token\n\nDATABASE_URL=postgresql://x\n")
 
 
 def test_rewrite_env_text_appends_missing_key():

@@ -64,9 +64,7 @@ def test_finish_post_writes_env_file_and_calls_on_complete(
         wizard_app.config["ENV_FILE_PATH"] = env_path
 
         completed_with = {}
-        wizard_app.config["ON_COMPLETE"] = lambda settings: completed_with.update(
-            settings=settings
-        )
+        wizard_app.config["ON_COMPLETE"] = lambda settings: completed_with.update(settings=settings)
 
         _seed_ready_to_finish(wizard_client, web_conn)
 

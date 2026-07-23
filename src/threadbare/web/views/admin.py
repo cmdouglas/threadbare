@@ -23,9 +23,7 @@ async def index():
     settings = current_app.config["SETTINGS"]
     pool = current_app.config["POOL"]
     async with pool.connection() as conn:
-        channels = await admin_queries.get_channels_with_sync_state(
-            conn, settings.discord_guild_id
-        )
+        channels = await admin_queries.get_channels_with_sync_state(conn, settings.discord_guild_id)
         heartbeat = await admin_queries.get_worker_heartbeat(conn)
         schema_version = await admin_queries.get_latest_migration_version(conn)
 

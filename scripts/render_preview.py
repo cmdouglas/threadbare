@@ -121,9 +121,7 @@ async def render_preview(limit: int) -> int:
     finally:
         await conn.close()
 
-    OUTPUT_PATH.write_text(
-        PAGE_TEMPLATE.format(count=len(sections), messages="\n".join(sections))
-    )
+    OUTPUT_PATH.write_text(PAGE_TEMPLATE.format(count=len(sections), messages="\n".join(sections)))
     return len(sections)
 
 

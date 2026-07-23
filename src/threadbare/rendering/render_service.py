@@ -43,9 +43,7 @@ async def render_message_for_display(
             author_display_name=message_row["author_display_name"],
             posted_at=message_row["posted_at"],
         )
-        content_html = render_message_content(
-            system_text, refs=ResolvedRefs(users={}, channels={})
-        )
+        content_html = render_message_content(system_text, refs=ResolvedRefs(users={}, channels={}))
         return RenderedMessage(
             content_html=content_html,
             reply_quote_html=None,

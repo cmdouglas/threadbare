@@ -79,9 +79,7 @@ def _message_row(**overrides):
 
 async def test_upsert_message_persists_type(db_conn):
     await _seed_guild_and_channel(db_conn, is_public=True)
-    await db_conn.execute(
-        "INSERT INTO users (id, display_name) VALUES (%s, %s)", (100, "someone")
-    )
+    await db_conn.execute("INSERT INTO users (id, display_name) VALUES (%s, %s)", (100, "someone"))
 
     await repository.upsert_message(db_conn, _message_row(type=7))
 
@@ -99,9 +97,7 @@ async def test_upsert_message_type_is_updated_on_conflict(db_conn):
     # re-backfill actually repair historical rows; excluding it (as an
     # earlier version of this function did) would make that impossible.
     await _seed_guild_and_channel(db_conn, is_public=True)
-    await db_conn.execute(
-        "INSERT INTO users (id, display_name) VALUES (%s, %s)", (100, "someone")
-    )
+    await db_conn.execute("INSERT INTO users (id, display_name) VALUES (%s, %s)", (100, "someone"))
     await repository.upsert_message(db_conn, _message_row(type=0))
 
     await repository.upsert_message(db_conn, _message_row(type=7, content="edited"))

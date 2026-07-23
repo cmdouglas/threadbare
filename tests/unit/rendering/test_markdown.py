@@ -93,17 +93,14 @@ def test_render_message_content_resolves_known_channel_mention():
 
     html = render_message_content("hi <#7>", refs=refs)
 
-    assert html == (
-        'hi <span class="mention mention-channel" data-channel-id="7">#general</span>'
-    )
+    assert html == ('hi <span class="mention mention-channel" data-channel-id="7">#general</span>')
 
 
 def test_render_message_content_unresolved_channel_mention_falls_back():
     html = render_message_content("hi <#999>", refs=EMPTY_REFS)
 
     assert html == (
-        'hi <span class="mention mention-channel" data-channel-id="999">'
-        "#unknown-channel</span>"
+        'hi <span class="mention mention-channel" data-channel-id="999">#unknown-channel</span>'
     )
 
 

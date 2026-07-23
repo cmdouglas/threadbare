@@ -44,7 +44,10 @@ async def test_refresh_attachment_urls_returns_original_to_refreshed_mapping():
             200,
             json={
                 "refreshed_urls": [
-                    {"original": "https://cdn.discordapp.com/a/old", "refreshed": "https://cdn.discordapp.com/a/new"}
+                    {
+                        "original": "https://cdn.discordapp.com/a/old",
+                        "refreshed": "https://cdn.discordapp.com/a/new",
+                    }
                 ]
             },
         )

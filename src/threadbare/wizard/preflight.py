@@ -107,12 +107,18 @@ def compute_bot_effective_permissions(
 
     permissions = base_permissions
     permissions = _apply_overwrite_tier(
-        permissions, category_overwrites,
-        everyone_role_id=everyone_role_id, role_ids=bot_role_ids, user_id=bot_user_id,
+        permissions,
+        category_overwrites,
+        everyone_role_id=everyone_role_id,
+        role_ids=bot_role_ids,
+        user_id=bot_user_id,
     )
     permissions = _apply_overwrite_tier(
-        permissions, channel_overwrites,
-        everyone_role_id=everyone_role_id, role_ids=bot_role_ids, user_id=bot_user_id,
+        permissions,
+        channel_overwrites,
+        everyone_role_id=everyone_role_id,
+        role_ids=bot_role_ids,
+        user_id=bot_user_id,
     )
     return permissions
 

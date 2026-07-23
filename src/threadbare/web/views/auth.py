@@ -55,9 +55,7 @@ async def oauth_callback():
     except (OAuthExchangeError, KeyError):
         return render_template("login_denied.html"), 403
 
-    guild = next(
-        (g for g in guilds if str(g.get("id")) == str(settings.discord_guild_id)), None
-    )
+    guild = next((g for g in guilds if str(g.get("id")) == str(settings.discord_guild_id)), None)
     if guild is None:
         # Not a member of the mirrored guild -- reject the login entirely,
         # never populate the session (DESIGN.md §6: membership is the only

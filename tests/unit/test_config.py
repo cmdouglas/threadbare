@@ -103,7 +103,9 @@ def test_load_settings_rejects_blank_flask_secret_key():
 def test_get_database_url_returns_value_when_present():
     env = {"DATABASE_URL": "postgresql://threadbare:threadbare@localhost:5432/threadbare_dev"}
 
-    assert get_database_url(env) == "postgresql://threadbare:threadbare@localhost:5432/threadbare_dev"
+    assert (
+        get_database_url(env) == "postgresql://threadbare:threadbare@localhost:5432/threadbare_dev"
+    )
 
 
 def test_get_database_url_raises_when_missing():

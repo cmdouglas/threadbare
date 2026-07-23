@@ -65,9 +65,7 @@ def _stub_everything(monkeypatch, page):
     monkeypatch.setattr(wizard_view, "get_guild_channels", fake_get_guild_channels)
     monkeypatch.setattr(wizard_view, "get_guild_roles", fake_get_guild_roles)
     monkeypatch.setattr(wizard_view, "get_guild_member", fake_get_guild_member)
-    monkeypatch.setattr(
-        wizard_view, "get_recent_channel_message", fake_get_recent_channel_message
-    )
+    monkeypatch.setattr(wizard_view, "get_recent_channel_message", fake_get_recent_channel_message)
     monkeypatch.setattr(wizard_view, "exchange_oauth_code", fake_exchange_oauth_code)
     monkeypatch.setattr(wizard_view, "get_current_user", fake_get_current_user)
     monkeypatch.setattr(wizard_view, "get_current_user_guilds", fake_get_current_user_guilds)
@@ -101,23 +99,23 @@ def test_wizard_first_run_completes_and_hands_off_for_restart(
     page.click("button[type=submit]")
     assert page.url == f"{base}/invite"
 
-    page.click("button:has-text(\"check now\")")
+    page.click('button:has-text("check now")')
     assert page.url == f"{base}/channels"
 
     page.check(f'input[name="indexed_channel_id"][value="{CHANNEL_ID}"]')
-    page.click("button:has-text(\"Continue\")")
+    page.click('button:has-text("Continue")')
     assert page.url == f"{base}/oauth"
 
     page.fill('input[name="client_secret"]', "real-client-secret")
-    page.click("button:has-text(\"Save\")")
+    page.click('button:has-text("Save")')
 
     page.goto(f"{base}/oauth/callback?code=abc123")
     assert "succeeded" in page.content()
 
-    page.click("button:has-text(\"Continue to finish setup\")")
+    page.click('button:has-text("Continue to finish setup")')
     assert page.url.startswith(f"{base}/finish")
 
-    page.click("button:has-text(\"Finish setup\")")
+    page.click('button:has-text("Finish setup")')
     assert "All set" in page.content()
 
     env_content = unconfigured_live_server.env_path.read_text()

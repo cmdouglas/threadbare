@@ -10,9 +10,7 @@ from threadbare.db import queries
 from threadbare.rendering.markdown import ReferencedIds, ResolvedRefs
 
 
-async def build_resolved_refs(
-    conn: psycopg.AsyncConnection, ids: ReferencedIds
-) -> ResolvedRefs:
+async def build_resolved_refs(conn: psycopg.AsyncConnection, ids: ReferencedIds) -> ResolvedRefs:
     users = await queries.resolve_users(conn, ids.user_ids)
     channels = await queries.resolve_channels(conn, ids.channel_ids)
     return ResolvedRefs(users=users, channels=channels)

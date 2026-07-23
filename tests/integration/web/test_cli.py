@@ -204,9 +204,7 @@ def test_main_wizard_mode_uses_port_env_var_when_set(monkeypatch, test_database_
     assert captured["port"] == 8124
 
 
-def test_main_configured_mode_uses_web_concurrency_env_var_when_set(
-    monkeypatch, test_database_url
-):
+def test_main_configured_mode_uses_web_concurrency_env_var_when_set(monkeypatch, test_database_url):
     monkeypatch.setattr("dotenv.load_dotenv", lambda *args, **kwargs: None)
     monkeypatch.setenv("DATABASE_URL", test_database_url)
     monkeypatch.setenv("DISCORD_BOT_TOKEN", "tok")
@@ -229,9 +227,7 @@ def test_main_configured_mode_uses_web_concurrency_env_var_when_set(
     assert captured["workers"] == 2
 
 
-def test_main_configured_mode_exits_when_schema_check_fails(
-    monkeypatch, test_database_url, capsys
-):
+def test_main_configured_mode_exits_when_schema_check_fails(monkeypatch, test_database_url, capsys):
     monkeypatch.setattr("dotenv.load_dotenv", lambda *args, **kwargs: None)
     monkeypatch.setenv("DATABASE_URL", test_database_url)
     monkeypatch.setenv("DISCORD_BOT_TOKEN", "tok")

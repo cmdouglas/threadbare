@@ -50,9 +50,7 @@ def _wait_until_serving(host: str, port: int, timeout: float = 10.0) -> None:
         except httpx.HTTPError as e:
             last_error = e
             time.sleep(0.1)
-    raise TimeoutError(
-        f"nothing answered http://{host}:{port}/ within {timeout}s"
-    ) from last_error
+    raise TimeoutError(f"nothing answered http://{host}:{port}/ within {timeout}s") from last_error
 
 
 def _terminate(process: subprocess.Popen) -> None:
@@ -107,12 +105,8 @@ def test_configured_process_serves_the_real_forum_app_under_gunicorn():
         assert root_resp.status_code == 302
         assert root_resp.headers["location"] == "/login"
 
-        login_resp = httpx.get(
-            f"http://{host}:{port}/login", follow_redirects=False
-        )
+        login_resp = httpx.get(f"http://{host}:{port}/login", follow_redirects=False)
         assert login_resp.status_code == 302
-        assert login_resp.headers["location"].startswith(
-            "https://discord.com/oauth2/authorize"
-        )
+        assert login_resp.headers["location"].startswith("https://discord.com/oauth2/authorize")
     finally:
         _terminate(process)

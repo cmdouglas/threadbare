@@ -53,9 +53,7 @@ def _stub_discord(monkeypatch):
     monkeypatch.setattr(wizard_view, "get_guild_channels", fake_get_guild_channels)
     monkeypatch.setattr(wizard_view, "get_guild_roles", fake_get_guild_roles)
     monkeypatch.setattr(wizard_view, "get_guild_member", fake_get_guild_member)
-    monkeypatch.setattr(
-        wizard_view, "get_recent_channel_message", fake_get_recent_channel_message
-    )
+    monkeypatch.setattr(wizard_view, "get_recent_channel_message", fake_get_recent_channel_message)
 
 
 def test_ordinary_resume_does_not_duplicate_channel_confirmations(
@@ -68,9 +66,9 @@ def test_ordinary_resume_does_not_duplicate_channel_confirmations(
     page.fill('input[name="bot_token"]', "tok123")
     page.fill('input[name="client_id"]', "cid")
     page.click("button[type=submit]")
-    page.click("button:has-text(\"check now\")")
+    page.click('button:has-text("check now")')
     page.check(f'input[name="indexed_channel_id"][value="{CHANNEL_ID}"]')
-    page.click("button:has-text(\"Continue\")")
+    page.click('button:has-text("Continue")')
     assert page.url == f"{base}/oauth"
 
     # Revisiting an earlier step (e.g. a bookmark to /intro) is fine -- it's
@@ -94,9 +92,9 @@ def test_session_loss_bounces_to_token_and_preserves_prior_progress(
     page.fill('input[name="bot_token"]', "tok123")
     page.fill('input[name="client_id"]', "cid")
     page.click("button[type=submit]")
-    page.click("button:has-text(\"check now\")")
+    page.click('button:has-text("check now")')
     page.check(f'input[name="indexed_channel_id"][value="{CHANNEL_ID}"]')
-    page.click("button:has-text(\"Continue\")")
+    page.click('button:has-text("Continue")')
     assert page.url == f"{base}/oauth"
 
     # Simulate a restarted web process (or a returning-later operator):
@@ -123,5 +121,3 @@ def test_session_loss_bounces_to_token_and_preserves_prior_progress(
     # still intact, not wiped by the bounce.
     page.goto(f"{base}/channels")
     assert page.is_checked(f'input[name="indexed_channel_id"][value="{CHANNEL_ID}"]')
-
-

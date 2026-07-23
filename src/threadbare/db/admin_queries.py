@@ -33,9 +33,7 @@ async def set_channel_indexed(
     await conn.execute("UPDATE channels SET indexed = %s WHERE id = %s", (indexed, channel_id))
 
 
-async def get_channels_with_sync_state(
-    conn: psycopg.AsyncConnection, guild_id: int
-) -> list[dict]:
+async def get_channels_with_sync_state(conn: psycopg.AsyncConnection, guild_id: int) -> list[dict]:
     """Every non-category channel in the guild, with its computed
     visibility, mod-controlled indexing flag, and backfill checkpoint (if
     any -- a channel with no sync_state row yet hasn't been backfilled).

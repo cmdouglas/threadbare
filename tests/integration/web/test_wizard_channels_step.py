@@ -72,9 +72,7 @@ def _stub_discord(monkeypatch, *, everyone_perms=1024 | 65536, overwrites=None, 
     monkeypatch.setattr(wizard_view, "get_guild_roles", fake_get_guild_roles)
     monkeypatch.setattr(wizard_view, "get_bot_user", fake_get_bot_user)
     monkeypatch.setattr(wizard_view, "get_guild_member", fake_get_guild_member)
-    monkeypatch.setattr(
-        wizard_view, "get_recent_channel_message", fake_get_recent_channel_message
-    )
+    monkeypatch.setattr(wizard_view, "get_recent_channel_message", fake_get_recent_channel_message)
 
 
 def test_channels_get_shows_discovered_channel(wizard_client, web_conn, monkeypatch):
@@ -144,4 +142,4 @@ def test_channels_revisit_preserves_prior_confirmation(wizard_client, web_conn, 
     resp = wizard_client.get("/channels")
 
     assert resp.status_code == 200
-    assert b'checked' in resp.data
+    assert b"checked" in resp.data

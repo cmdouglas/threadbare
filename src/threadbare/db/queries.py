@@ -34,9 +34,7 @@ async def get_message_for_render(conn: psycopg.AsyncConnection, message_id: int)
         return await cur.fetchone()
 
 
-async def get_attachments_for_message(
-    conn: psycopg.AsyncConnection, message_id: int
-) -> list[dict]:
+async def get_attachments_for_message(conn: psycopg.AsyncConnection, message_id: int) -> list[dict]:
     async with conn.cursor() as cur:
         await cur.execute(
             """

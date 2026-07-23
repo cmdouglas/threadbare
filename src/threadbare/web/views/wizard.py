@@ -217,9 +217,7 @@ async def channels():
         selected_ids = {int(v) for v in request.form.getlist("indexed_channel_id")}
         async with pool.connection() as conn:
             await wizard_queries.confirm_channel_selection(conn, guild_id, selected_ids)
-            await wizard_queries.update_wizard_state(
-                conn, step="oauth", channels_confirmed=True
-            )
+            await wizard_queries.update_wizard_state(conn, step="oauth", channels_confirmed=True)
         return redirect(url_for("wizard.oauth"))
 
     guild_channels = await get_guild_channels(bot_token, guild_id)
@@ -350,7 +348,7 @@ async def oauth():
         session["client_secret"] = client_secret
         async with pool.connection() as conn:
             await wizard_queries.update_wizard_state(conn, discord_oauth_redirect_uri=redirect_uri)
-        flash("Saved. Click \"Test login\" below to verify the round trip.")
+        flash('Saved. Click "Test login" below to verify the round trip.')
         return render_template("wizard_oauth.html", state=state, redirect_uri=redirect_uri)
 
     return render_template(
