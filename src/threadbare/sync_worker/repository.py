@@ -8,6 +8,8 @@ per-test isolation for free via rollback, without truncating tables.
 import psycopg
 from psycopg.types.json import Json
 
+from threadbare.channel_types import CATEGORY
+
 
 async def upsert_guild(conn: psycopg.AsyncConnection, row: dict) -> None:
     await conn.execute(
@@ -199,6 +201,35 @@ async def set_backfill_checkpoint(
         """,
         (channel_id, last_message_id, complete),
     )
+
+
+async def channel_exists(conn: psycopg.AsyncConnection, channel_id: int) -> bool:
+    async with conn.cursor() as cur:
+        await cur.execute("SELECT 1 FROM channels WHERE id = %s", (channel_id,))
+        return await cur.fetchone() is not None
+
+
+async def get_content_channel_ids(conn: psycopg.AsyncConnection) -> list[int]:
+    # Categories have no content/checkpoint of their own -- excluding them
+    # keeps a "reset every channel" caller's reported count meaningful.
+    async with conn.cursor() as cur:
+        await cur.execute("SELECT id FROM channels WHERE type != %s", (CATEGORY,))
+        return [row["id"] for row in await cur.fetchall()]
+
+
+async def reset_thread_checkpoints_for_channel(
+    conn: psycopg.AsyncConnection, channel_id: int
+) -> int:
+    async with conn.cursor() as cur:
+        await cur.execute(
+            """
+            UPDATE thread_sync_state
+            SET last_backfilled_message_id = NULL, backfill_complete = false
+            WHERE thread_id IN (SELECT id FROM threads WHERE parent_channel_id = %s)
+            """,
+            (channel_id,),
+        )
+        return cur.rowcount
 
 
 async def get_thread_backfill_checkpoint(

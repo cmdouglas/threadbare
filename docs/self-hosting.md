@@ -223,3 +223,30 @@ A couple of things worth knowing:
   Cloudflare Tunnel only need to reach the `web` (really, `caddy`) container.
 - Some residential ISP terms technically prohibit "running a server." In practice this never
   comes up at hobby scale, but it's worth knowing before you tell people about it.
+
+## Forcing a re-backfill
+
+Occasionally an upgrade adds a field the sync worker didn't used to capture (for example, the
+message-type data that lets join/boost/pin notices render as real text instead of blank posts).
+New messages pick this up automatically, but messages already mirrored before the upgrade keep
+whatever was captured at the time — they aren't retroactively fixed on their own.
+
+To fix them, reset the affected channel's sync checkpoint and let the sync worker re-walk it from
+scratch on its next start:
+
+```
+docker compose exec sync-worker threadbare-sync-worker --reset-channel <channel-id>
+docker compose restart sync-worker
+```
+
+The channel id is the number in that board's URL (`/board/<channel-id>/...`). If several channels
+need it, `--reset-all-channels` resets every channel in one pass instead of hunting down each id:
+
+```
+docker compose exec sync-worker threadbare-sync-worker --reset-all-channels
+docker compose restart sync-worker
+```
+
+The reset itself is just a database update and finishes instantly — the actual re-fetch happens
+on restart and re-walks the channel's *entire* history from Discord, so it's rate-limited and can
+take a while on a large channel. Existing rows are updated in place, not duplicated.

@@ -581,3 +581,49 @@ async def test_sync_message_reactions_with_empty_list_clears_all_rows(db_conn):
     async with db_conn.cursor() as cur:
         await cur.execute("SELECT count(*) AS n FROM reactions WHERE message_id = 1000")
         assert (await cur.fetchone())["n"] == 0
+
+
+async def test_channel_exists_returns_true_for_known_channel(db_conn):
+    await _seed_guild_and_channel(db_conn, is_public=True)
+
+    assert await repository.channel_exists(db_conn, 10) is True
+
+
+async def test_channel_exists_returns_false_for_unknown_channel(db_conn):
+    assert await repository.channel_exists(db_conn, 999999) is False
+
+
+async def test_get_content_channel_ids_excludes_categories(db_conn):
+    await db_conn.execute("INSERT INTO guilds (id, name) VALUES (%s, %s)", (1, "Test Guild"))
+    await db_conn.execute(
+        "INSERT INTO channels (id, guild_id, type, name) VALUES (%s, %s, 0, 'general')", (10, 1)
+    )
+    await db_conn.execute(
+        "INSERT INTO channels (id, guild_id, type, name) VALUES (%s, %s, 4, 'a category')", (11, 1)
+    )
+
+    ids = await repository.get_content_channel_ids(db_conn)
+
+    assert 10 in ids
+    assert 11 not in ids
+
+
+async def test_reset_thread_checkpoints_for_channel_resets_only_that_channels_threads(db_conn):
+    await _seed_guild_and_channel(db_conn, is_public=True)
+    await db_conn.execute(
+        "INSERT INTO channels (id, guild_id, type, name) VALUES (%s, %s, 0, 'other')", (20, 1)
+    )
+    await _seed_thread(db_conn, thread_id=3000, parent_channel_id=10)
+    await _seed_thread(db_conn, thread_id=3001, parent_channel_id=20)
+    await repository.set_thread_backfill_checkpoint(
+        db_conn, 3000, last_message_id=500, complete=True
+    )
+    await repository.set_thread_backfill_checkpoint(
+        db_conn, 3001, last_message_id=600, complete=True
+    )
+
+    reset_count = await repository.reset_thread_checkpoints_for_channel(db_conn, 10)
+
+    assert reset_count == 1
+    assert await repository.get_thread_backfill_checkpoint(db_conn, 3000) is None
+    assert await repository.get_thread_backfill_checkpoint(db_conn, 3001) == 600
