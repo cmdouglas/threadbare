@@ -167,9 +167,14 @@ def unconfigured_live_server(tmp_path):
     """A live server running the wizard app directly (no AppSwitcher --
     retired along with the in-process hot-swap it existed for; see
     web/cli.py's on_complete and tests/e2e/test_web_process_restart.py)
-    against a freshly truncated wizard_state/channels/guilds -- so each test
-    starts from a genuinely first-run state, independent of the main
-    live_server fixture's session-scoped data.
+    against a freshly truncated wizard_state/channels/guilds/site_settings --
+    so each test starts from a genuinely first-run state, independent of
+    the main live_server fixture's session-scoped data. site_settings needs
+    truncating too: the /channels step's auto-index checkbox writes it
+    through this fixture's real (non-rollback) PerRequestConnectionSource
+    pool, so a prior test's submission otherwise leaks into every later
+    test/process that reads this singleton table, in this suite or any
+    other.
 
     on_complete here only records the Settings it was called with, proving
     the wizard's half of the hand-off (writes .env, invokes on_complete with
@@ -184,7 +189,9 @@ def unconfigured_live_server(tmp_path):
     """
     conn = psycopg.connect(TEST_DATABASE_URL)
     with conn.cursor() as cur:
-        cur.execute("TRUNCATE wizard_state, channels, guilds RESTART IDENTITY CASCADE")
+        cur.execute(
+            "TRUNCATE wizard_state, channels, guilds, site_settings RESTART IDENTITY CASCADE"
+        )
     conn.commit()
     conn.close()
 
@@ -211,3 +218,16 @@ def unconfigured_live_server(tmp_path):
     )
     server.shutdown()
     thread.join()
+
+    # Also truncate on the way out, not just on the way in: the setup-time
+    # truncate above only prevents leakage *between* tests that use this
+    # fixture -- without this, the last test to run in a given process still
+    # leaves its own real (non-rollback) writes sitting in the shared test
+    # database for whatever runs next, in this suite or any other.
+    conn = psycopg.connect(TEST_DATABASE_URL)
+    with conn.cursor() as cur:
+        cur.execute(
+            "TRUNCATE wizard_state, channels, guilds, site_settings RESTART IDENTITY CASCADE"
+        )
+    conn.commit()
+    conn.close()
