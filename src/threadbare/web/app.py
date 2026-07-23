@@ -99,6 +99,7 @@ def create_app(settings: Settings, pool) -> Flask:
         async with pool.connection() as conn:
             guild = await queries.get_guild(conn, settings.discord_guild_id)
         g.site_title = f"{guild['name']} (threadbare view)" if guild else "Threadbare"
+        g.site_icon_url = avatars.guild_icon_url(guild["id"], guild["icon"]) if guild else None
 
     @app.before_request
     def require_login():
@@ -116,6 +117,7 @@ def create_app(settings: Settings, pool) -> Flask:
             "themes_available": list(themes.AVAILABLE_THEMES),
             "theme_switch_url": _theme_switch_url,
             "site_title": g.site_title,
+            "site_icon_url": g.site_icon_url,
             "show_avatars": g.show_avatars,
             "avatar_toggle_href": _avatar_toggle_url(),
             "posts_per_page": g.posts_per_page,

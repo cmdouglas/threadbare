@@ -1,8 +1,10 @@
 from .conftest import run
 
 
-async def _seed_guild(conn, *, guild_id=1):
-    await conn.execute("INSERT INTO guilds (id, name) VALUES (%s, %s)", (guild_id, "Test Guild"))
+async def _seed_guild(conn, *, guild_id=1, icon=None):
+    await conn.execute(
+        "INSERT INTO guilds (id, name, icon) VALUES (%s, %s, %s)", (guild_id, "Test Guild", icon)
+    )
 
 
 async def _seed_category(conn, *, category_id, guild_id=1, name="A Category", position=0):
@@ -173,3 +175,20 @@ def test_board_index_falls_back_to_threadbare_when_guild_is_unknown(client):
     resp = client.get("/")
 
     assert b"<title>Threadbare</title>" in resp.data
+
+
+def test_board_index_shows_guild_icon_in_masthead_when_set(client, web_conn):
+    run(_seed_guild(web_conn, icon="abcdef"))
+
+    resp = client.get("/")
+
+    assert b'class="site-icon"' in resp.data
+    assert b"https://cdn.discordapp.com/icons/1/abcdef.png" in resp.data
+
+
+def test_board_index_shows_no_icon_in_masthead_when_guild_has_none(client, web_conn):
+    run(_seed_guild(web_conn))
+
+    resp = client.get("/")
+
+    assert b'class="site-icon"' not in resp.data

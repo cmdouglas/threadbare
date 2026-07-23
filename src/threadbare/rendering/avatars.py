@@ -1,6 +1,7 @@
-"""User avatar -> CDN URL. Pure, no I/O. Discord's avatar CDN URLs are
-static and unsigned (unlike attachments' signed, expiring cached_url) — no
-proxy or expiry handling needed here, same as rendering/emoji.py.
+"""User avatar / guild icon -> CDN URL. Pure, no I/O. Discord's avatar and
+icon CDN URLs are static and unsigned (unlike attachments' signed, expiring
+cached_url) — no proxy or expiry handling needed here, same as
+rendering/emoji.py.
 """
 
 DEFAULT_AVATAR_COUNT = 6
@@ -15,3 +16,12 @@ def avatar_url(user_id: int, avatar_hash: str | None) -> str:
     # captured (users only ever get a discord.Member/User's display_name).
     index = (user_id >> 22) % DEFAULT_AVATAR_COUNT
     return f"https://cdn.discordapp.com/embed/avatars/{index}.png"
+
+
+def guild_icon_url(guild_id: int, icon_hash: str | None) -> str | None:
+    # Unlike a user, a guild has no default-icon CDN asset to fall back to
+    # -- None here means "render nothing", not "render a placeholder".
+    if not icon_hash:
+        return None
+    ext = "gif" if icon_hash.startswith("a_") else "png"
+    return f"https://cdn.discordapp.com/icons/{guild_id}/{icon_hash}.{ext}"

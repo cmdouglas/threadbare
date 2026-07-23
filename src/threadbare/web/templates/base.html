@@ -8,7 +8,10 @@
 </head>
 <body>
 <header class="site-header">
-  <a class="site-title" href="{{ url_for('board_index.board_index') }}">{{ site_title }}</a>
+  <a class="site-title" href="{{ url_for('board_index.board_index') }}">
+    {% if site_icon_url %}<img class="site-icon" src="{{ site_icon_url }}" alt="">{% endif %}
+    {{ site_title }}
+  </a>
   <form class="search-form" action="{{ url_for('search.search') }}" method="get">
     <input type="search" name="q" placeholder="Search…" aria-label="Search">
     <button type="submit">Search</button>

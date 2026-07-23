@@ -1,4 +1,4 @@
-from threadbare.rendering.avatars import avatar_url
+from threadbare.rendering.avatars import avatar_url, guild_icon_url
 
 
 def test_avatar_url_uses_png_for_a_static_hash():
@@ -22,3 +22,17 @@ def test_avatar_url_default_avatar_index_depends_on_user_id():
         avatar_url(user_id, None)
         == f"https://cdn.discordapp.com/embed/avatars/{expected_index}.png"
     )
+
+
+def test_guild_icon_url_uses_png_for_a_static_hash():
+    assert guild_icon_url(456, "abcdef") == "https://cdn.discordapp.com/icons/456/abcdef.png"
+
+
+def test_guild_icon_url_uses_gif_for_an_animated_hash():
+    assert guild_icon_url(456, "a_abcdef") == "https://cdn.discordapp.com/icons/456/a_abcdef.gif"
+
+
+def test_guild_icon_url_returns_none_when_guild_has_no_icon():
+    # Unlike a user avatar, Discord has no default guild-icon asset to fall
+    # back to -- a guild with no icon set just has no icon.
+    assert guild_icon_url(456, None) is None
