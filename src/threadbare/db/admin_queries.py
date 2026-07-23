@@ -11,7 +11,7 @@ from datetime import UTC, datetime, timedelta
 
 import psycopg
 
-from threadbare.channel_types import CATEGORY
+from threadbare.channel_types import NON_CONTENT_TYPES
 
 # The sync worker heartbeats every 60s (sync_worker/heartbeat.py); this
 # tolerates a few missed beats (transient slowness/GC pauses) before
@@ -34,9 +34,10 @@ async def set_channel_indexed(
 
 
 async def get_channels_with_sync_state(conn: psycopg.AsyncConnection, guild_id: int) -> list[dict]:
-    """Every non-category channel in the guild, with its computed
-    visibility, mod-controlled indexing flag, and backfill checkpoint (if
-    any -- a channel with no sync_state row yet hasn't been backfilled).
+    """Every content-bearing channel in the guild (i.e. not a category,
+    voice, or stage-voice channel), with its computed visibility,
+    mod-controlled indexing flag, and backfill checkpoint (if any -- a
+    channel with no sync_state row yet hasn't been backfilled).
     """
     async with conn.cursor() as cur:
         await cur.execute(
@@ -46,10 +47,10 @@ async def get_channels_with_sync_state(conn: psycopg.AsyncConnection, guild_id: 
                 s.last_backfilled_message_id, s.backfill_complete, s.last_reconciled_at
             FROM channels c
             LEFT JOIN sync_state s ON s.channel_id = c.id
-            WHERE c.guild_id = %s AND c.type != %s
+            WHERE c.guild_id = %s AND c.type != ALL(%s)
             ORDER BY c.position, c.name
             """,
-            (guild_id, CATEGORY),
+            (guild_id, list(NON_CONTENT_TYPES)),
         )
         return await cur.fetchall()
 

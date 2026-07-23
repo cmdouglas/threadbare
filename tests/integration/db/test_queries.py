@@ -665,6 +665,25 @@ async def test_get_boards_and_categories_excludes_non_public_or_non_indexed_boar
     assert [r["id"] for r in rows] == [10]
 
 
+async def test_get_boards_and_categories_excludes_voice_and_stage_voice_channels(db_conn):
+    # Defense-in-depth against a stale row from before voice/stage channels
+    # were excluded at discovery time -- even public+indexed, it must not
+    # show up as a browsable board.
+    await _seed_guild(db_conn, guild_id=1)
+    await db_conn.execute(
+        """
+        INSERT INTO channels (id, guild_id, type, name, is_public, indexed)
+        VALUES (10, 1, 0, 'public', true, true),
+               (20, 1, 2, 'a voice channel', true, true),
+               (21, 1, 13, 'a stage', true, true)
+        """
+    )
+
+    rows = await queries.get_boards_and_categories(db_conn, 1)
+
+    assert [r["id"] for r in rows] == [10]
+
+
 async def test_get_boards_and_categories_only_for_the_given_guild(db_conn):
     await _seed_guild(db_conn, guild_id=1)
     await _seed_guild(db_conn, guild_id=2)

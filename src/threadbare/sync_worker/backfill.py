@@ -17,7 +17,15 @@ from threadbare.sync_worker.discord_types import MessageLike
 from threadbare.sync_worker.discovery import discover_active_threads
 from threadbare.sync_worker.permissions import should_sync
 
-SKIPPED_CHANNEL_TYPES = (discord.ChannelType.category, discord.ChannelType.forum)
+SKIPPED_CHANNEL_TYPES = (
+    discord.ChannelType.category,
+    discord.ChannelType.forum,
+    # Voice/stage-voice channels are a stated non-goal (DESIGN.md §2).
+    # discover_channels() no longer creates rows for them, but this guards
+    # an already-deployed install with a stale row from before that fix.
+    discord.ChannelType.voice,
+    discord.ChannelType.stage_voice,
+)
 
 logger = logging.getLogger(__name__)
 

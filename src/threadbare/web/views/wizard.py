@@ -32,6 +32,7 @@ from flask import (
     url_for,
 )
 
+from threadbare.channel_types import CATEGORY, NON_CONTENT_TYPES
 from threadbare.config import ConfigError, load_settings
 from threadbare.db import wizard_queries
 from threadbare.discord_permissions import REQUIRED_PERMISSIONS, compute_is_public
@@ -232,7 +233,7 @@ async def channels():
             base_permissions |= int(role["permissions"])
     bot_role_ids = {int(r) for r in bot_member.get("roles", [])}
 
-    categories = {c["id"]: c for c in guild_channels if c["type"] == 4}
+    categories = {c["id"]: c for c in guild_channels if c["type"] == CATEGORY}
     category_overwrites = {
         cat_id: parse_overwrites(cat["permission_overwrites"]) for cat_id, cat in categories.items()
     }
@@ -257,7 +258,7 @@ async def channels():
 
     channel_rows = []
     for ch in guild_channels:
-        if ch["type"] == 4:
+        if ch["type"] in NON_CONTENT_TYPES:
             continue
         parent_id = int(ch["parent_id"]) if ch.get("parent_id") else None
         channel_rows.append(

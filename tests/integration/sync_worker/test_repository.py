@@ -621,6 +621,26 @@ async def test_get_content_channel_ids_excludes_categories(db_conn):
     assert 11 not in ids
 
 
+async def test_get_content_channel_ids_excludes_voice_and_stage_voice(db_conn):
+    await db_conn.execute("INSERT INTO guilds (id, name) VALUES (%s, %s)", (1, "Test Guild"))
+    await db_conn.execute(
+        "INSERT INTO channels (id, guild_id, type, name) VALUES (%s, %s, 0, 'general')", (10, 1)
+    )
+    await db_conn.execute(
+        "INSERT INTO channels (id, guild_id, type, name) VALUES (%s, %s, 2, 'a voice channel')",
+        (12, 1),
+    )
+    await db_conn.execute(
+        "INSERT INTO channels (id, guild_id, type, name) VALUES (%s, %s, 13, 'a stage')", (13, 1)
+    )
+
+    ids = await repository.get_content_channel_ids(db_conn)
+
+    assert 10 in ids
+    assert 12 not in ids
+    assert 13 not in ids
+
+
 async def test_reset_thread_checkpoints_for_channel_resets_only_that_channels_threads(db_conn):
     await _seed_guild_and_channel(db_conn, is_public=True)
     await db_conn.execute(

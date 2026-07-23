@@ -2,7 +2,7 @@
 index and board landing pages. No I/O -- callers fetch rows first.
 """
 
-from threadbare.channel_types import CATEGORY, FORUM_LIKE_TYPES
+from threadbare.channel_types import CATEGORY, FORUM_LIKE_TYPES, NON_CONTENT_TYPES
 
 
 def board_view_mode(channel_row: dict) -> str:
@@ -27,7 +27,10 @@ def group_channels_by_category(rows: list[dict]) -> list[dict]:
     the uncategorized group rather than silently dropped.
     """
     categories = {row["id"]: row for row in rows if row["type"] == CATEGORY}
-    boards = sorted((row for row in rows if row["type"] != CATEGORY), key=lambda r: r["position"])
+    boards = sorted(
+        (row for row in rows if row["type"] not in NON_CONTENT_TYPES),
+        key=lambda r: r["position"],
+    )
 
     groups: dict[int | None, list[dict]] = {None: [], **{cid: [] for cid in categories}}
     for board in boards:

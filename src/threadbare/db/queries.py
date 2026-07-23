@@ -10,7 +10,7 @@ from datetime import datetime
 
 import psycopg
 
-from threadbare.channel_types import CATEGORY
+from threadbare.channel_types import CATEGORY, STAGE_VOICE, VOICE
 from threadbare.pagination import DEFAULT_PAGE_SIZE
 
 _MESSAGE_COLUMNS_SQL = """
@@ -561,7 +561,10 @@ async def get_boards_and_categories(conn: psycopg.AsyncConnection, guild_id: int
     for the board index / web.board_tree.group_channels_by_category. A
     channel that stops being public already has its content purged at the
     source (sync_worker); this additionally keeps its now-content-less row
-    from ever appearing as a browsable board.
+    from ever appearing as a browsable board. Voice/stage-voice channels are
+    excluded outright even if a stale row has them public+indexed (a stated
+    non-goal, DESIGN.md §2) -- discovery no longer creates such rows, but
+    this guards an already-deployed install with one from before that fix.
     """
     async with conn.cursor() as cur:
         await cur.execute(
@@ -569,9 +572,14 @@ async def get_boards_and_categories(conn: psycopg.AsyncConnection, guild_id: int
             SELECT id, parent_id, type, name, position
             FROM channels
             WHERE guild_id = %(guild_id)s
+              AND type != ALL(%(non_boardable)s)
               AND (type = %(category)s OR (is_public = true AND indexed = true))
             ORDER BY position
             """,
-            {"guild_id": guild_id, "category": CATEGORY},
+            {
+                "guild_id": guild_id,
+                "category": CATEGORY,
+                "non_boardable": [VOICE, STAGE_VOICE],
+            },
         )
         return await cur.fetchall()

@@ -24,6 +24,16 @@ async def _seed_board(
     )
 
 
+async def _seed_channel(conn, *, channel_id, guild_id=1, name, type, is_public=True, indexed=True):
+    await conn.execute(
+        """
+        INSERT INTO channels (id, guild_id, type, name, is_public, indexed)
+        VALUES (%s, %s, %s, %s, %s, %s)
+        """,
+        (channel_id, guild_id, type, name, is_public, indexed),
+    )
+
+
 async def _seed_heartbeat(conn, *, updated_at, last_gateway_event_at=None):
     await conn.execute(
         """
@@ -55,6 +65,22 @@ def test_admin_index_lists_channels_with_indexed_and_public_state(client, web_co
     assert resp.status_code == 200
     body = resp.data.decode()
     assert "general" in body
+
+
+def test_admin_index_excludes_voice_and_stage_voice_channels(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10, name="general"))
+    run(_seed_channel(web_conn, channel_id=20, name="a-voice-channel", type=2))
+    run(_seed_channel(web_conn, channel_id=21, name="a-stage", type=13))
+    _make_mod(client)
+
+    resp = client.get("/admin/")
+
+    assert resp.status_code == 200
+    body = resp.data.decode()
+    assert "general" in body
+    assert "a-voice-channel" not in body
+    assert "a-stage" not in body
 
 
 def test_toggle_indexed_flips_the_flag_and_redirects(client, web_conn):

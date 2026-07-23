@@ -169,6 +169,45 @@ async def test_backfill_guild_skips_categories_and_forums(db_conn, test_database
     await _cleanup(db_conn)
 
 
+async def test_backfill_guild_skips_voice_and_stage_voice_channels(db_conn, test_database_url):
+    # Defense-in-depth: even a stale row from before this exclusion existed
+    # (is_public+indexed, as discover_channels() used to compute for any
+    # non-category channel) must still not get backfilled.
+    await _seed_channel(db_conn, guild_id=1, channel_id=10, is_public=True)
+    await _seed_channel(db_conn, guild_id=1, channel_id=20, is_public=True)
+    await _seed_channel(db_conn, guild_id=1, channel_id=30, is_public=True)
+    await db_conn.commit()
+
+    author = FakeAuthor(id=1)
+    fetcher = ChannelKeyedFetcher(
+        {
+            10: [FakeMessage(id=100, author=author)],
+            20: [FakeMessage(id=200, author=author)],
+            30: [FakeMessage(id=300, author=author)],
+        }
+    )
+    guild = FakeGuild(
+        [
+            FakeChannel(10),
+            FakeChannel(20, type=discord.ChannelType.voice),
+            FakeChannel(30, type=discord.ChannelType.stage_voice),
+        ]
+    )
+    client = FakeClient(guild)
+
+    pool = create_pool(test_database_url)
+    await pool.open()
+    try:
+        await backfill_guild(client, pool, guild_id=1, fetcher=fetcher)
+    finally:
+        await pool.close()
+
+    assert 20 not in fetcher.calls
+    assert 30 not in fetcher.calls
+
+    await _cleanup(db_conn)
+
+
 async def test_backfill_guild_respects_channel_concurrency_cap(db_conn, test_database_url):
     channel_ids = [10, 11, 12, 13, 14, 15]
     for cid in channel_ids:

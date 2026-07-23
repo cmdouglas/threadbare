@@ -131,6 +131,51 @@ def test_channels_get_succeeds_when_channel_is_inside_a_category(
     assert b"Text Channels" not in resp.data  # the category itself isn't a selectable row
 
 
+def test_channels_get_excludes_voice_and_stage_voice_channels(wizard_client, web_conn, monkeypatch):
+    _seed_invite_step(wizard_client, web_conn)
+    _stub_discord(monkeypatch)
+
+    async def fake_get_guild_channels_with_voice(token, guild_id, **kwargs):
+        return [
+            {
+                "id": str(CHANNEL_ID),
+                "type": 0,
+                "name": "general",
+                "position": 0,
+                "parent_id": None,
+                "topic": None,
+                "permission_overwrites": [],
+            },
+            {
+                "id": "333",
+                "type": 2,
+                "name": "a-voice-channel",
+                "position": 1,
+                "parent_id": None,
+                "topic": None,
+                "permission_overwrites": [],
+            },
+            {
+                "id": "334",
+                "type": 13,
+                "name": "a-stage",
+                "position": 2,
+                "parent_id": None,
+                "topic": None,
+                "permission_overwrites": [],
+            },
+        ]
+
+    monkeypatch.setattr(wizard_view, "get_guild_channels", fake_get_guild_channels_with_voice)
+
+    resp = wizard_client.get("/channels")
+
+    assert resp.status_code == 200
+    assert b"general" in resp.data
+    assert b"a-voice-channel" not in resp.data
+    assert b"a-stage" not in resp.data
+
+
 def test_channels_revisit_preserves_prior_confirmation(wizard_client, web_conn, monkeypatch):
     _seed_invite_step(wizard_client, web_conn)
     _stub_discord(monkeypatch)

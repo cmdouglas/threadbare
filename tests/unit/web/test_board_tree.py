@@ -1,4 +1,4 @@
-from threadbare.channel_types import CATEGORY, FORUM, NEWS, TEXT
+from threadbare.channel_types import CATEGORY, FORUM, NEWS, STAGE_VOICE, TEXT, VOICE
 from threadbare.web.board_tree import board_view_mode, group_channels_by_category
 
 
@@ -70,6 +70,21 @@ def test_group_channels_by_category_includes_empty_categories():
     groups = group_channels_by_category(rows)
 
     assert groups == [{"category": rows[0], "boards": []}]
+
+
+def test_group_channels_by_category_excludes_voice_and_stage_voice_channels():
+    # Defense-in-depth against a stale row from before voice/stage channels
+    # were excluded from discovery -- must never render as a board.
+    rows = [
+        _channel(1, CATEGORY, position=0),
+        _channel(10, TEXT, name="general", parent_id=1, position=0),
+        _channel(20, VOICE, name="a voice channel", parent_id=1, position=1),
+        _channel(21, STAGE_VOICE, name="a stage", parent_id=1, position=2),
+    ]
+
+    groups = group_channels_by_category(rows)
+
+    assert [b["id"] for b in groups[0]["boards"]] == [10]
 
 
 def test_group_channels_by_category_folds_board_with_unlisted_parent_into_uncategorized():

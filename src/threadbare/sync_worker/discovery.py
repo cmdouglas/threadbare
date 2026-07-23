@@ -1,5 +1,6 @@
-"""Channel-roster bootstrap: ensures every non-category channel in a guild
-has a `channels` row with correctly computed is_public, so backfill/
+"""Channel-roster bootstrap: ensures every content-bearing channel in a
+guild (i.e. not a category, voice, or stage-voice channel) has a `channels`
+row with correctly computed is_public, so backfill/
 reconciliation/live events have something to act on. Also discovers active
 threads (see discover_active_threads) — archived threads are discovered as
 part of backfill instead, since walking them is paginated/comparatively
@@ -36,9 +37,11 @@ async def discover_channels(client: discord.Client, conn, *, guild_id: int) -> l
     own), computing is_public for non-category channels via the same
     refresh_channel_public_status used by live CHANNEL_UPDATE/role events —
     so there's exactly one function in the codebase that ever computes
-    is_public. Safe to call repeatedly (e.g. on every gateway reconnect):
+    is_public. Voice/stage-voice channels get no row at all — a stated
+    non-goal (DESIGN.md §2), and unlike categories, nothing parents off
+    them. Safe to call repeatedly (e.g. on every gateway reconnect):
     metadata updates, is_public/indexed never do. Returns the ids of the
-    non-category channels processed.
+    content-bearing channels processed.
     """
     guild = client.get_guild(guild_id) or await client.fetch_guild(guild_id)
     await repository.upsert_guild(
@@ -52,7 +55,14 @@ async def discover_channels(client: discord.Client, conn, *, guild_id: int) -> l
 
     channels = await guild.fetch_channels()
     categories = [c for c in channels if c.type is discord.ChannelType.category]
-    others = [c for c in channels if c.type is not discord.ChannelType.category]
+    # Voice/stage-voice channels are a stated non-goal (DESIGN.md §2) and,
+    # unlike categories, nothing parents off them -- they get no row at all.
+    non_content_types = (
+        discord.ChannelType.category,
+        discord.ChannelType.voice,
+        discord.ChannelType.stage_voice,
+    )
+    others = [c for c in channels if c.type not in non_content_types]
 
     # Categories first: a channel's parent_id FK must point at a category
     # row that already exists, and fetch_channels() doesn't guarantee any

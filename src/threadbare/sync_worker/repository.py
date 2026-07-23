@@ -8,7 +8,7 @@ per-test isolation for free via rollback, without truncating tables.
 import psycopg
 from psycopg.types.json import Json
 
-from threadbare.channel_types import CATEGORY
+from threadbare.channel_types import NON_CONTENT_TYPES
 
 
 async def upsert_guild(conn: psycopg.AsyncConnection, row: dict) -> None:
@@ -211,10 +211,13 @@ async def channel_exists(conn: psycopg.AsyncConnection, channel_id: int) -> bool
 
 
 async def get_content_channel_ids(conn: psycopg.AsyncConnection) -> list[int]:
-    # Categories have no content/checkpoint of their own -- excluding them
-    # keeps a "reset every channel" caller's reported count meaningful.
+    # Categories and voice/stage-voice channels have no content/checkpoint
+    # of their own -- excluding them keeps a "reset every channel" caller's
+    # reported count meaningful.
     async with conn.cursor() as cur:
-        await cur.execute("SELECT id FROM channels WHERE type != %s", (CATEGORY,))
+        await cur.execute(
+            "SELECT id FROM channels WHERE type != ALL(%s)", (list(NON_CONTENT_TYPES),)
+        )
         return [row["id"] for row in await cur.fetchall()]
 
 

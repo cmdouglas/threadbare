@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 
 from flask import Blueprint, abort, current_app, g, redirect, render_template, request, url_for
 
-from threadbare.channel_types import CATEGORY
+from threadbare.channel_types import NON_CONTENT_TYPES
 from threadbare.db import queries
 from threadbare.pagination import DEFAULT_PAGE_SIZE, page_number_for_offset
 from threadbare.pseudotopics import week_bounds
@@ -14,7 +14,7 @@ bp = Blueprint("board", __name__)
 
 async def _get_board_or_404(conn, channel_id: int) -> dict:
     channel = await queries.get_channel(conn, channel_id)
-    if channel is None or channel["type"] == CATEGORY:
+    if channel is None or channel["type"] in NON_CONTENT_TYPES:
         abort(404)
     return channel
 

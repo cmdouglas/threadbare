@@ -137,6 +137,24 @@ async def test_discover_channels_creates_a_row_for_categories_but_excludes_them_
     assert row["is_public"] is False  # schema default; never computed for categories
 
 
+async def test_discover_channels_excludes_voice_and_stage_voice_channels_entirely(db_conn):
+    # Unlike categories, voice/stage channels have nothing that parents off
+    # them, so they get no row at all -- a stated non-goal (DESIGN.md §2).
+    role = FakeRole(BOTH_REQUIRED)
+    guild = FakeGuild(id=1, name="Test Guild", default_role=role, channels=[])
+    voice = FakeChannel(id=20, name="general-voice", guild=guild, type=discord.ChannelType.voice)
+    stage = FakeChannel(id=21, name="stage", guild=guild, type=discord.ChannelType.stage_voice)
+    guild._channels = [voice, stage]
+    client = FakeClient(guild)
+
+    discovered = await discover_channels(client, db_conn, guild_id=1)
+
+    assert discovered == []
+    async with db_conn.cursor() as cur:
+        await cur.execute("SELECT id FROM channels WHERE id IN (20, 21)")
+        assert await cur.fetchall() == []
+
+
 async def test_discover_channels_inserts_category_before_its_child_channel(db_conn):
     # Regression test for the FK-ordering bug: fetch_channels() doesn't
     # guarantee categories come before their children.

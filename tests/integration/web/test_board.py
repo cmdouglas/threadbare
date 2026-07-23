@@ -74,6 +74,24 @@ def test_board_landing_returns_404_for_a_category(client, web_conn):
     assert resp.status_code == 404
 
 
+def test_board_landing_returns_404_for_a_voice_channel(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=1, type=2, name="a voice channel"))
+
+    resp = client.get("/board/1")
+
+    assert resp.status_code == 404
+
+
+def test_board_landing_returns_404_for_a_stage_channel(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=1, type=13, name="a stage"))
+
+    resp = client.get("/board/1")
+
+    assert resp.status_code == 404
+
+
 def test_board_landing_redirects_forum_channel_to_its_topics_list(client, web_conn):
     run(_seed_guild(web_conn))
     run(_seed_board(web_conn, channel_id=10, type=15, name="a forum"))
