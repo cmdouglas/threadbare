@@ -16,8 +16,16 @@ set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
-if [ -n "$(git status --porcelain)" ]; then
-  echo "Working tree has uncommitted changes -- aborting. Commit, stash, or discard them first." >&2
+# Caddyfile is excluded: install.sh rewrites it in place for subpath
+# deployments (see "Running at a subpath" in docs/self-hosting.md), and the
+# "Running at a subpath" manual-edit path does the same -- either way, a
+# subpath deployment's Caddyfile is expected to permanently differ from the
+# tracked default, not a sign of unrelated uncommitted work. If the shipped
+# default Caddyfile itself ever changes upstream while yours is locally
+# edited, `git pull` below will surface a normal conflict to resolve by hand
+# rather than silently discarding your routing config.
+if [ -n "$(git status --porcelain -- . ':!Caddyfile')" ]; then
+  echo "Working tree has uncommitted changes (other than Caddyfile) -- aborting. Commit, stash, or discard them first." >&2
   exit 1
 fi
 
