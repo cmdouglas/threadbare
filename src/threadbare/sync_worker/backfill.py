@@ -45,6 +45,8 @@ class HistoryFetcher(Protocol):
 class BackfillSink(Protocol):
     async def get_checkpoint(self, channel_id: int) -> int | None: ...
 
+    async def write_users(self, authors: list) -> None: ...
+
     async def write_message(
         self, message: MessageLike, *, channel_id: int | None = None, thread_id: int | None = None
     ) -> None: ...
@@ -60,6 +62,24 @@ class BackfillSink(Protocol):
     ) -> None: ...
 
     async def commit(self) -> None: ...
+
+
+def _authors_sorted_by_id(batch: list[MessageLike]) -> list:
+    """Distinct message authors in a batch, sorted ascending by id.
+
+    backfill_guild() runs multiple channels/threads concurrently, each
+    holding one open transaction per batch. If two concurrent transactions
+    upsert overlapping authors in different orders (message arrival order,
+    unrelated to author id), that's a classic Postgres upsert deadlock: txn
+    A locks author X then waits on Y (held by B); txn B locks Y then waits
+    on X (held by A). Upserting a batch's authors up front, in this same
+    fixed order regardless of which transaction runs it, removes the
+    possibility of that cycle forming.
+    """
+    seen = {}
+    for message in batch:
+        seen.setdefault(message.author.id, message.author)
+    return [seen[author_id] for author_id in sorted(seen)]
 
 
 def _estimate_attachment_url_expiry() -> datetime:
@@ -161,6 +181,10 @@ class RepositoryBackfillSink:
     async def get_checkpoint(self, channel_id: int) -> int | None:
         return await repository.get_backfill_checkpoint(self._conn, channel_id)
 
+    async def write_users(self, authors: list) -> None:
+        for author in authors:
+            await repository.upsert_user(self._conn, transform.user_to_row(author))
+
     async def write_message(
         self, message: MessageLike, *, channel_id: int | None = None, thread_id: int | None = None
     ) -> None:
@@ -239,6 +263,7 @@ async def backfill_channel(
     while True:
         batch = await fetcher.fetch_batch(channel_id=channel_id, after=after, limit=batch_size)
 
+        await sink.write_users(_authors_sorted_by_id(batch))
         for message in batch:
             await sink.write_message(message, channel_id=channel_id)
             total_written += 1
@@ -283,6 +308,7 @@ async def backfill_thread(
     while True:
         batch = await fetcher.fetch_batch(channel_id=thread_id, after=after, limit=batch_size)
 
+        await sink.write_users(_authors_sorted_by_id(batch))
         for message in batch:
             await sink.write_message(message, thread_id=thread_id)
             total_written += 1
@@ -338,7 +364,20 @@ async def backfill_guild(
             if flags is None or not should_sync(is_public=flags[0], indexed=flags[1]):
                 return
             sink = RepositoryBackfillSink(conn)
-            await backfill_channel(fetcher, sink, channel_id=channel_id, batch_size=batch_size)
+            try:
+                await backfill_channel(fetcher, sink, channel_id=channel_id, batch_size=batch_size)
+            except Exception:
+                # Isolates one channel's failure (e.g. a Postgres deadlock
+                # from two channels' transactions upserting overlapping
+                # authors -- see _authors_sorted_by_id) from every other
+                # channel/thread in this guild's backfill: an un-caught
+                # exception here would propagate through the asyncio.gather
+                # below and cancel every other in-flight task too. This
+                # channel resumes from its last committed checkpoint on the
+                # next backfill run.
+                logger.exception(
+                    "Backfill failed for channel %s -- other channels continue", channel_id
+                )
 
     candidates = [channel.id for channel in channels if channel.type not in SKIPPED_CHANNEL_TYPES]
     await asyncio.gather(
@@ -422,6 +461,12 @@ async def backfill_guild_threads(
     async def _backfill_one(thread_id: int) -> None:
         async with semaphore, pool.connection() as conn:
             sink = RepositoryBackfillSink(conn)
-            await backfill_thread(fetcher, sink, thread_id=thread_id, batch_size=batch_size)
+            try:
+                await backfill_thread(fetcher, sink, thread_id=thread_id, batch_size=batch_size)
+            except Exception:
+                # Same isolation rationale as backfill_guild's _backfill_one.
+                logger.exception(
+                    "Backfill failed for thread %s -- other threads continue", thread_id
+                )
 
     await asyncio.gather(*(_backfill_one(thread_id) for thread_id in thread_ids))

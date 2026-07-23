@@ -4,9 +4,14 @@ from threadbare.sync_worker.backfill import backfill_channel, backfill_thread
 
 
 @dataclass
+class FakeAuthor:
+    id: int
+
+
+@dataclass
 class FakeMessage:
     id: int
-    author: object
+    author: FakeAuthor
     content: str = ""
     created_at: object = None
     edited_at: object = None
@@ -31,6 +36,8 @@ class FakeFetcher:
 class FakeSink:
     def __init__(self, initial_checkpoint: int | None = None):
         self.written_message_ids: list[int] = []
+        self.written_user_batches: list[list[int]] = []
+        self.events: list[tuple] = []
         self._checkpoint = initial_checkpoint
         self._thread_checkpoint = initial_checkpoint
         self.complete: bool | None = None
@@ -39,10 +46,16 @@ class FakeSink:
     async def get_checkpoint(self, channel_id: int) -> int | None:
         return self._checkpoint
 
+    async def write_users(self, authors: list) -> None:
+        ids = [author.id for author in authors]
+        self.written_user_batches.append(ids)
+        self.events.append(("users", ids))
+
     async def write_message(
         self, message, *, channel_id: int | None = None, thread_id: int | None = None
     ) -> None:
         self.written_message_ids.append(message.id)
+        self.events.append(("message", message.id))
 
     async def set_checkpoint(self, channel_id: int, *, last_message_id, complete: bool) -> None:
         self._checkpoint = last_message_id
@@ -62,7 +75,7 @@ class FakeSink:
 
 
 async def test_backfill_starts_from_beginning_when_no_checkpoint():
-    author = object()
+    author = FakeAuthor(id=1)
     page = [FakeMessage(id=1, author=author), FakeMessage(id=2, author=author)]
     fetcher = FakeFetcher({None: page})
     sink = FakeSink(initial_checkpoint=None)
@@ -75,7 +88,7 @@ async def test_backfill_starts_from_beginning_when_no_checkpoint():
 
 
 async def test_backfill_resumes_from_existing_checkpoint():
-    author = object()
+    author = FakeAuthor(id=1)
     fetcher = FakeFetcher({50: [FakeMessage(id=51, author=author)]})
     sink = FakeSink(initial_checkpoint=50)
 
@@ -86,7 +99,7 @@ async def test_backfill_resumes_from_existing_checkpoint():
 
 
 async def test_backfill_pages_until_a_partial_batch_signals_exhaustion():
-    author = object()
+    author = FakeAuthor(id=1)
     fetcher = FakeFetcher(
         {
             None: [FakeMessage(id=1, author=author), FakeMessage(id=2, author=author)],
@@ -104,7 +117,7 @@ async def test_backfill_pages_until_a_partial_batch_signals_exhaustion():
 
 
 async def test_backfill_marks_complete_and_keeps_checkpoint_on_empty_final_page():
-    author = object()
+    author = FakeAuthor(id=1)
     fetcher = FakeFetcher(
         {
             None: [FakeMessage(id=1, author=author), FakeMessage(id=2, author=author)],
@@ -122,7 +135,7 @@ async def test_backfill_marks_complete_and_keeps_checkpoint_on_empty_final_page(
 async def test_backfill_commits_once_per_batch():
     # Guards against regressing to a single trailing commit: a crash between
     # batches should only lose the in-flight batch, not everything before it.
-    author = object()
+    author = FakeAuthor(id=1)
     fetcher = FakeFetcher(
         {
             None: [FakeMessage(id=1, author=author), FakeMessage(id=2, author=author)],
@@ -136,8 +149,41 @@ async def test_backfill_commits_once_per_batch():
     assert sink.commit_count == len(fetcher.calls) == 2
 
 
+async def test_backfill_upserts_batch_authors_sorted_by_id_before_writing_messages():
+    # Regression test: backfill_guild() runs multiple channels' backfills
+    # concurrently, each holding one open transaction per batch. If two
+    # concurrent transactions upsert overlapping authors in different
+    # orders (arrival order in each channel, unrelated to author id), that's
+    # a classic Postgres upsert deadlock -- txn A locks author X then waits
+    # on Y (held by B); txn B locks Y then waits on X (held by A). Upserting
+    # every batch's distinct authors up front, in a fixed ascending-id order,
+    # removes the possibility of that cycle forming.
+    author_high = FakeAuthor(id=200)
+    author_low = FakeAuthor(id=100)
+    page = [FakeMessage(id=1, author=author_high), FakeMessage(id=2, author=author_low)]
+    fetcher = FakeFetcher({None: page})
+    sink = FakeSink()
+
+    await backfill_channel(fetcher, sink, channel_id=10, batch_size=3)
+
+    assert sink.written_user_batches == [[100, 200]]
+    assert sink.events[0] == ("users", [100, 200])
+    assert [e for e in sink.events if e[0] == "message"] == [("message", 1), ("message", 2)]
+
+
+async def test_backfill_dedupes_repeated_author_within_a_batch():
+    author = FakeAuthor(id=42)
+    page = [FakeMessage(id=1, author=author), FakeMessage(id=2, author=author)]
+    fetcher = FakeFetcher({None: page})
+    sink = FakeSink()
+
+    await backfill_channel(fetcher, sink, channel_id=10, batch_size=3)
+
+    assert sink.written_user_batches == [[42]]
+
+
 async def test_backfill_thread_starts_from_beginning_when_no_checkpoint():
-    author = object()
+    author = FakeAuthor(id=1)
     page = [FakeMessage(id=1, author=author), FakeMessage(id=2, author=author)]
     fetcher = FakeFetcher({None: page})
     sink = FakeSink(initial_checkpoint=None)
@@ -150,7 +196,7 @@ async def test_backfill_thread_starts_from_beginning_when_no_checkpoint():
 
 
 async def test_backfill_thread_resumes_from_existing_checkpoint():
-    author = object()
+    author = FakeAuthor(id=1)
     fetcher = FakeFetcher({50: [FakeMessage(id=51, author=author)]})
     sink = FakeSink(initial_checkpoint=50)
 
@@ -161,7 +207,7 @@ async def test_backfill_thread_resumes_from_existing_checkpoint():
 
 
 async def test_backfill_thread_pages_until_a_partial_batch_signals_exhaustion():
-    author = object()
+    author = FakeAuthor(id=1)
     fetcher = FakeFetcher(
         {
             None: [FakeMessage(id=1, author=author), FakeMessage(id=2, author=author)],
@@ -179,7 +225,7 @@ async def test_backfill_thread_pages_until_a_partial_batch_signals_exhaustion():
 
 
 async def test_backfill_thread_marks_complete_and_keeps_checkpoint_on_empty_final_page():
-    author = object()
+    author = FakeAuthor(id=1)
     fetcher = FakeFetcher(
         {
             None: [FakeMessage(id=1, author=author), FakeMessage(id=2, author=author)],
@@ -195,7 +241,7 @@ async def test_backfill_thread_marks_complete_and_keeps_checkpoint_on_empty_fina
 
 
 async def test_backfill_thread_commits_once_per_batch():
-    author = object()
+    author = FakeAuthor(id=1)
     fetcher = FakeFetcher(
         {
             None: [FakeMessage(id=1, author=author), FakeMessage(id=2, author=author)],
@@ -207,3 +253,27 @@ async def test_backfill_thread_commits_once_per_batch():
     await backfill_thread(fetcher, sink, thread_id=3000, batch_size=2)
 
     assert sink.commit_count == len(fetcher.calls) == 2
+
+
+async def test_backfill_thread_upserts_batch_authors_sorted_by_id_before_writing_messages():
+    author_high = FakeAuthor(id=200)
+    author_low = FakeAuthor(id=100)
+    page = [FakeMessage(id=1, author=author_high), FakeMessage(id=2, author=author_low)]
+    fetcher = FakeFetcher({None: page})
+    sink = FakeSink()
+
+    await backfill_thread(fetcher, sink, thread_id=3000, batch_size=3)
+
+    assert sink.written_user_batches == [[100, 200]]
+    assert sink.events[0] == ("users", [100, 200])
+
+
+async def test_backfill_thread_dedupes_repeated_author_within_a_batch():
+    author = FakeAuthor(id=42)
+    page = [FakeMessage(id=1, author=author), FakeMessage(id=2, author=author)]
+    fetcher = FakeFetcher({None: page})
+    sink = FakeSink()
+
+    await backfill_thread(fetcher, sink, thread_id=3000, batch_size=3)
+
+    assert sink.written_user_batches == [[42]]

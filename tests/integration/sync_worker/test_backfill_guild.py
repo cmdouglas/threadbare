@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
@@ -80,6 +81,25 @@ class ChannelKeyedFetcher:
             return self._pages_by_channel.get(channel_id, [])
         self.current -= 1
         return []
+
+
+class FailingFetcher:
+    """Like ChannelKeyedFetcher, but raises for one designated channel --
+    simulates a channel-level crash (e.g. the Postgres deadlock
+    _authors_sorted_by_id guards against) to test that backfill_guild()
+    isolates it instead of cancelling every other channel via asyncio.gather.
+    """
+
+    def __init__(self, pages_by_channel: dict[int, list[FakeMessage]], *, failing_channel_id: int):
+        self._pages_by_channel = pages_by_channel
+        self._failing_channel_id = failing_channel_id
+        self.calls: list[int] = []
+
+    async def fetch_batch(self, *, channel_id: int, after: int | None, limit: int) -> list:
+        self.calls.append(channel_id)
+        if channel_id == self._failing_channel_id:
+            raise RuntimeError("simulated backfill crash")
+        return self._pages_by_channel.get(channel_id, [])
 
 
 async def _cleanup(conn):
@@ -230,5 +250,41 @@ async def test_backfill_guild_respects_channel_concurrency_cap(db_conn, test_dat
         await pool.close()
 
     assert fetcher.max_concurrent_seen <= 2
+
+    await _cleanup(db_conn)
+
+
+async def test_backfill_guild_isolates_a_channel_crash_from_the_rest(
+    db_conn, test_database_url, caplog
+):
+    await _seed_channel(db_conn, guild_id=1, channel_id=10, is_public=True)
+    await _seed_channel(db_conn, guild_id=1, channel_id=11, is_public=True)
+    await db_conn.commit()
+
+    author = FakeAuthor(id=1)
+    fetcher = FailingFetcher(
+        {
+            10: [FakeMessage(id=100, author=author)],
+            11: [FakeMessage(id=110, author=author)],
+        },
+        failing_channel_id=10,
+    )
+    guild = FakeGuild([FakeChannel(10), FakeChannel(11)])
+    client = FakeClient(guild)
+
+    pool = create_pool(test_database_url)
+    await pool.open()
+    try:
+        with caplog.at_level(logging.ERROR):
+            await backfill_guild(client, pool, guild_id=1, fetcher=fetcher)
+    finally:
+        await pool.close()
+
+    async with db_conn.cursor() as cur:
+        await cur.execute("SELECT id FROM messages ORDER BY id")
+        # Channel 10's crash doesn't cancel channel 11's still-in-flight
+        # backfill via asyncio.gather -- its message is written regardless.
+        assert {row["id"] for row in await cur.fetchall()} == {110}
+    assert "channel 10" in caplog.text
 
     await _cleanup(db_conn)

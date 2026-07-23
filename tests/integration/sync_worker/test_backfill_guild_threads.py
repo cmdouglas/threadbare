@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
@@ -111,6 +112,25 @@ class ThreadKeyedFetcher:
             return self._pages_by_thread.get(channel_id, [])
         self.current -= 1
         return []
+
+
+class FailingThreadFetcher:
+    """Like ThreadKeyedFetcher, but raises for one designated thread --
+    tests that backfill_guild_threads() isolates a single thread's crash
+    instead of cancelling every other thread via asyncio.gather, mirroring
+    backfill_guild()'s own isolation for channels.
+    """
+
+    def __init__(self, pages_by_thread: dict[int, list[FakeMessage]], *, failing_thread_id: int):
+        self._pages_by_thread = pages_by_thread
+        self._failing_thread_id = failing_thread_id
+        self.calls: list[int] = []
+
+    async def fetch_batch(self, *, channel_id: int, after: int | None, limit: int) -> list:
+        self.calls.append(channel_id)
+        if channel_id == self._failing_thread_id:
+            raise RuntimeError("simulated backfill crash")
+        return self._pages_by_thread.get(channel_id, [])
 
 
 async def _cleanup(conn):
@@ -290,5 +310,46 @@ async def test_backfill_guild_threads_respects_the_shared_concurrency_cap(
         await pool.close()
 
     assert fetcher.max_concurrent_seen <= 2
+
+    await _cleanup(db_conn)
+
+
+async def test_backfill_guild_threads_isolates_a_thread_crash_from_the_rest(
+    db_conn, test_database_url, caplog
+):
+    await _seed_channel(db_conn, guild_id=1, channel_id=10, is_public=True)
+    await db_conn.commit()
+
+    crashing = FakeThread(id=3000, parent_id=10)
+    fine = FakeThread(id=3001, parent_id=10)
+    channel = FakeChannel(id=10)
+    guild = FakeGuild([channel], active_threads=[crashing, fine])
+    client = FakeClient(guild)
+    author = FakeAuthor(id=1)
+    fetcher = FailingThreadFetcher(
+        {
+            3000: [FakeMessage(id=100, author=author)],
+            3001: [FakeMessage(id=101, author=author)],
+        },
+        failing_thread_id=3000,
+    )
+
+    pool = create_pool(test_database_url)
+    await pool.open()
+    try:
+        semaphore = asyncio.Semaphore(3)
+        with caplog.at_level(logging.ERROR):
+            await backfill_guild_threads(
+                client, pool, guild_id=1, channels=[channel], semaphore=semaphore, fetcher=fetcher
+            )
+    finally:
+        await pool.close()
+
+    async with db_conn.cursor() as cur:
+        await cur.execute("SELECT id FROM messages ORDER BY id")
+        # Thread 3000's crash doesn't cancel thread 3001's still-in-flight
+        # backfill via asyncio.gather -- its message is written regardless.
+        assert {row["id"] for row in await cur.fetchall()} == {101}
+    assert "thread 3000" in caplog.text
 
     await _cleanup(db_conn)
