@@ -22,6 +22,13 @@ if ! command -v docker >/dev/null 2>&1; then
   exit 1
 fi
 
+if ! docker info >/dev/null 2>&1; then
+  echo "Docker is installed, but this user can't talk to the Docker daemon (permission denied, or the daemon isn't running)." >&2
+  echo "Either re-run this script with sudo, or add yourself to the docker group and log back in:" >&2
+  echo "  sudo usermod -aG docker \$USER && newgrp docker" >&2
+  exit 1
+fi
+
 if ! docker compose version >/dev/null 2>&1; then
   echo "The Docker Compose plugin isn't available ('docker compose version' failed)." >&2
   echo "See https://docs.docker.com/compose/install/, then re-run this script." >&2
