@@ -80,7 +80,13 @@ def _message_row(**overrides):
 async def test_upsert_user_persists_is_bot_and_role_ids(db_conn):
     await repository.upsert_user(
         db_conn,
-        {"id": 1, "display_name": "alice", "avatar_hash": None, "is_bot": True, "role_ids": [10, 20]},
+        {
+            "id": 1,
+            "display_name": "alice",
+            "avatar_hash": None,
+            "is_bot": True,
+            "role_ids": [10, 20],
+        },
     )
 
     async with db_conn.cursor() as cur:

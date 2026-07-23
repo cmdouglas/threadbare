@@ -375,7 +375,9 @@ async def test_discover_roles_is_safe_to_call_repeatedly(db_conn):
     await db_conn.execute("INSERT INTO guilds (id, name) VALUES (%s, %s)", (1, "Test Guild"))
     await discover_roles(client, db_conn, guild_id=1)
 
-    guild._roles = [FakeGuildRole(id=111, name="New Name", color=FakeColour(value=0x00FF00), position=2)]
+    guild._roles = [
+        FakeGuildRole(id=111, name="New Name", color=FakeColour(value=0x00FF00), position=2)
+    ]
     await discover_roles(client, db_conn, guild_id=1)
 
     async with db_conn.cursor() as cur:
