@@ -75,6 +75,11 @@ class ThreadbareClient(discord.Client):
         intents.guild_messages = True
         intents.message_content = True
         intents.guild_reactions = True
+        # Privileged GUILD_MEMBERS intent -- needs "Server Members Intent"
+        # enabled on the Bot tab (docs/DEVELOPMENT.md, wizard_intro.html).
+        # Requested solely so on_member_update can keep users.display_name
+        # fresh for a renamed member who never posts again (ROADMAP.md).
+        intents.members = True
         super().__init__(intents=intents, **kwargs)
         self.guild_id = guild_id
         self.pool = pool
@@ -132,6 +137,15 @@ class ThreadbareClient(discord.Client):
             await events.handle_message_create(
                 conn, message, channel_id=channel_id, thread_id=thread_id, thread=thread
             )
+
+    async def on_member_update(self, before: discord.Member, after: discord.Member) -> None:
+        # No raw variant exists for this event (unlike message/thread/
+        # reaction events) -- discord.py has no RawMemberUpdateEvent, so the
+        # cooked handler is the only option here.
+        if self.pool is None or after.guild.id != self.guild_id:
+            return
+        async with self.pool.connection() as conn:
+            await events.handle_member_update(conn, before, after)
 
     async def on_raw_message_edit(self, payload: discord.RawMessageUpdateEvent) -> None:
         if self.pool is None or payload.guild_id != self.guild_id:

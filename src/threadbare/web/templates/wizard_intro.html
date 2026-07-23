@@ -9,6 +9,8 @@ for the server you want to mirror.</p>
   <li>Create a Discord application and a Bot under it.</li>
   <li>Enable the <strong>Message Content</strong> intent on the Bot tab — miss this and
       every message body silently arrives empty.</li>
+  <li>Also enable the <strong>Server Members</strong> intent on the Bot tab — without it,
+      a member's display name won't update after they rename unless they post again.</li>
   <li>Copy the bot token and the application's client ID (both on the Bot/OAuth2 tabs).</li>
   <li>Invite the bot to your server using a generated link (<code>bot</code> scope,
       <code>View Channels</code> + <code>Read Message History</code> only).</li>

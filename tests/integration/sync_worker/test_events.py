@@ -478,3 +478,44 @@ async def test_handle_role_permissions_changed_recomputes_every_channel(db_conn)
     assert await repository.get_channel_is_public(db_conn, 10) is False
     assert await repository.get_channel_is_public(db_conn, 11) is False
     # the category itself was skipped, not blown up on (it has no row to update)
+
+
+async def test_handle_member_update_updates_display_name_in_the_database(db_conn):
+    await db_conn.execute(
+        "INSERT INTO users (id, display_name, avatar_hash) VALUES (%s, %s, %s)",
+        (1, "old-nick", None),
+    )
+    before = FakeAuthor(id=1, display_name="old-nick")
+    after = FakeAuthor(id=1, display_name="new-nick")
+
+    await events.handle_member_update(db_conn, before, after)
+
+    async with db_conn.cursor() as cur:
+        await cur.execute("SELECT display_name FROM users WHERE id = 1")
+        assert (await cur.fetchone())["display_name"] == "new-nick"
+
+
+async def test_handle_member_update_inserts_a_new_user_row_if_none_existed(db_conn):
+    # A member who renames before ever posting -- no prior users row exists.
+    before = FakeAuthor(id=2, display_name="old-nick")
+    after = FakeAuthor(id=2, display_name="new-nick")
+
+    await events.handle_member_update(db_conn, before, after)
+
+    async with db_conn.cursor() as cur:
+        await cur.execute("SELECT display_name FROM users WHERE id = 2")
+        assert (await cur.fetchone())["display_name"] == "new-nick"
+
+
+async def test_handle_member_update_is_a_no_op_in_the_database_when_unchanged(db_conn):
+    await db_conn.execute(
+        "INSERT INTO users (id, display_name, avatar_hash) VALUES (%s, %s, %s)",
+        (1, "same-nick", None),
+    )
+    same = FakeAuthor(id=1, display_name="same-nick")
+
+    await events.handle_member_update(db_conn, same, same)
+
+    async with db_conn.cursor() as cur:
+        await cur.execute("SELECT display_name FROM users WHERE id = 1")
+        assert (await cur.fetchone())["display_name"] == "same-nick"

@@ -10,7 +10,7 @@ import discord
 
 from threadbare.sync_worker import repository, transform
 from threadbare.sync_worker.backfill import RepositoryBackfillSink
-from threadbare.sync_worker.discord_types import MessageLike, ThreadLike
+from threadbare.sync_worker.discord_types import MessageLike, ThreadLike, UserLike
 from threadbare.sync_worker.permissions import (
     everyone_overwrite,
     refresh_channel_public_status,
@@ -60,6 +60,22 @@ async def handle_message_delete(conn, message_id: int) -> None:
 
 async def handle_bulk_message_delete(conn, message_ids: list[int]) -> None:
     await repository.delete_messages(conn, message_ids)
+
+
+async def handle_member_update(conn, before: UserLike, after: UserLike) -> None:
+    """GUILD_MEMBER_UPDATE fires for any member change (roles, timeout,
+    pending status, ...), not just a rename -- diffing the two
+    user_to_row() projections (rather than reading raw nick/global_name/
+    avatar fields) reuses the exact shape upsert_user already writes, so
+    "did anything we store change" can't drift from "what do we store", and
+    guards against a write on every unrelated update a busy server
+    generates constantly.
+    """
+    before_row = transform.user_to_row(before)
+    after_row = transform.user_to_row(after)
+    if before_row == after_row:
+        return
+    await repository.upsert_user(conn, after_row)
 
 
 async def handle_thread_upsert(conn, thread: ThreadLike) -> None:
