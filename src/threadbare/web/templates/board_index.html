@@ -1,17 +1,15 @@
 {% extends "base.html" %}
 {% block content %}
 <table class="board-index">
-<thead>
-  <tr>
-    <th class="board-name">Board</th>
-    <th class="board-post-count">Posts</th>
-    <th class="board-last-post">Last post</th>
-  </tr>
-</thead>
 {% for group in groups %}
   {% if group.category %}
   <tr class="category-heading"><td colspan="3">{{ group.category.name }}</td></tr>
   {% endif %}
+  <tr class="column-headings">
+    <th class="board-name">Board</th>
+    <th class="board-post-count">Posts</th>
+    <th class="board-last-post">Last post</th>
+  </tr>
   {% for board in group.boards %}
   {% set agg = aggregates.get(board.id, {"post_count": 0, "last_message_id": None, "last_posted_at": None, "last_author_id": None}) %}
   {% set mode = board_tree.board_view_mode(board) %}
@@ -34,7 +32,12 @@
     <td class="board-last-post">
       {% if agg.last_posted_at %}
         <time datetime="{{ agg.last_posted_at.isoformat() }}" title="{{ agg.last_posted_at }}">{{ relative_time.relative_time(agg.last_posted_at) }}</time>
-        by {{ authors.get(agg.last_author_id, "unknown") }}
+        by
+        {% if agg.last_author_id in authors %}
+          <a href="{{ request.script_root }}{{ urls.user_url(agg.last_author_id) }}">{{ authors[agg.last_author_id] }}</a>
+        {% else %}
+          unknown
+        {% endif %}
       {% endif %}
     </td>
   </tr>

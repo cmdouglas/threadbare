@@ -124,8 +124,9 @@ a:visited {
 
 .category-heading {
   background: var(--color-bg-alt);
-  padding: var(--space-sm);
+  padding: var(--space-md);
   font-weight: bold;
+  font-size: 1.15em;
 }
 
 .board-name a {

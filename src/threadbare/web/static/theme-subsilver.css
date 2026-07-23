@@ -156,8 +156,9 @@ a:visited {
 .category-heading {
   background: linear-gradient(to bottom, var(--color-accent), #1f3868);
   color: var(--color-accent-fg);
-  padding: var(--space-xs) var(--space-sm);
+  padding: var(--space-md);
   font-weight: bold;
+  font-size: 1.15em;
 }
 
 td.board-name a {

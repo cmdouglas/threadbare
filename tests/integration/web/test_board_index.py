@@ -88,11 +88,24 @@ def test_board_index_shows_a_board_and_its_post_count(client, web_conn):
 
 def test_board_index_shows_column_headers_for_posts_and_last_post(client, web_conn):
     run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10, name="general"))
 
     resp = client.get("/")
 
     assert b'<th class="board-post-count">Posts</th>' in resp.data
     assert b'<th class="board-last-post">Last post</th>' in resp.data
+
+
+def test_board_index_repeats_column_headers_under_each_category(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_category(web_conn, category_id=1, name="Text Channels", position=0))
+    run(_seed_category(web_conn, category_id=2, name="Media Channels", position=1))
+    run(_seed_board(web_conn, channel_id=10, parent_id=1, name="general"))
+    run(_seed_board(web_conn, channel_id=11, parent_id=2, name="clips"))
+
+    resp = client.get("/")
+
+    assert resp.data.count(b'<th class="board-post-count">Posts</th>') == 2
 
 
 def test_board_index_shows_relative_last_post_time_with_an_exact_tooltip(client, web_conn):
@@ -104,6 +117,16 @@ def test_board_index_shows_relative_last_post_time_with_an_exact_tooltip(client,
 
     assert b"2 hours ago" in resp.data
     assert b'title="' in resp.data
+
+
+def test_board_index_links_last_post_author_to_their_profile(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10, name="general"))
+    run(_seed_message(web_conn, message_id=1000, channel_id=10, author_id=100))
+
+    resp = client.get("/")
+
+    assert b'<a href="/user/100">alice</a>' in resp.data
 
 
 def test_board_index_shows_a_boards_topic(client, web_conn):

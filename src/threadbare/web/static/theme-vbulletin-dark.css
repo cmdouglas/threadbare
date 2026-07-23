@@ -159,8 +159,9 @@ a:visited {
 .category-heading {
   background: linear-gradient(to bottom, #3a7cbf, #1d3f63);
   color: var(--color-accent-fg);
-  padding: var(--space-sm);
+  padding: var(--space-md);
   font-weight: bold;
+  font-size: 1.15em;
   border-radius: var(--radius) var(--radius) 0 0;
 }
 
