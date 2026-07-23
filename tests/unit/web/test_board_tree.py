@@ -64,12 +64,27 @@ def test_group_channels_by_category_omits_uncategorized_group_when_empty():
     assert all(g["category"] is not None for g in groups)
 
 
-def test_group_channels_by_category_includes_empty_categories():
+def test_group_channels_by_category_omits_empty_categories():
+    # A category with no boardable channels under it (e.g. a "Voice
+    # Channels" category whose only children are voice/stage-voice, which
+    # get no board row at all) shouldn't render an empty section header.
     rows = [_channel(1, CATEGORY, position=0)]
 
     groups = group_channels_by_category(rows)
 
-    assert groups == [{"category": rows[0], "boards": []}]
+    assert groups == []
+
+
+def test_group_channels_by_category_keeps_a_category_that_has_boards():
+    rows = [
+        _channel(1, CATEGORY, position=0),
+        _channel(2, CATEGORY, name="empty", position=1),
+        _channel(10, TEXT, parent_id=1, position=0),
+    ]
+
+    groups = group_channels_by_category(rows)
+
+    assert [g["category"]["id"] for g in groups] == [1]
 
 
 def test_group_channels_by_category_excludes_voice_and_stage_voice_channels():

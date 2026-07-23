@@ -15,14 +15,23 @@ async def _seed_category(conn, *, category_id, guild_id=1, name="A Category", po
 
 
 async def _seed_board(
-    conn, *, channel_id, guild_id=1, parent_id=None, name="general", position=0, is_public=True
+    conn,
+    *,
+    channel_id,
+    guild_id=1,
+    parent_id=None,
+    name="general",
+    position=0,
+    is_public=True,
+    topic=None,
 ):
     await conn.execute(
         """
-        INSERT INTO channels (id, guild_id, parent_id, type, name, position, is_public, indexed)
-        VALUES (%s, %s, %s, 0, %s, %s, %s, true)
+        INSERT INTO channels
+            (id, guild_id, parent_id, type, name, position, is_public, indexed, topic)
+        VALUES (%s, %s, %s, 0, %s, %s, %s, true, %s)
         """,
-        (channel_id, guild_id, parent_id, name, position, is_public),
+        (channel_id, guild_id, parent_id, name, position, is_public, topic),
     )
 
 
@@ -97,6 +106,25 @@ def test_board_index_shows_relative_last_post_time_with_an_exact_tooltip(client,
     assert b'title="' in resp.data
 
 
+def test_board_index_shows_a_boards_topic(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10, name="general", topic="Chat about anything here"))
+
+    resp = client.get("/")
+
+    assert b'class="board-topic" title="Chat about anything here"' in resp.data
+    assert b"Chat about anything here" in resp.data
+
+
+def test_board_index_omits_topic_element_when_board_has_none(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10, name="general"))
+
+    resp = client.get("/")
+
+    assert b'class="board-topic"' not in resp.data
+
+
 def test_board_index_shows_no_pagination_control_for_a_single_page_board(client, web_conn):
     run(_seed_guild(web_conn))
     run(_seed_board(web_conn, channel_id=10, name="general"))
@@ -168,6 +196,21 @@ def test_board_index_excludes_non_public_boards(client, web_conn):
     resp = client.get("/")
 
     assert b"secret" not in resp.data
+
+
+def test_board_index_omits_a_category_section_with_no_boards(client, web_conn):
+    # e.g. a "Voice Channels" category whose only children are voice/stage
+    # channels, which get no board row at all -- shouldn't render an empty
+    # section header with nothing under it.
+    run(_seed_guild(web_conn))
+    run(_seed_category(web_conn, category_id=1, name="Voice Channels"))
+    run(_seed_category(web_conn, category_id=2, name="Text Channels", position=1))
+    run(_seed_board(web_conn, channel_id=10, parent_id=2, name="general"))
+
+    resp = client.get("/")
+
+    assert b"Voice Channels" not in resp.data
+    assert b"Text Channels" in resp.data
 
 
 def test_board_index_groups_boards_under_their_category(client, web_conn):

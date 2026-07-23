@@ -19,8 +19,12 @@ def board_view_mode(channel_row: dict) -> str:
 def group_channels_by_category(rows: list[dict]) -> list[dict]:
     """Groups channel rows for the board index: [{"category": row | None,
     "boards": [rows]}, ...], ordered by category position (uncategorized
-    boards first, as a category=None group, omitted entirely if empty), then
-    board position within each group.
+    boards first, as a category=None group), then board position within
+    each group. A group -- uncategorized or a named category -- is omitted
+    entirely if it has no boards: a category whose only children are
+    voice/stage-voice channels (which get no board row at all, see
+    NON_CONTENT_TYPES) would otherwise render as an empty section header
+    with nothing under it.
 
     A board whose parent_id isn't among the given rows' categories (e.g. its
     category was filtered out upstream for not being public) is folded into
@@ -43,5 +47,6 @@ def group_channels_by_category(rows: list[dict]) -> list[dict]:
     if groups[None]:
         result.append({"category": None, "boards": groups[None]})
     for cid in ordered_category_ids:
-        result.append({"category": categories[cid], "boards": groups[cid]})
+        if groups[cid]:
+            result.append({"category": categories[cid], "boards": groups[cid]})
     return result

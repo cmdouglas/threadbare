@@ -717,6 +717,20 @@ async def test_get_boards_and_categories_includes_all_categories(db_conn):
     assert [r["id"] for r in rows] == [1]
 
 
+async def test_get_boards_and_categories_includes_topic(db_conn):
+    await _seed_guild(db_conn, guild_id=1)
+    await db_conn.execute(
+        """
+        INSERT INTO channels (id, guild_id, type, name, is_public, indexed, topic)
+        VALUES (10, 1, 0, 'general', true, true, 'a channel topic')
+        """
+    )
+
+    rows = await queries.get_boards_and_categories(db_conn, 1)
+
+    assert rows[0]["topic"] == "a channel topic"
+
+
 async def test_get_boards_and_categories_excludes_non_public_or_non_indexed_boards(db_conn):
     await _seed_guild(db_conn, guild_id=1)
     await db_conn.execute(

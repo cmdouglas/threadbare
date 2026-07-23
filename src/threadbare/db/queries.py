@@ -583,7 +583,7 @@ async def get_boards_and_categories(conn: psycopg.AsyncConnection, guild_id: int
     async with conn.cursor() as cur:
         await cur.execute(
             """
-            SELECT id, parent_id, type, name, position
+            SELECT id, parent_id, type, name, position, topic
             FROM channels
             WHERE guild_id = %(guild_id)s
               AND type != ALL(%(non_boardable)s)

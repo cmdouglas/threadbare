@@ -15,7 +15,10 @@
   {% for board in group.boards %}
   {% set agg = aggregates.get(board.id, {"post_count": 0, "last_message_id": None, "last_posted_at": None, "last_author_id": None}) %}
   <tr class="board-row">
-    <td class="board-name"><a href="{{ request.script_root }}{{ urls.board_url(board.id) }}">{{ board.name }}</a></td>
+    <td class="board-name">
+      <a href="{{ request.script_root }}{{ urls.board_url(board.id) }}">{{ board.name }}</a>
+      {% if board.topic %}<div class="board-topic" title="{{ board.topic }}">{{ board.topic }}</div>{% endif %}
+    </td>
     <td class="board-post-count">{{ agg.post_count }}</td>
     <td class="board-last-post">
       {% if agg.last_posted_at %}
