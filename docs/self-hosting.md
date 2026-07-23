@@ -173,6 +173,33 @@ Gotchas worth knowing before you go further:
   having propagated yet (see **Before you start**) or ports 80/443 not actually being reachable
   (check your firewall/security group). Once you fix the underlying cause, `docker compose
   restart caddy` to make it try again.
+- **Browser shows a raw TLS handshake error** (e.g. Firefox's `SSL_ERROR_INTERNAL_ERROR_ALERT`,
+  or Chrome's `ERR_SSL_PROTOCOL_ERROR`), especially after repeatedly resetting the stack while
+  testing: this usually means Caddy has no valid certificate to present at all, most often
+  because you've hit Let's Encrypt's **Duplicate Certificate rate limit** (5 per exact set of
+  hostnames per rolling 7-day window). Confirm with `docker compose logs caddy | grep -i
+  "rate\|429"` — look for `urn:ietf:params:acme:error:rateLimited` or "too many certificates
+  already issued for this exact set of domains". This is easy to trigger from **Resetting for a
+  fresh start** below if you wipe the `caddy-data` volume on every reset — each wipe throws away
+  the cached certificate and forces a brand new order from Let's Encrypt's production ACME
+  server. Two ways out:
+  - **Wait it out** — the limit is a rolling window, so it clears on its own within a week.
+  - **Switch to Let's Encrypt's staging CA** while you keep iterating (much higher limits, but
+    the cert won't be trusted by browsers, so this is only for testing the flow itself, not for
+    real visitors). Add this to the top of `Caddyfile`:
+    ```
+    {
+    	acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
+    }
+    ```
+    then `docker compose restart caddy`. Remove the block and restart again once you're done —
+    that next request counts against the real rate limit, so don't flip back and forth
+    repeatedly.
+  - **Or drop TLS entirely for now** and serve plain HTTP while rate-limited: change the site
+    address in `Caddyfile` from `{$THREADBARE_DOMAIN}` to `http://{$THREADBARE_DOMAIN}` (the
+    `http://` scheme tells Caddy not to attempt ACME/TLS at all), `docker compose restart caddy`,
+    then visit `http://<your-domain>`. Remember to remove the `http://` prefix again once you
+    have a working certificate, or the site stays unencrypted.
 - **Discord login fails with an opaque error after you approve the app**: almost always an OAuth
   redirect URI mismatch — the URI registered in the Discord developer portal must match
   `THREADBARE_DOMAIN` byte-for-byte (scheme, host, path). Re-check both against what the wizard
@@ -223,6 +250,35 @@ A couple of things worth knowing:
   Cloudflare Tunnel only need to reach the `web` (really, `caddy`) container.
 - Some residential ISP terms technically prohibit "running a server." In practice this never
   comes up at hobby scale, but it's worth knowing before you tell people about it.
+
+## Resetting for a fresh start
+
+If you want to run the setup wizard again from scratch — testing the whole first-run flow, or
+recovering from a bad wizard run — you need to reset two things: the Postgres data (which holds
+the wizard's own bootstrap progress, along with every mirrored message) and the Discord config
+the wizard wrote into `.env`. Wizard *progress* (which step you're on) lives only in your
+browser's session cookie, not the database, so an incognito window is enough to avoid stale
+resume state.
+
+```
+docker compose stop web sync-worker migrate
+docker volume rm threadbare_threadbare-postgres   # check the real name first: docker volume ls
+sed -i.bak -E 's/^(DISCORD_BOT_TOKEN|DISCORD_CLIENT_ID|DISCORD_CLIENT_SECRET|DISCORD_OAUTH_REDIRECT_URI|DISCORD_TEST_GUILD_ID|FLASK_SECRET_KEY)=.*/\1=/' .env
+docker compose up -d
+```
+
+Blanking those specific `.env` keys (rather than the whole file) makes `config.is_configured()`
+false again, which is what switches `web` back into wizard mode — everything else in `.env`
+(`THREADBARE_DOMAIN`, `POSTGRES_PASSWORD`, etc.) is left alone. `migrate` then runs against the
+now-empty database and `web` serves the wizard from step one.
+
+**Don't reach for `docker compose down -v`** to do this, even though it looks like the obvious
+"reset everything" command — it also deletes the `caddy-data` volume, which is where Caddy caches
+its issued TLS certificate. Losing that forces a brand new certificate request from Let's
+Encrypt's production server on the next `docker compose up`, and doing that repeatedly while
+iterating is exactly what trips Let's Encrypt's rate limits (see **Browser shows a raw TLS
+handshake error** in Option B's Troubleshooting section above) — Postgres and Caddy's cert are
+unrelated pieces of state, so reset only the one you actually mean to.
 
 ## Forcing a re-backfill
 
