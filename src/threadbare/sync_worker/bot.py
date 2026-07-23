@@ -8,7 +8,7 @@ from psycopg_pool import AsyncConnectionPool
 
 from threadbare.sync_worker import events
 from threadbare.sync_worker.backfill import backfill_guild
-from threadbare.sync_worker.discovery import discover_active_threads, discover_channels
+from threadbare.sync_worker.discovery import discover_active_threads, discover_channels, discover_roles
 from threadbare.sync_worker.heartbeat import heartbeat_loop
 from threadbare.sync_worker.reconciliation import reconciliation_loop
 
@@ -103,6 +103,9 @@ class ThreadbareClient(discord.Client):
             # (it looks up each thread's parent's sync flags), so it runs
             # after, same connection/transaction.
             await discover_active_threads(self, conn, guild_id=self.guild_id)
+            # No ordering dependency with the above -- roles are unrelated
+            # to channels/threads.
+            await discover_roles(self, conn, guild_id=self.guild_id)
 
         # The rest are guarded against re-firing on reconnects — these loops
         # already run forever once started.
@@ -248,14 +251,22 @@ class ThreadbareClient(discord.Client):
         async with self.pool.connection() as conn:
             await events.handle_channel_permissions_changed(conn, after)
 
+    async def on_guild_role_create(self, role: discord.Role) -> None:
+        if self.pool is None or role.guild.id != self.guild_id:
+            return
+        async with self.pool.connection() as conn:
+            await events.handle_role_upsert(conn, role, guild_id=self.guild_id)
+
     async def on_guild_role_update(self, before: discord.Role, after: discord.Role) -> None:
         if self.pool is None or after.guild.id != self.guild_id:
             return
         async with self.pool.connection() as conn:
+            await events.handle_role_upsert(conn, after, guild_id=self.guild_id)
             await events.handle_role_permissions_changed(conn, after.guild)
 
     async def on_guild_role_delete(self, role: discord.Role) -> None:
         if self.pool is None or role.guild.id != self.guild_id:
             return
         async with self.pool.connection() as conn:
+            await events.handle_role_delete(conn, role.id)
             await events.handle_role_permissions_changed(conn, role.guild)

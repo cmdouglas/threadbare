@@ -21,11 +21,20 @@ async def _seed_guild(conn, *, guild_id):
     )
 
 
-async def _seed_user(conn, *, user_id, display_name, avatar_hash=None):
+async def _seed_user(
+    conn, *, user_id, display_name, avatar_hash=None, is_bot=False, role_ids=None
+):
     await conn.execute(
-        "INSERT INTO users (id, display_name, avatar_hash) "
-        "VALUES (%s, %s, %s) ON CONFLICT DO NOTHING",
-        (user_id, display_name, avatar_hash),
+        "INSERT INTO users (id, display_name, avatar_hash, is_bot, role_ids) "
+        "VALUES (%s, %s, %s, %s, %s) ON CONFLICT DO NOTHING",
+        (user_id, display_name, avatar_hash, is_bot, role_ids or []),
+    )
+
+
+async def _seed_role(conn, *, role_id, guild_id=1, name="a role", color=0, position=0):
+    await conn.execute(
+        "INSERT INTO roles (id, guild_id, name, color, position) VALUES (%s, %s, %s, %s, %s)",
+        (role_id, guild_id, name, color, position),
     )
 
 
@@ -79,6 +88,42 @@ async def test_get_message_for_render_returns_message_with_author_display_name(d
 
 async def test_get_message_for_render_returns_none_for_unknown_message(db_conn):
     assert await queries.get_message_for_render(db_conn, 999999) is None
+
+
+async def test_get_message_for_render_returns_author_is_bot(db_conn):
+    await _seed_guild_and_channel(db_conn)
+    await _seed_user(db_conn, user_id=100, display_name="a-bot", is_bot=True)
+    await _seed_message(db_conn, message_id=1000, channel_id=10, author_id=100)
+
+    row = await queries.get_message_for_render(db_conn, 1000)
+
+    assert row["author_is_bot"] is True
+
+
+async def test_get_message_for_render_returns_null_role_color_when_no_colored_role(db_conn):
+    await _seed_guild_and_channel(db_conn)
+    await _seed_user(db_conn, user_id=100, display_name="alice", role_ids=[])
+    await _seed_message(db_conn, message_id=1000, channel_id=10, author_id=100)
+
+    row = await queries.get_message_for_render(db_conn, 1000)
+
+    assert row["author_role_color"] is None
+
+
+async def test_get_message_for_render_picks_highest_position_colored_role(db_conn):
+    # Discord's own algorithm: the highest-position role among those with a
+    # non-zero color wins -- a higher-position but uncolored role must not
+    # shadow a lower-position colored one.
+    await _seed_guild_and_channel(db_conn)
+    await _seed_role(db_conn, role_id=1, name="Uncolored (higher)", color=0, position=5)
+    await _seed_role(db_conn, role_id=2, name="Blue (lower)", color=0x0000FF, position=3)
+    await _seed_role(db_conn, role_id=3, name="Red (lowest)", color=0xFF0000, position=1)
+    await _seed_user(db_conn, user_id=100, display_name="alice", role_ids=[1, 2, 3])
+    await _seed_message(db_conn, message_id=1000, channel_id=10, author_id=100)
+
+    row = await queries.get_message_for_render(db_conn, 1000)
+
+    assert row["author_role_color"] == 0x0000FF
 
 
 async def test_get_attachments_for_message_returns_rows_in_id_order(db_conn):
@@ -526,6 +571,29 @@ async def test_get_user_returns_row(db_conn):
 
 async def test_get_user_returns_none_for_unknown_id(db_conn):
     assert await queries.get_user(db_conn, 999999) is None
+
+
+async def test_get_user_returns_is_bot_and_role_ids(db_conn):
+    await _seed_user(db_conn, user_id=100, display_name="a-bot", is_bot=True, role_ids=[1, 2])
+
+    row = await queries.get_user(db_conn, 100)
+
+    assert row["is_bot"] is True
+    assert row["role_ids"] == [1, 2]
+
+
+async def test_get_roles_by_ids_returns_rows_ordered_by_position_descending(db_conn):
+    await _seed_guild(db_conn, guild_id=1)
+    await _seed_role(db_conn, role_id=1, name="Low", color=0x0000FF, position=1)
+    await _seed_role(db_conn, role_id=2, name="High", color=0xFF0000, position=5)
+
+    rows = await queries.get_roles_by_ids(db_conn, [1, 2])
+
+    assert [r["name"] for r in rows] == ["High", "Low"]
+
+
+async def test_get_roles_by_ids_returns_empty_for_empty_input(db_conn):
+    assert await queries.get_roles_by_ids(db_conn, []) == []
 
 
 async def test_get_guild_returns_row(db_conn):

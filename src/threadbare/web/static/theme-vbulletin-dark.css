@@ -185,6 +185,19 @@ a:visited {
   color: var(--color-link);
 }
 
+.bot-badge {
+  display: inline-block;
+  font-size: 0.7em;
+  font-weight: bold;
+  line-height: 1;
+  padding: 0.15em 0.35em;
+  margin-left: 0.35em;
+  border-radius: var(--radius);
+  background: var(--color-accent);
+  color: var(--color-accent-fg);
+  vertical-align: middle;
+}
+
 .post-avatar,
 .user-avatar {
   width: 32px;
@@ -192,6 +205,24 @@ a:visited {
   object-fit: cover;
   border-radius: var(--radius);
   flex-shrink: 0;
+}
+
+.user-roles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  list-style: none;
+  padding: 0;
+  margin: var(--space-sm) 0;
+}
+
+.user-role-badge {
+  display: inline-block;
+  font-size: 0.85em;
+  padding: 0.15em 0.6em;
+  border: 1px solid var(--color-fg-muted);
+  border-radius: 999px;
+  color: var(--color-fg-muted);
 }
 
 .reply-quote,

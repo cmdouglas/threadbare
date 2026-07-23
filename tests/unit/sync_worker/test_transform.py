@@ -7,6 +7,7 @@ from threadbare.sync_worker.transform import (
     attachment_to_row,
     embed_to_row,
     message_to_row,
+    role_to_row,
     thread_to_row,
     user_to_row,
 )
@@ -22,6 +23,30 @@ class FakeUser:
     id: int
     display_name: str
     avatar: FakeAsset | None = None
+    bot: bool = False
+
+
+@dataclass
+class FakeGuild:
+    id: int
+
+
+@dataclass
+class FakeRole:
+    id: int
+    name: str = "a role"
+    color: object = None
+    position: int = 0
+
+
+@dataclass
+class FakeMember:
+    id: int
+    display_name: str
+    guild: FakeGuild
+    roles: list = field(default_factory=list)
+    avatar: FakeAsset | None = None
+    bot: bool = False
 
 
 @dataclass
@@ -200,13 +225,45 @@ def test_message_to_row_captures_edited_at():
 def test_user_to_row():
     user = FakeUser(id=1, display_name="alice", avatar=FakeAsset(key="abc123"))
 
-    assert user_to_row(user) == {"id": 1, "display_name": "alice", "avatar_hash": "abc123"}
+    assert user_to_row(user) == {
+        "id": 1,
+        "display_name": "alice",
+        "avatar_hash": "abc123",
+        "is_bot": False,
+        "role_ids": [],
+    }
 
 
 def test_user_to_row_handles_no_avatar():
     user = FakeUser(id=1, display_name="alice", avatar=None)
 
     assert user_to_row(user)["avatar_hash"] is None
+
+
+def test_user_to_row_bot_flag():
+    user = FakeUser(id=1, display_name="a-bot", bot=True)
+
+    assert user_to_row(user)["is_bot"] is True
+
+
+def test_user_to_row_extracts_role_ids_excluding_everyone():
+    guild = FakeGuild(id=999)
+    member = FakeMember(
+        id=1,
+        display_name="alice",
+        guild=guild,
+        roles=[FakeRole(id=999), FakeRole(id=111), FakeRole(id=222)],
+    )
+
+    assert user_to_row(member)["role_ids"] == [111, 222]
+
+
+def test_user_to_row_role_ids_empty_for_bare_user_without_roles():
+    # A bare discord.User (webhook-posted messages) has no .roles/.guild at
+    # all -- must not raise, just report no roles.
+    user = FakeUser(id=1, display_name="a-webhook", bot=True)
+
+    assert user_to_row(user)["role_ids"] == []
 
 
 def test_attachment_to_row():
@@ -318,6 +375,20 @@ def test_thread_to_row_maps_basic_fields():
         "archived": True,
         "created_at": NOW,
         "message_count": 0,
+    }
+
+
+def test_role_to_row():
+    role = FakeRole(id=111, name="Moderators", color=FakeColour(value=0xFF0000), position=3)
+
+    row = role_to_row(role, guild_id=999)
+
+    assert row == {
+        "id": 111,
+        "guild_id": 999,
+        "name": "Moderators",
+        "color": 0xFF0000,
+        "position": 3,
     }
 
 

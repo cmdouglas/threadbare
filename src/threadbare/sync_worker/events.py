@@ -10,7 +10,7 @@ import discord
 
 from threadbare.sync_worker import repository, transform
 from threadbare.sync_worker.backfill import RepositoryBackfillSink
-from threadbare.sync_worker.discord_types import MessageLike, ThreadLike, UserLike
+from threadbare.sync_worker.discord_types import MessageLike, RoleLike, ThreadLike, UserLike
 from threadbare.sync_worker.permissions import (
     everyone_overwrite,
     refresh_channel_public_status,
@@ -76,6 +76,19 @@ async def handle_member_update(conn, before: UserLike, after: UserLike) -> None:
     if before_row == after_row:
         return
     await repository.upsert_user(conn, after_row)
+
+
+async def handle_role_upsert(conn, role: RoleLike, *, guild_id: int) -> None:
+    """New or edited role -- keeps the roles table (used for username
+    display color, DESIGN.md Phase 2's future permission mirroring) fresh.
+    Separate from handle_role_permissions_changed, which recomputes channel
+    is_public and has nothing to do with storing role rows.
+    """
+    await repository.upsert_role(conn, transform.role_to_row(role, guild_id=guild_id))
+
+
+async def handle_role_delete(conn, role_id: int) -> None:
+    await repository.delete_role(conn, role_id)
 
 
 async def handle_thread_upsert(conn, thread: ThreadLike) -> None:

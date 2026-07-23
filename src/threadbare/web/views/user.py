@@ -14,6 +14,7 @@ async def user_page(user_id: int):
         user = await queries.get_user(conn, user_id)
         if user is None:
             abort(404)
+        roles = await queries.get_roles_by_ids(conn, user["role_ids"])
         post_count = await queries.get_post_count_for_user(conn, user_id)
         recent_rows = await queries.get_recent_posts_for_user(conn, user_id, limit=10)
 
@@ -35,4 +36,6 @@ async def user_page(user_id: int):
                 (row, rendered, page_number_for_offset(preceding, page_size=g.posts_per_page))
             )
 
-    return render_template("user.html", profile=user, post_count=post_count, posts=posts)
+    return render_template(
+        "user.html", profile=user, roles=roles, post_count=post_count, posts=posts
+    )

@@ -13,6 +13,7 @@ class FakeAuthor:
     id: int
     display_name: str = "someone"
     avatar: object | None = None
+    bot: bool = False
 
 
 @dataclass

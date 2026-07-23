@@ -81,14 +81,37 @@ async def set_channel_is_public(
 async def upsert_user(conn: psycopg.AsyncConnection, row: dict) -> None:
     await conn.execute(
         """
-        INSERT INTO users (id, display_name, avatar_hash)
-        VALUES (%(id)s, %(display_name)s, %(avatar_hash)s)
+        INSERT INTO users (id, display_name, avatar_hash, is_bot, role_ids)
+        VALUES (%(id)s, %(display_name)s, %(avatar_hash)s, %(is_bot)s, %(role_ids)s)
         ON CONFLICT (id) DO UPDATE SET
             display_name = EXCLUDED.display_name,
-            avatar_hash = EXCLUDED.avatar_hash
+            avatar_hash = EXCLUDED.avatar_hash,
+            is_bot = EXCLUDED.is_bot,
+            role_ids = EXCLUDED.role_ids
         """,
         row,
     )
+
+
+async def upsert_role(conn: psycopg.AsyncConnection, row: dict) -> None:
+    """Insert a role, or update its mutable fields (name/color/position) if
+    already known -- mirrors upsert_channel's shape.
+    """
+    await conn.execute(
+        """
+        INSERT INTO roles (id, guild_id, name, color, position)
+        VALUES (%(id)s, %(guild_id)s, %(name)s, %(color)s, %(position)s)
+        ON CONFLICT (id) DO UPDATE SET
+            name = EXCLUDED.name,
+            color = EXCLUDED.color,
+            position = EXCLUDED.position
+        """,
+        row,
+    )
+
+
+async def delete_role(conn: psycopg.AsyncConnection, role_id: int) -> None:
+    await conn.execute("DELETE FROM roles WHERE id = %s", (role_id,))
 
 
 async def upsert_message(conn: psycopg.AsyncConnection, row: dict) -> None:

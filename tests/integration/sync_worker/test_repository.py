@@ -77,6 +77,79 @@ def _message_row(**overrides):
     return row
 
 
+async def test_upsert_user_persists_is_bot_and_role_ids(db_conn):
+    await repository.upsert_user(
+        db_conn,
+        {"id": 1, "display_name": "alice", "avatar_hash": None, "is_bot": True, "role_ids": [10, 20]},
+    )
+
+    async with db_conn.cursor() as cur:
+        await cur.execute("SELECT is_bot, role_ids FROM users WHERE id = 1")
+        row = await cur.fetchone()
+    assert row["is_bot"] is True
+    assert row["role_ids"] == [10, 20]
+
+
+async def test_upsert_user_updates_is_bot_and_role_ids_on_conflict(db_conn):
+    await repository.upsert_user(
+        db_conn,
+        {"id": 1, "display_name": "alice", "avatar_hash": None, "is_bot": False, "role_ids": [10]},
+    )
+
+    await repository.upsert_user(
+        db_conn,
+        {"id": 1, "display_name": "alice", "avatar_hash": None, "is_bot": True, "role_ids": [20]},
+    )
+
+    async with db_conn.cursor() as cur:
+        await cur.execute("SELECT is_bot, role_ids FROM users WHERE id = 1")
+        row = await cur.fetchone()
+    assert row["is_bot"] is True
+    assert row["role_ids"] == [20]
+
+
+async def test_upsert_role_inserts_a_new_row(db_conn):
+    await _seed_guild_and_channel(db_conn)
+
+    await repository.upsert_role(
+        db_conn, {"id": 111, "guild_id": 1, "name": "Moderators", "color": 0xFF0000, "position": 3}
+    )
+
+    async with db_conn.cursor() as cur:
+        await cur.execute("SELECT name, color, position FROM roles WHERE id = 111")
+        row = await cur.fetchone()
+    assert row == {"name": "Moderators", "color": 0xFF0000, "position": 3}
+
+
+async def test_upsert_role_updates_mutable_fields_on_conflict(db_conn):
+    await _seed_guild_and_channel(db_conn)
+    await repository.upsert_role(
+        db_conn, {"id": 111, "guild_id": 1, "name": "Old Name", "color": 0, "position": 1}
+    )
+
+    await repository.upsert_role(
+        db_conn, {"id": 111, "guild_id": 1, "name": "New Name", "color": 0x00FF00, "position": 2}
+    )
+
+    async with db_conn.cursor() as cur:
+        await cur.execute("SELECT name, color, position FROM roles WHERE id = 111")
+        row = await cur.fetchone()
+    assert row == {"name": "New Name", "color": 0x00FF00, "position": 2}
+
+
+async def test_delete_role_removes_the_row(db_conn):
+    await _seed_guild_and_channel(db_conn)
+    await repository.upsert_role(
+        db_conn, {"id": 111, "guild_id": 1, "name": "Moderators", "color": 0, "position": 1}
+    )
+
+    await repository.delete_role(db_conn, 111)
+
+    async with db_conn.cursor() as cur:
+        await cur.execute("SELECT id FROM roles WHERE id = 111")
+        assert await cur.fetchone() is None
+
+
 async def test_upsert_message_persists_type(db_conn):
     await _seed_guild_and_channel(db_conn, is_public=True)
     await db_conn.execute("INSERT INTO users (id, display_name) VALUES (%s, %s)", (100, "someone"))

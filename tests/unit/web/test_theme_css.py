@@ -40,3 +40,19 @@ def test_embed_video_rule_is_capped_like_embed_image(stylesheet):
 
     assert match is not None, f"{stylesheet} has no .embed-video rule"
     assert "max-height" in match.group(1)
+
+
+@pytest.mark.parametrize("stylesheet", sorted(AVAILABLE_THEMES.values()))
+def test_bot_badge_rule_exists(stylesheet):
+    css = (STATIC_DIR / stylesheet).read_text()
+
+    assert re.search(r"\.bot-badge\s*\{", css) is not None, f"{stylesheet} has no .bot-badge rule"
+
+
+@pytest.mark.parametrize("stylesheet", sorted(AVAILABLE_THEMES.values()))
+def test_user_role_badge_rule_exists(stylesheet):
+    css = (STATIC_DIR / stylesheet).read_text()
+
+    assert re.search(r"\.user-role-badge\s*\{", css) is not None, (
+        f"{stylesheet} has no .user-role-badge rule"
+    )

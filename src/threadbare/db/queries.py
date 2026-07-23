@@ -16,7 +16,9 @@ from threadbare.pagination import DEFAULT_PAGE_SIZE
 _MESSAGE_COLUMNS_SQL = """
     m.id, m.channel_id, m.thread_id, m.author_id, m.content,
     m.reply_to_id, m.posted_at, m.edited_at, m.type, u.display_name AS author_display_name,
-    u.avatar_hash AS author_avatar_hash
+    u.avatar_hash AS author_avatar_hash, u.is_bot AS author_is_bot,
+    (SELECT r.color FROM roles r WHERE r.id = ANY(u.role_ids) AND r.color != 0
+     ORDER BY r.position DESC LIMIT 1) AS author_role_color
 """
 
 
@@ -437,9 +439,21 @@ async def count_search_results(
 async def get_user(conn: psycopg.AsyncConnection, user_id: int) -> dict | None:
     async with conn.cursor() as cur:
         await cur.execute(
-            "SELECT id, display_name, avatar_hash FROM users WHERE id = %s", (user_id,)
+            "SELECT id, display_name, avatar_hash, is_bot, role_ids FROM users WHERE id = %s",
+            (user_id,),
         )
         return await cur.fetchone()
+
+
+async def get_roles_by_ids(conn: psycopg.AsyncConnection, role_ids: list[int]) -> list[dict]:
+    if not role_ids:
+        return []
+    async with conn.cursor() as cur:
+        await cur.execute(
+            "SELECT id, name, color, position FROM roles WHERE id = ANY(%s) ORDER BY position DESC",
+            (role_ids,),
+        )
+        return await cur.fetchall()
 
 
 async def get_guild(conn: psycopg.AsyncConnection, guild_id: int) -> dict | None:

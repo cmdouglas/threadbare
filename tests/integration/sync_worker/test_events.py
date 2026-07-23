@@ -14,6 +14,7 @@ class FakeAuthor:
     id: int
     display_name: str = "someone"
     avatar: object | None = None
+    bot: bool = False
 
 
 @dataclass
@@ -479,6 +480,43 @@ async def test_handle_role_permissions_changed_recomputes_every_channel(db_conn)
     assert await repository.get_channel_is_public(db_conn, 10) is False
     assert await repository.get_channel_is_public(db_conn, 11) is False
     # the category itself was skipped, not blown up on (it has no row to update)
+
+
+@dataclass
+class FakeColour:
+    value: int
+
+
+@dataclass
+class FakeDiscordRole:
+    id: int
+    name: str = "a role"
+    color: FakeColour = field(default_factory=lambda: FakeColour(value=0))
+    position: int = 0
+
+
+async def test_handle_role_upsert_inserts_a_new_row(db_conn):
+    await db_conn.execute("INSERT INTO guilds (id, name) VALUES (%s, %s)", (1, "Test Guild"))
+    role = FakeDiscordRole(id=111, name="Moderators", color=FakeColour(value=0xFF0000), position=3)
+
+    await events.handle_role_upsert(db_conn, role, guild_id=1)
+
+    async with db_conn.cursor() as cur:
+        await cur.execute("SELECT name, color, position FROM roles WHERE id = 111")
+        row = await cur.fetchone()
+    assert row == {"name": "Moderators", "color": 0xFF0000, "position": 3}
+
+
+async def test_handle_role_delete_removes_the_row(db_conn):
+    await db_conn.execute("INSERT INTO guilds (id, name) VALUES (%s, %s)", (1, "Test Guild"))
+    role = FakeDiscordRole(id=111, name="Moderators")
+    await events.handle_role_upsert(db_conn, role, guild_id=1)
+
+    await events.handle_role_delete(db_conn, 111)
+
+    async with db_conn.cursor() as cur:
+        await cur.execute("SELECT id FROM roles WHERE id = 111")
+        assert await cur.fetchone() is None
 
 
 async def test_handle_member_update_updates_display_name_in_the_database(db_conn):

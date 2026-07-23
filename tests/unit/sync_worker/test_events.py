@@ -4,7 +4,7 @@ against a real Postgres) -- handle_member_update's before/after diff-and-guard
 is the one piece worth isolating without a DB round trip.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from unittest.mock import AsyncMock
 
 from threadbare.sync_worker import events
@@ -16,10 +16,23 @@ class FakeAsset:
 
 
 @dataclass
+class FakeGuild:
+    id: int
+
+
+@dataclass
+class FakeRole:
+    id: int
+
+
+@dataclass
 class FakeMember:
     id: int
     display_name: str = "someone"
     avatar: FakeAsset | None = None
+    bot: bool = False
+    guild: FakeGuild = field(default_factory=lambda: FakeGuild(id=999))
+    roles: list = field(default_factory=list)
 
 
 async def test_handle_member_update_upserts_when_display_name_changed(monkeypatch):
@@ -32,7 +45,14 @@ async def test_handle_member_update_upserts_when_display_name_changed(monkeypatc
     await events.handle_member_update(conn, before, after)
 
     upsert.assert_awaited_once_with(
-        conn, {"id": 1, "display_name": "new-nick", "avatar_hash": None}
+        conn,
+        {
+            "id": 1,
+            "display_name": "new-nick",
+            "avatar_hash": None,
+            "is_bot": False,
+            "role_ids": [],
+        },
     )
 
 
@@ -46,7 +66,35 @@ async def test_handle_member_update_upserts_when_only_avatar_changed(monkeypatch
     await events.handle_member_update(conn, before, after)
 
     upsert.assert_awaited_once_with(
-        conn, {"id": 1, "display_name": "same-nick", "avatar_hash": "new"}
+        conn,
+        {
+            "id": 1,
+            "display_name": "same-nick",
+            "avatar_hash": "new",
+            "is_bot": False,
+            "role_ids": [],
+        },
+    )
+
+
+async def test_handle_member_update_upserts_when_only_roles_changed(monkeypatch):
+    upsert = AsyncMock()
+    monkeypatch.setattr(events.repository, "upsert_user", upsert)
+    conn = object()
+    before = FakeMember(id=1, display_name="same-nick", roles=[])
+    after = FakeMember(id=1, display_name="same-nick", roles=[FakeRole(id=111)])
+
+    await events.handle_member_update(conn, before, after)
+
+    upsert.assert_awaited_once_with(
+        conn,
+        {
+            "id": 1,
+            "display_name": "same-nick",
+            "avatar_hash": None,
+            "is_bot": False,
+            "role_ids": [111],
+        },
     )
 
 

@@ -4,7 +4,9 @@
     {% if show_avatars %}
     <img class="post-avatar" src="{{ avatars.avatar_url(message_row.author_id, message_row.author_avatar_hash) }}" alt="">
     {% endif %}
-    <a class="post-author" href="{{ request.script_root }}{{ urls.user_url(message_row.author_id) }}">{{ message_row.author_display_name }}</a>
+    {% set role_color = user_display.role_color_hex(message_row.author_role_color) %}
+    <a class="post-author" href="{{ request.script_root }}{{ urls.user_url(message_row.author_id) }}"{% if role_color %} style="color: {{ role_color }}"{% endif %}>{{ message_row.author_display_name }}</a>
+    {% if message_row.author_is_bot %}<span class="bot-badge" title="Bot account">BOT</span>{% endif %}
     <time class="post-time" datetime="{{ message_row.posted_at.isoformat() }}">{{ message_row.posted_at }}</time>
     {% if message_row.edited_at %}<span class="post-edited">(edited)</span>{% endif %}
     <a class="post-permalink" href="{{ request.script_root }}{{ urls.permalink_for_message(message_row, page=page) }}">#</a>

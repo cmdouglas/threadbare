@@ -12,10 +12,18 @@ async def _seed_guild_and_channel(conn, *, guild_id=1, channel_id=10):
     )
 
 
-async def _seed_user(conn, *, user_id, display_name):
+async def _seed_user(conn, *, user_id, display_name, is_bot=False, role_ids=None):
     await conn.execute(
-        "INSERT INTO users (id, display_name) VALUES (%s, %s) ON CONFLICT DO NOTHING",
-        (user_id, display_name),
+        "INSERT INTO users (id, display_name, is_bot, role_ids) "
+        "VALUES (%s, %s, %s, %s) ON CONFLICT DO NOTHING",
+        (user_id, display_name, is_bot, role_ids or []),
+    )
+
+
+async def _seed_role(conn, *, role_id, guild_id=1, name="a role", color=0, position=0):
+    await conn.execute(
+        "INSERT INTO roles (id, guild_id, name, color, position) VALUES (%s, %s, %s, %s, %s)",
+        (role_id, guild_id, name, color, position),
     )
 
 
@@ -67,6 +75,48 @@ def test_user_page_hides_the_profile_avatar_when_toggled_off(client, web_conn):
 
     assert resp.status_code == 200
     assert b'class="user-avatar"' not in resp.data
+
+
+def test_user_page_shows_bot_badge_for_a_bot_account(client, web_conn):
+    run(_seed_user(web_conn, user_id=100, display_name="a-bot", is_bot=True))
+
+    resp = client.get("/user/100")
+
+    assert resp.status_code == 200
+    assert b'class="bot-badge"' in resp.data
+
+
+def test_user_page_does_not_show_bot_badge_for_a_human_account(client, web_conn):
+    run(_seed_user(web_conn, user_id=100, display_name="alice", is_bot=False))
+
+    resp = client.get("/user/100")
+
+    assert resp.status_code == 200
+    assert b'class="bot-badge"' not in resp.data
+
+
+def test_user_page_shows_role_badges(client, web_conn):
+    run(_seed_guild_and_channel(web_conn))
+    run(_seed_role(web_conn, role_id=1, name="Moderators", color=0xFF0000, position=3))
+    run(_seed_role(web_conn, role_id=2, name="Members", color=0, position=1))
+    run(_seed_user(web_conn, user_id=100, display_name="alice", role_ids=[1, 2]))
+
+    resp = client.get("/user/100")
+
+    assert resp.status_code == 200
+    body = resp.data.decode()
+    assert "Moderators" in body
+    assert "Members" in body
+    assert body.index("Moderators") < body.index("Members")  # ordered by position desc
+
+
+def test_user_page_with_no_roles_shows_no_role_list(client, web_conn):
+    run(_seed_user(web_conn, user_id=100, display_name="alice"))
+
+    resp = client.get("/user/100")
+
+    assert resp.status_code == 200
+    assert b'class="user-roles"' not in resp.data
 
 
 def test_user_page_with_no_posts(client, web_conn):

@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 import discord
 
 from threadbare.sync_worker import repository
-from threadbare.sync_worker.discovery import discover_active_threads, discover_channels
+from threadbare.sync_worker.discovery import discover_active_threads, discover_channels, discover_roles
 from threadbare.sync_worker.permissions import READ_MESSAGE_HISTORY, VIEW_CHANNEL
 
 BOTH_REQUIRED = VIEW_CHANNEL | READ_MESSAGE_HISTORY
@@ -57,19 +57,36 @@ class FakeRole:
 
 
 class FakeGuild:
-    def __init__(self, *, id, name, default_role, channels, icon=None, threads=()):
+    def __init__(self, *, id, name, default_role, channels, icon=None, threads=(), roles=()):
         self.id = id
         self.name = name
         self.default_role = default_role
         self._channels = channels
         self.icon = icon
         self._threads = list(threads)
+        self._roles = list(roles)
 
     async def fetch_channels(self):
         return self._channels
 
     async def active_threads(self):
         return self._threads
+
+    async def fetch_roles(self):
+        return self._roles
+
+
+@dataclass
+class FakeColour:
+    value: int
+
+
+@dataclass
+class FakeGuildRole:
+    id: int
+    name: str = "a role"
+    color: FakeColour = field(default_factory=lambda: FakeColour(value=0))
+    position: int = 0
 
 
 @dataclass
@@ -315,3 +332,49 @@ async def test_discover_active_threads_skips_a_thread_of_an_undiscovered_channel
     discovered = await discover_active_threads(client, db_conn, guild_id=1)
 
     assert discovered == []
+
+
+async def test_discover_roles_upserts_every_guild_role(db_conn):
+    role = FakeRole(BOTH_REQUIRED)
+    guild = FakeGuild(
+        id=1,
+        name="Test Guild",
+        default_role=role,
+        channels=[],
+        roles=[
+            FakeGuildRole(id=1, name="@everyone", color=FakeColour(value=0), position=0),
+            FakeGuildRole(id=111, name="Moderators", color=FakeColour(value=0xFF0000), position=3),
+        ],
+    )
+    client = FakeClient(guild)
+    await db_conn.execute("INSERT INTO guilds (id, name) VALUES (%s, %s)", (1, "Test Guild"))
+
+    discovered = await discover_roles(client, db_conn, guild_id=1)
+
+    assert set(discovered) == {1, 111}
+    async with db_conn.cursor() as cur:
+        await cur.execute("SELECT id, name, color, position FROM roles WHERE id = 111")
+        row = await cur.fetchone()
+    assert row == {"id": 111, "name": "Moderators", "color": 0xFF0000, "position": 3}
+
+
+async def test_discover_roles_is_safe_to_call_repeatedly(db_conn):
+    role = FakeRole(BOTH_REQUIRED)
+    guild = FakeGuild(
+        id=1,
+        name="Test Guild",
+        default_role=role,
+        channels=[],
+        roles=[FakeGuildRole(id=111, name="Old Name", color=FakeColour(value=0), position=1)],
+    )
+    client = FakeClient(guild)
+    await db_conn.execute("INSERT INTO guilds (id, name) VALUES (%s, %s)", (1, "Test Guild"))
+    await discover_roles(client, db_conn, guild_id=1)
+
+    guild._roles = [FakeGuildRole(id=111, name="New Name", color=FakeColour(value=0x00FF00), position=2)]
+    await discover_roles(client, db_conn, guild_id=1)
+
+    async with db_conn.cursor() as cur:
+        await cur.execute("SELECT name, color, position FROM roles WHERE id = 111")
+        row = await cur.fetchone()
+    assert row == {"name": "New Name", "color": 0x00FF00, "position": 2}

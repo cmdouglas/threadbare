@@ -11,6 +11,7 @@ from threadbare.sync_worker.discord_types import (
     AttachmentLike,
     EmbedLike,
     MessageLike,
+    RoleLike,
     ThreadLike,
     UserLike,
 )
@@ -34,10 +35,29 @@ def message_to_row(message: MessageLike, *, channel_id: int | None, thread_id: i
 
 
 def user_to_row(user: UserLike) -> dict:
+    # .roles/.guild only exist on a real discord.Member -- a bare
+    # discord.User (webhook-posted messages) has neither, so role_ids is
+    # just empty for those rather than raising. Excludes @everyone (whose
+    # id always equals the guild id, same convention wizard.py already
+    # relies on) since every member has it and it never carries a color.
+    roles = getattr(user, "roles", None)
+    role_ids = [role.id for role in roles if role.id != user.guild.id] if roles is not None else []
     return {
         "id": user.id,
         "display_name": user.display_name,
         "avatar_hash": user.avatar.key if user.avatar else None,
+        "is_bot": user.bot,
+        "role_ids": role_ids,
+    }
+
+
+def role_to_row(role: RoleLike, *, guild_id: int) -> dict:
+    return {
+        "id": role.id,
+        "guild_id": guild_id,
+        "name": role.name,
+        "color": role.color.value,
+        "position": role.position,
     }
 
 

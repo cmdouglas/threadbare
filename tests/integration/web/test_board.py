@@ -26,10 +26,11 @@ async def _seed_thread(conn, *, thread_id, parent_channel_id, name="a thread", c
     )
 
 
-async def _seed_user(conn, *, user_id=100, display_name="alice"):
+async def _seed_user(conn, *, user_id=100, display_name="alice", is_bot=False, role_ids=None):
     await conn.execute(
-        "INSERT INTO users (id, display_name) VALUES (%s, %s) ON CONFLICT DO NOTHING",
-        (user_id, display_name),
+        "INSERT INTO users (id, display_name, is_bot, role_ids) "
+        "VALUES (%s, %s, %s, %s) ON CONFLICT DO NOTHING",
+        (user_id, display_name, is_bot, role_ids or []),
     )
 
 
@@ -42,6 +43,13 @@ async def _seed_message(
         VALUES (%s, %s, %s, %s, %s)
         """,
         (message_id, channel_id, author_id, content, posted_at or datetime.now(UTC)),
+    )
+
+
+async def _seed_role(conn, *, role_id, guild_id=1, name="a role", color=0, position=0):
+    await conn.execute(
+        "INSERT INTO roles (id, guild_id, name, color, position) VALUES (%s, %s, %s, %s, %s)",
+        (role_id, guild_id, name, color, position),
     )
 
 
@@ -207,6 +215,55 @@ def test_board_continuous_page_renders_messages(client, web_conn):
     assert resp.status_code == 200
     assert b'id="post-1"' in resp.data
     assert b"hello there" in resp.data
+
+
+def test_board_continuous_page_shows_bot_badge_for_a_bot_author(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10))
+    run(_seed_user(web_conn, is_bot=True))
+    run(_seed_message(web_conn, message_id=1, channel_id=10, content="hi", posted_at=T1))
+
+    resp = client.get("/board/10/continuous/page/1")
+
+    assert resp.status_code == 200
+    assert b'class="bot-badge"' in resp.data
+
+
+def test_board_continuous_page_does_not_show_bot_badge_for_a_human_author(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10))
+    run(_seed_user(web_conn, is_bot=False))
+    run(_seed_message(web_conn, message_id=1, channel_id=10, content="hi", posted_at=T1))
+
+    resp = client.get("/board/10/continuous/page/1")
+
+    assert resp.status_code == 200
+    assert b'class="bot-badge"' not in resp.data
+
+
+def test_board_continuous_page_colors_username_by_highest_colored_role(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10))
+    run(_seed_role(web_conn, role_id=1, name="Moderators", color=0xFF0000, position=1))
+    run(_seed_user(web_conn, role_ids=[1]))
+    run(_seed_message(web_conn, message_id=1, channel_id=10, content="hi", posted_at=T1))
+
+    resp = client.get("/board/10/continuous/page/1")
+
+    assert resp.status_code == 200
+    assert b'style="color: #ff0000"' in resp.data
+
+
+def test_board_continuous_page_does_not_color_username_when_no_colored_role(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10))
+    run(_seed_user(web_conn))
+    run(_seed_message(web_conn, message_id=1, channel_id=10, content="hi", posted_at=T1))
+
+    resp = client.get("/board/10/continuous/page/1")
+
+    assert resp.status_code == 200
+    assert b"style=" not in resp.data
 
 
 def test_board_continuous_page_renders_message_with_unmatched_markdown_delimiter(

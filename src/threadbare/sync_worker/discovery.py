@@ -89,6 +89,25 @@ async def discover_channels(client: discord.Client, conn, *, guild_id: int) -> l
     return discovered_ids
 
 
+async def discover_roles(client: discord.Client, conn, *, guild_id: int) -> list[int]:
+    """Upserts every guild role's row (id/name/color/position). Fresh REST
+    fetch (fetch_roles(), not the cached guild.roles) every call, same
+    reasoning as discover_channels' fetch_channels() -- avoids trusting a
+    possibly-stale cache. Safe to call repeatedly (e.g. on every gateway
+    reconnect): a plain metadata upsert, no computed state to clobber.
+    Returns the ids of the roles upserted.
+    """
+    guild = client.get_guild(guild_id) or await client.fetch_guild(guild_id)
+    roles = await guild.fetch_roles()
+
+    discovered_ids = []
+    for role in roles:
+        await repository.upsert_role(conn, transform.role_to_row(role, guild_id=guild_id))
+        discovered_ids.append(role.id)
+
+    return discovered_ids
+
+
 async def discover_active_threads(client: discord.Client, conn, *, guild_id: int) -> list[int]:
     """Upserts a threads row for every active thread whose parent channel is
     public+indexed — including forum-parented threads, gated the same way as

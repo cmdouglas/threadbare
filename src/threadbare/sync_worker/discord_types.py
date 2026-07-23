@@ -25,6 +25,14 @@ class UserLike(Protocol):
     # and broke on first contact with a real discord.py object; verified
     # against the real API now (see tests/live_discord).
     avatar: AssetLike | None
+    # Present unconditionally on both discord.User and discord.Member
+    # (set in BaseUser.__init__), unlike .roles/.guild below.
+    bot: bool
+    # NOT part of this Protocol deliberately: .roles and .guild only exist
+    # on a real discord.Member, not a bare discord.User (webhook-posted
+    # messages carry the latter -- confirmed via discord.py's
+    # _handle_author, which passes cache=False for webhooks). Readers must
+    # use getattr(user, "roles", None) rather than assuming presence.
 
 
 class AttachmentLike(Protocol):
@@ -102,6 +110,15 @@ class MessageLike(Protocol):
     attachments: list[AttachmentLike]
     reactions: list[ReactionLike]
     embeds: list[EmbedLike]
+
+
+class RoleLike(Protocol):
+    id: int
+    name: str
+    # discord.py's Role.color is always a Colour object (never None, unlike
+    # EmbedLike.color) -- .value is the int, 0 meaning "no custom color".
+    color: object
+    position: int
 
 
 class ThreadLike(Protocol):

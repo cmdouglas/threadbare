@@ -13,6 +13,11 @@ LINK_EMBED_MESSAGE_ID = 900202
 SYSTEM_MESSAGE_ID = 900203
 VIDEO_EMBED_MESSAGE_ID = 900204
 UNRESOLVED_SHORTCODE_MESSAGE_ID = 900205
+BOT_USER_ID = 900003
+BOT_MESSAGE_ID = 900206
+COLORED_ROLE_USER_ID = 900004
+COLORED_ROLE_ID = 900400
+COLORED_ROLE_MESSAGE_ID = 900207
 BASE = datetime(2026, 1, 1, tzinfo=UTC)
 
 
@@ -138,6 +143,32 @@ def _seed(conn):
             "@Charlie :game_die: 1 :game_die:",
         ),
     )
+    conn.execute(
+        "INSERT INTO users (id, display_name, is_bot) VALUES (%s, %s, true) ON CONFLICT DO NOTHING",
+        (BOT_USER_ID, "a-bot"),
+    )
+    conn.execute(
+        """
+        INSERT INTO messages (id, channel_id, author_id, content, posted_at)
+        VALUES (%s, %s, %s, %s, now())
+        """,
+        (BOT_MESSAGE_ID, CHANNEL_ID, BOT_USER_ID, "hello from a bot"),
+    )
+    conn.execute(
+        "INSERT INTO roles (id, guild_id, name, color, position) VALUES (%s, %s, %s, %s, %s)",
+        (COLORED_ROLE_ID, E2E_GUILD_ID, "Moderators", 0xFF0000, 1),
+    )
+    conn.execute(
+        "INSERT INTO users (id, display_name, role_ids) VALUES (%s, %s, %s) ON CONFLICT DO NOTHING",
+        (COLORED_ROLE_USER_ID, "a-moderator", [COLORED_ROLE_ID]),
+    )
+    conn.execute(
+        """
+        INSERT INTO messages (id, channel_id, author_id, content, posted_at)
+        VALUES (%s, %s, %s, %s, now())
+        """,
+        (COLORED_ROLE_MESSAGE_ID, CHANNEL_ID, COLORED_ROLE_USER_ID, "hello from a moderator"),
+    )
     conn.commit()
 
 
@@ -145,8 +176,11 @@ def _cleanup(conn):
     conn.execute("DELETE FROM messages WHERE channel_id = %s", (CHANNEL_ID,))
     conn.execute("DELETE FROM threads WHERE id = %s", (THREAD_ID,))
     conn.execute("DELETE FROM channels WHERE id = %s", (CHANNEL_ID,))
+    conn.execute("DELETE FROM roles WHERE id = %s", (COLORED_ROLE_ID,))
     conn.execute("DELETE FROM guilds WHERE id = %s", (E2E_GUILD_ID,))
-    conn.execute("DELETE FROM users WHERE id = %s", (USER_ID,))
+    conn.execute(
+        "DELETE FROM users WHERE id IN (%s, %s, %s)", (USER_ID, BOT_USER_ID, COLORED_ROLE_USER_ID)
+    )
     conn.commit()
 
 
@@ -162,7 +196,7 @@ def test_board_index_shows_seeded_board_and_post_count(page, live_server, seeded
 
     row = page.locator(".board-row", has_text="general")
     assert row.count() == 1
-    assert "36" in row.locator(".board-post-count").inner_text()
+    assert "38" in row.locator(".board-post-count").inner_text()
 
 
 def test_topic_pagination_and_permalink_round_trip(page, live_server, seeded):
@@ -384,6 +418,23 @@ def test_avatar_toggle_round_trip(page, live_server, seeded):
 
     page.goto(f"{live_server}/topic/{THREAD_ID}/page/1")
     assert page.locator(".post-avatar").count() == 0
+
+
+def test_bot_authored_post_shows_a_bot_badge(page, live_server, seeded):
+    page.goto(f"{live_server}/board/{CHANNEL_ID}/continuous/page/1")
+
+    post = page.locator("article.post", has_text="hello from a bot")
+    assert post.locator(".bot-badge").count() == 1
+
+
+def test_colored_role_author_renders_username_in_the_roles_color(page, live_server, seeded):
+    page.goto(f"{live_server}/board/{CHANNEL_ID}/continuous/page/1")
+
+    author_link = page.locator("article.post", has_text="hello from a moderator").locator(
+        ".post-author"
+    )
+    color = author_link.evaluate("el => getComputedStyle(el).color")
+    assert color == "rgb(255, 0, 0)"
 
 
 def test_css_custom_property_contract_is_present(page, live_server, seeded):

@@ -4,7 +4,18 @@
 {% if show_avatars %}
 <img class="user-avatar" src="{{ avatars.avatar_url(profile.id, profile.avatar_hash) }}" alt="">
 {% endif %}
-<h1 class="user-display-name">{{ profile.display_name }}</h1>
+<h1 class="user-display-name">
+  {{ profile.display_name }}
+  {% if profile.is_bot %}<span class="bot-badge" title="Bot account">BOT</span>{% endif %}
+</h1>
+{% if roles %}
+<ul class="user-roles">
+  {% for role in roles %}
+  {% set role_color = user_display.role_color_hex(role.color) %}
+  <li class="user-role-badge"{% if role_color %} style="color: {{ role_color }}; border-color: {{ role_color }}"{% endif %}>{{ role.name }}</li>
+  {% endfor %}
+</ul>
+{% endif %}
 <p class="user-post-count">{{ post_count }} post{{ "s" if post_count != 1 else "" }}</p>
 <h2>Recent posts</h2>
 {% for message_row, rendered, page in posts %}
