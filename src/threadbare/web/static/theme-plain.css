@@ -143,6 +143,15 @@ a:visited {
   color: var(--color-fg);
 }
 
+.post-avatar,
+.user-avatar {
+  width: 32px;
+  height: 32px;
+  object-fit: cover;
+  border-radius: var(--radius);
+  flex-shrink: 0;
+}
+
 .reply-quote,
 .post-reply-quote blockquote {
   border-left: 3px solid var(--color-border);

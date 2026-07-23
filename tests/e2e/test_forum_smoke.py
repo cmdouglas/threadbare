@@ -125,6 +125,19 @@ def test_attachment_image_is_capped_to_the_viewport_height(page, live_server, se
     assert max_height != "none"
 
 
+def test_avatar_toggle_round_trip(page, live_server, seeded):
+    page.goto(f"{live_server}/topic/{THREAD_ID}/page/1")
+    assert page.locator(".post-avatar").count() > 0
+
+    page.click(".avatar-toggle a")
+
+    assert page.locator(".post-avatar").count() == 0
+    assert "avatars=off" in page.url
+
+    page.goto(f"{live_server}/topic/{THREAD_ID}/page/1")
+    assert page.locator(".post-avatar").count() == 0
+
+
 def test_css_custom_property_contract_is_present(page, live_server, seeded):
     page.goto(f"{live_server}/")
 

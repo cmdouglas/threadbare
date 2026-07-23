@@ -175,6 +175,15 @@ a:visited {
   color: var(--color-fg-muted);
 }
 
+.post-avatar,
+.user-avatar {
+  width: 32px;
+  height: 32px;
+  object-fit: cover;
+  border: var(--border-width) solid var(--color-border);
+  flex-shrink: 0;
+}
+
 .reply-quote,
 .post-reply-quote blockquote {
   border-left: 2px solid var(--color-border);

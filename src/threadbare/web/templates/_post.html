@@ -1,6 +1,9 @@
 {# Expects: message_row (dict), rendered (RenderedMessage), page (current page, for the permalink) #}
 <article class="post" id="post-{{ message_row.id }}">
   <div class="post-meta">
+    {% if show_avatars %}
+    <img class="post-avatar" src="{{ avatars.avatar_url(message_row.author_id, message_row.author_avatar_hash) }}" alt="">
+    {% endif %}
     <a class="post-author" href="{{ request.script_root }}{{ urls.user_url(message_row.author_id) }}">{{ message_row.author_display_name }}</a>
     <time class="post-time" datetime="{{ message_row.posted_at.isoformat() }}">{{ message_row.posted_at }}</time>
     {% if message_row.edited_at %}<span class="post-edited">(edited)</span>{% endif %}

@@ -21,10 +21,10 @@ async def _seed_guild(conn, *, guild_id):
     )
 
 
-async def _seed_user(conn, *, user_id, display_name):
+async def _seed_user(conn, *, user_id, display_name, avatar_hash=None):
     await conn.execute(
-        "INSERT INTO users (id, display_name) VALUES (%s, %s) ON CONFLICT DO NOTHING",
-        (user_id, display_name),
+        "INSERT INTO users (id, display_name, avatar_hash) VALUES (%s, %s, %s) ON CONFLICT DO NOTHING",
+        (user_id, display_name, avatar_hash),
     )
 
 
@@ -61,7 +61,7 @@ async def _seed_thread_message(
 
 async def test_get_message_for_render_returns_message_with_author_display_name(db_conn):
     await _seed_guild_and_channel(db_conn)
-    await _seed_user(db_conn, user_id=100, display_name="alice")
+    await _seed_user(db_conn, user_id=100, display_name="alice", avatar_hash="abcdef")
     await _seed_message(db_conn, message_id=1000, channel_id=10, author_id=100, content="hi there")
 
     row = await queries.get_message_for_render(db_conn, 1000)
@@ -70,6 +70,7 @@ async def test_get_message_for_render_returns_message_with_author_display_name(d
     assert row["content"] == "hi there"
     assert row["author_id"] == 100
     assert row["author_display_name"] == "alice"
+    assert row["author_avatar_hash"] == "abcdef"
     assert row["channel_id"] == 10
     assert row["thread_id"] is None
     assert row["reply_to_id"] is None

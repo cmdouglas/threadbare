@@ -75,6 +75,31 @@ def test_topic_page_renders_messages_with_permalink_anchor(client, web_conn):
     assert b"View on Discord" in resp.data
 
 
+def test_topic_page_shows_the_author_avatar_by_default(client, web_conn):
+    run(_seed_guild_and_channel(web_conn))
+    run(_seed_thread(web_conn, thread_id=3000, parent_channel_id=10))
+    run(_seed_user(web_conn, user_id=100))
+    run(_seed_thread_message(web_conn, message_id=1, thread_id=3000, content="hi", posted_at=T1))
+
+    resp = client.get("/topic/3000/page/1")
+
+    assert resp.status_code == 200
+    assert b'class="post-avatar"' in resp.data
+    assert b"cdn.discordapp.com" in resp.data
+
+
+def test_topic_page_hides_the_author_avatar_when_toggled_off(client, web_conn):
+    run(_seed_guild_and_channel(web_conn))
+    run(_seed_thread(web_conn, thread_id=3000, parent_channel_id=10))
+    run(_seed_user(web_conn, user_id=100))
+    run(_seed_thread_message(web_conn, message_id=1, thread_id=3000, content="hi", posted_at=T1))
+
+    resp = client.get("/topic/3000/page/1?avatars=off")
+
+    assert resp.status_code == 200
+    assert b'class="post-avatar"' not in resp.data
+
+
 def test_topic_page_paginates(client, web_conn):
     run(_seed_guild_and_channel(web_conn))
     run(_seed_thread(web_conn, thread_id=3000, parent_channel_id=10))

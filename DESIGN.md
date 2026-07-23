@@ -101,7 +101,7 @@ Because messages live in Postgres, real offset pagination ("page 47 of 212") wor
 6. **Live sync** — new posts visible within seconds; edits marked with an "edited" timestamp; deletions removed.
 7. **User pages** — display name, avatar, post count, recent posts (public content only).
 8. **Mod controls** — a minimal admin page for the bot installer: choose which channels are indexed, trigger re-backfill, view sync health.
-9. **Theming** — user-selectable themes with a mod-set default. Implemented as pure CSS: the templates emit stable, semantic, classed markup and every color, font, border, and radius lives in CSS custom properties, so a theme is a single stylesheet and third-party themes are a drop-in file. Theme choice persists per user (cookie for anonymous future modes, account preference once logged in).
+9. **Theming** — user-selectable themes with a mod-set default. Implemented as pure CSS: the templates emit stable, semantic, classed markup and every color, font, border, and radius lives in CSS custom properties, so a theme is a single stylesheet and third-party themes are a drop-in file. Display preferences (theme choice, and — as of the avatars feature below — avatar visibility) persist per user via a cookie today; see the "Display preferences" note under §6's OAuth login flow for the planned migration to account-level storage. Avatar display: each post (and the user page) shows the poster's Discord avatar, resolved directly from `users.avatar_hash` against Discord's static/unsigned avatar CDN (no signed-URL refresh needed, unlike attachments) — with a toggle to hide them.
 
 ## 6. v1 scope: public channels, membership-gated
 
@@ -111,6 +111,7 @@ v1 deliberately avoids the hardest problem (per-channel permission mirroring) by
 
 - Index only channels readable by @everyone (computed from role/channel overwrites at sync time; re-computed on `CHANNEL_UPDATE` and role events — if a channel becomes non-public, its content is removed from the index).
 - Site access gated by Discord OAuth (`identify` + `guilds` scopes): any member of the guild may log in and read. No per-channel access math — membership is the only check.
+  - **Display preferences (planned migration):** theme choice and avatar visibility (§5 feature 9) are cookie-backed today, not a real per-user setting — there's no `user_preferences` table, deliberately, to avoid a first departure from this project's minimal-user-data stance ahead of actually needing it. `web/views/auth.py`'s OAuth callback already fetches the logged-in member's current Discord identity on every login, which is the natural point to also upsert a future preferences row without a new fetch path — but note it would need its own key on the session's `user_id`, not a FK assuming a `users` row already exists, since a logged-in member who's never posted has no `users` row (same gap noted for display-name refresh in ROADMAP.md's UI polish backlog).
 - Full backfill + live sync + nightly reconciliation for in-scope channels and their threads.
 - Features 1–9 from §5, with user pages limited to indexed content.
 - Four shipped themes, because this project is for fun and the fun should be visible on day one:

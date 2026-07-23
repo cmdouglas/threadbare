@@ -15,7 +15,8 @@ from threadbare.pagination import DEFAULT_PAGE_SIZE
 
 _MESSAGE_COLUMNS_SQL = """
     m.id, m.channel_id, m.thread_id, m.author_id, m.content,
-    m.reply_to_id, m.posted_at, m.edited_at, u.display_name AS author_display_name
+    m.reply_to_id, m.posted_at, m.edited_at, u.display_name AS author_display_name,
+    u.avatar_hash AS author_avatar_hash
 """
 
 

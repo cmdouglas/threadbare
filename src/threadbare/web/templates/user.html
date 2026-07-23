@@ -1,6 +1,9 @@
 {% extends "base.html" %}
 {% block title %}{{ profile.display_name }} — {{ site_title }}{% endblock %}
 {% block content %}
+{% if show_avatars %}
+<img class="user-avatar" src="{{ avatars.avatar_url(profile.id, profile.avatar_hash) }}" alt="">
+{% endif %}
 <h1 class="user-display-name">{{ profile.display_name }}</h1>
 <p class="user-post-count">{{ post_count }} post{{ "s" if post_count != 1 else "" }}</p>
 <h2>Recent posts</h2>

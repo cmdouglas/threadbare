@@ -9,7 +9,8 @@ from threadbare import urls
 from threadbare.config import Settings
 from threadbare.db import queries
 from threadbare.pagination import DEFAULT_PAGE_SIZE
-from threadbare.web import authz, themes
+from threadbare.rendering import avatars
+from threadbare.web import authz, preferences, themes
 from threadbare.web.views.admin import bp as admin_bp
 from threadbare.web.views.attachments import bp as attachments_bp
 from threadbare.web.views.auth import bp as auth_bp
@@ -31,6 +32,17 @@ def _theme_switch_url(name: str) -> str:
     return url_for(request.endpoint, **args)
 
 
+def _avatar_toggle_url() -> str:
+    """Same arg-merging idea as _theme_switch_url, but there are only two
+    states, so this just flips whatever's currently in effect.
+    """
+    if request.endpoint is None:
+        return request.path
+    next_value = "off" if g.show_avatars else "on"
+    args = {**request.view_args, **request.args.to_dict(), "avatars": next_value}
+    return url_for(request.endpoint, **args)
+
+
 def create_app(settings: Settings, pool) -> Flask:
     app = Flask(__name__)
     app.config["SETTINGS"] = settings
@@ -43,6 +55,7 @@ def create_app(settings: Settings, pool) -> Flask:
     app.wsgi_app = ProxyFix(app.wsgi_app, x_prefix=1)
 
     app.jinja_env.globals["urls"] = urls
+    app.jinja_env.globals["avatars"] = avatars
     app.jinja_env.globals["guild_id"] = settings.discord_guild_id
     app.jinja_env.globals["default_page_size"] = DEFAULT_PAGE_SIZE
 
@@ -51,6 +64,13 @@ def create_app(settings: Settings, pool) -> Flask:
         g.theme = themes.resolve_theme(
             query_param=request.args.get("theme"),
             cookie_value=request.cookies.get(themes.THEME_COOKIE_NAME),
+        )
+
+    @app.before_request
+    def resolve_show_avatars():
+        g.show_avatars = preferences.resolve_show_avatars(
+            query_param=request.args.get("avatars"),
+            cookie_value=request.cookies.get(preferences.AVATAR_COOKIE_NAME),
         )
 
     @app.before_request
@@ -78,6 +98,8 @@ def create_app(settings: Settings, pool) -> Flask:
             "themes_available": list(themes.AVAILABLE_THEMES),
             "theme_switch_url": _theme_switch_url,
             "site_title": g.site_title,
+            "show_avatars": g.show_avatars,
+            "avatar_toggle_href": _avatar_toggle_url(),
         }
 
     @app.after_request
@@ -88,6 +110,19 @@ def create_app(settings: Settings, pool) -> Flask:
                 themes.THEME_COOKIE_NAME,
                 requested,
                 max_age=themes.THEME_COOKIE_MAX_AGE,
+                path="/",
+                samesite="Lax",
+            )
+        return response
+
+    @app.after_request
+    def persist_avatar_choice(response):
+        requested = request.args.get("avatars")
+        if requested in ("on", "off"):
+            response.set_cookie(
+                preferences.AVATAR_COOKIE_NAME,
+                requested,
+                max_age=preferences.AVATAR_COOKIE_MAX_AGE,
                 path="/",
                 samesite="Lax",
             )

@@ -48,6 +48,27 @@ def test_user_page_shows_display_name_and_post_count(client, web_conn):
     assert b"my post" in resp.data
 
 
+def test_user_page_shows_the_profile_avatar_by_default(client, web_conn):
+    run(_seed_guild_and_channel(web_conn))
+    run(_seed_user(web_conn, user_id=100, display_name="alice"))
+
+    resp = client.get("/user/100")
+
+    assert resp.status_code == 200
+    assert b'class="user-avatar"' in resp.data
+    assert b"cdn.discordapp.com" in resp.data
+
+
+def test_user_page_hides_the_profile_avatar_when_toggled_off(client, web_conn):
+    run(_seed_guild_and_channel(web_conn))
+    run(_seed_user(web_conn, user_id=100, display_name="alice"))
+
+    resp = client.get("/user/100?avatars=off")
+
+    assert resp.status_code == 200
+    assert b'class="user-avatar"' not in resp.data
+
+
 def test_user_page_with_no_posts(client, web_conn):
     run(_seed_user(web_conn, user_id=100, display_name="alice"))
 
