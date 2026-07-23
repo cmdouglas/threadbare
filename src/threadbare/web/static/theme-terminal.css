@@ -259,6 +259,10 @@ a:visited {
   font-size: var(--font-size-small);
 }
 
+.pagination-current {
+  font-weight: bold;
+}
+
 .search-form input[type="search"] {
   font: inherit;
   padding: var(--space-xs) var(--space-sm);

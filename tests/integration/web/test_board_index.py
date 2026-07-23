@@ -96,8 +96,7 @@ def test_board_index_shows_a_pagination_control_for_a_multi_page_freeform_board(
 
     assert resp.status_code == 200
     assert b"board-pagination-row" in resp.data
-    assert b"Page 1 of 2" in resp.data
-    assert b"/board/10/continuous/page/2" in resp.data
+    assert b'class="pagination-page" href="/board/10/continuous/page/2">2</a>' in resp.data
 
 
 def test_board_index_shows_a_pagination_control_for_a_multi_page_forum_board(client, web_conn):
@@ -110,8 +109,7 @@ def test_board_index_shows_a_pagination_control_for_a_multi_page_forum_board(cli
 
     assert resp.status_code == 200
     assert b"board-pagination-row" in resp.data
-    assert b"Page 1 of 2" in resp.data
-    assert b"/board/10/topics?page=2" in resp.data
+    assert b'class="pagination-page" href="/board/10/topics?page=2">2</a>' in resp.data
 
 
 def test_board_index_excludes_non_public_boards(client, web_conn):

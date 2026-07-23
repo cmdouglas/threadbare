@@ -130,8 +130,7 @@ def test_board_topics_shows_a_pagination_control_for_a_multi_page_topic(client, 
 
     assert resp.status_code == 200
     assert b"topic-pagination-row" in resp.data
-    assert b"Page 1 of 2" in resp.data
-    assert b"/topic/3000/page/2" in resp.data
+    assert b'class="pagination-page" href="/topic/3000/page/2">2</a>' in resp.data
 
 
 def test_board_topics_shows_freeform_controls_for_a_text_channel(client, web_conn):

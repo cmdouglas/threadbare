@@ -23,9 +23,14 @@
   <tr class="topic-row topic-pagination-row">
     <td colspan="3">
       <nav class="pagination">
-        <span class="pagination-current">Page 1 of {{ topic_total_pages }}</span>
-        <a class="pagination-next" href="{{ request.script_root }}{{ urls.topic_url(thread.id, page=2) }}">Next &rsaquo;</a>
-        <a class="pagination-last" href="{{ request.script_root }}{{ urls.topic_url(thread.id, page=topic_total_pages) }}">Last &raquo;</a>
+        <span class="pagination-label">Page</span>
+        {% for p in pagination.page_window(1, topic_total_pages) %}
+          {% if p is none %}
+            <span class="pagination-ellipsis">&hellip;</span>
+          {% else %}
+            <a class="pagination-page" href="{{ request.script_root }}{{ urls.topic_url(thread.id, page=p) }}">{{ p }}</a>
+          {% endif %}
+        {% endfor %}
       </nav>
     </td>
   </tr>

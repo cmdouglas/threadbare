@@ -123,6 +123,34 @@ def test_topic_page_paginates(client, web_conn):
     assert b'id="post-26"' in page2.data
 
 
+def test_topic_page_pagination_shows_ellipsis_gaps_around_the_current_page(client, web_conn):
+    run(_seed_guild_and_channel(web_conn))
+    run(_seed_thread(web_conn, thread_id=3000, parent_channel_id=10))
+    run(_seed_user(web_conn))
+    for i in range(351):  # exactly 15 pages at page_size=25
+        run(
+            _seed_thread_message(
+                web_conn,
+                message_id=i + 1,
+                thread_id=3000,
+                content=f"message {i}",
+                posted_at=T1 + timedelta(seconds=i),
+            )
+        )
+
+    resp = client.get("/topic/3000/page/8")
+
+    assert resp.status_code == 200
+    # topic.html includes _pagination.html twice (top and bottom of page),
+    # so each of the two gaps in the window shows up twice.
+    assert resp.data.count(b"&hellip;") == 4
+    assert b'class="pagination-current">8</span>' in resp.data
+    for p in (1, 2, 3, 6, 7, 9, 10, 13, 14, 15):
+        assert f'class="pagination-page" href="/topic/3000/page/{p}">{p}</a>'.encode() in resp.data
+    for p in (4, 5, 11, 12):
+        assert f">{p}</a>".encode() not in resp.data
+
+
 def test_topic_jump_redirects_to_the_page_containing_the_date(client, web_conn):
     run(_seed_guild_and_channel(web_conn))
     run(_seed_thread(web_conn, thread_id=3000, parent_channel_id=10))

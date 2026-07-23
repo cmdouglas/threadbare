@@ -149,9 +149,9 @@ def test_topic_list_shows_per_topic_pagination_control(page, live_server, seeded
 
     pagination = page.locator("tr.topic-pagination-row .pagination")
     assert pagination.count() == 1
-    assert "Page 1 of 2" in pagination.inner_text()
+    assert pagination.locator(".pagination-page").count() == 2
 
-    pagination.locator(".pagination-last").click()
+    pagination.locator(".pagination-page", has_text="2").click()
 
     assert page.url.endswith(f"/topic/{THREAD_ID}/page/2")
     assert "topic message 25" in page.content()
@@ -204,9 +204,9 @@ def test_board_index_shows_pagination_control_for_a_multi_page_forum_board(
 
     pagination = page.locator("tr.board-pagination-row .pagination")
     assert pagination.count() == 1
-    assert "Page 1 of 2" in pagination.inner_text()
+    assert pagination.locator(".pagination-page").count() == 2
 
-    pagination.locator(".pagination-last").click()
+    pagination.locator(".pagination-page", has_text="2").click()
 
     assert page.url.endswith(f"/board/{FORUM_CHANNEL_ID}/topics?page=2")
     # threads are listed newest-first (created_at DESC, id DESC); with all 26
