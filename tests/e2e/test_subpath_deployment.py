@@ -86,7 +86,11 @@ def test_rendered_links_are_prefixed_when_x_forwarded_prefix_is_present(
         board_href = page.locator(".board-row .board-name a").get_attribute("href")
         assert board_href == f"{PREFIX}/board/{CHANNEL_ID}"
 
-        page.goto(f"{live_server}/board/{CHANNEL_ID}")
+        # board_landing now defaults a text channel to continuous browsing
+        # (ROADMAP.md's UI polish backlog); this test's actual concern is
+        # prefix-rewriting of rendered links, not landing-page defaults, so
+        # it goes straight to the topics list where the seeded thread lives.
+        page.goto(f"{live_server}/board/{CHANNEL_ID}/topics")
         topic_href = page.locator(".topic-row .topic-name a").get_attribute("href")
         assert topic_href == f"{PREFIX}/topic/{THREAD_ID}/page/1"
 

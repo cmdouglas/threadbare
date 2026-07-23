@@ -512,6 +512,22 @@ async def test_get_user_returns_none_for_unknown_id(db_conn):
     assert await queries.get_user(db_conn, 999999) is None
 
 
+async def test_get_guild_returns_row(db_conn):
+    # guild_id=1 collides with tests/e2e's fixed E2E_GUILD_ID (a real commit
+    # against the same test database, not rolled back by this fixture) --
+    # use a distinct id so this test doesn't depend on e2e run/cleanup order.
+    await _seed_guild(db_conn, guild_id=4242)
+
+    row = await queries.get_guild(db_conn, 4242)
+
+    assert row["id"] == 4242
+    assert row["name"] == "Test Guild"
+
+
+async def test_get_guild_returns_none_for_unknown_id(db_conn):
+    assert await queries.get_guild(db_conn, 999999) is None
+
+
 async def test_get_post_count_for_user_counts_only_indexed_channels(db_conn):
     await _seed_guild_and_channel(db_conn, channel_id=10)
     await _seed_guild_and_channel(db_conn, guild_id=2, channel_id=11)

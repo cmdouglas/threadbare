@@ -21,6 +21,23 @@ async def _get_board_or_404(conn, channel_id: int) -> dict:
 
 @bp.route("/board/<int:channel_id>")
 async def board_landing(channel_id: int):
+    """Smart-dispatch entrypoint, matching the index-redirect idiom already
+    used by board_continuous_index: a freeform (text/news) channel defaults
+    to continuous browsing, a topics_only (forum/media) channel has nothing
+    else to default to, so it goes straight to the topic list.
+    """
+    pool = current_app.config["POOL"]
+    async with pool.connection() as conn:
+        channel = await _get_board_or_404(conn, channel_id)
+        mode = board_view_mode(channel)
+
+    if mode == "freeform":
+        return redirect(url_for("board.board_continuous_page", channel_id=channel_id, page=1))
+    return redirect(url_for("board.board_topics", channel_id=channel_id))
+
+
+@bp.route("/board/<int:channel_id>/topics")
+async def board_topics(channel_id: int):
     page = max(request.args.get("page", default=1, type=int) or 1, 1)
     pool = current_app.config["POOL"]
     async with pool.connection() as conn:
@@ -38,7 +55,7 @@ async def board_landing(channel_id: int):
     total_pages = page_number_for_offset(total_topics - 1) if total_topics > 0 else 1
 
     def page_url(n: int) -> str:
-        return url_for("board.board_landing", channel_id=channel_id, page=n)
+        return url_for("board.board_topics", channel_id=channel_id, page=n)
 
     return render_template(
         "board_topic_list.html",

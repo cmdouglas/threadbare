@@ -7,6 +7,7 @@ from .conftest import E2E_GUILD_ID
 CHANNEL_ID = 900001
 THREAD_ID = 900010
 USER_ID = 900002
+ATTACHMENT_ID = 900300
 BASE = datetime(2026, 1, 1, tzinfo=UTC)
 
 
@@ -44,6 +45,21 @@ def _seed(conn):
         VALUES (%s, %s, %s, %s, now())
         """,
         (900200, CHANNEL_ID, USER_ID, "a pizza recipe for testing search"),
+    )
+    conn.execute(
+        """
+        INSERT INTO attachments (id, message_id, filename, content_type, size, cached_url, url_expires_at)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        """,
+        (
+            ATTACHMENT_ID,
+            900200,
+            "cat.png",
+            "image/png",
+            100,
+            "https://cdn.example/cat.png",
+            BASE + timedelta(days=1),
+        ),
     )
     conn.commit()
 
@@ -98,6 +114,15 @@ def test_search_click_through_lands_on_the_right_post(page, live_server, seeded)
     assert page.url.endswith(f"/board/{CHANNEL_ID}/continuous/page/1#post-900200")
     assert page.locator("#post-900200").is_visible()
     assert "pizza recipe" in page.locator("#post-900200").inner_text()
+
+
+def test_attachment_image_is_capped_to_the_viewport_height(page, live_server, seeded):
+    page.goto(f"{live_server}/board/{CHANNEL_ID}/continuous/page/1")
+
+    max_height = page.locator(".attachment-image img").evaluate(
+        "el => getComputedStyle(el).maxHeight"
+    )
+    assert max_height != "none"
 
 
 def test_css_custom_property_contract_is_present(page, live_server, seeded):

@@ -7,6 +7,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 
 from threadbare import urls
 from threadbare.config import Settings
+from threadbare.db import queries
 from threadbare.pagination import DEFAULT_PAGE_SIZE
 from threadbare.web import authz, themes
 from threadbare.web.views.admin import bp as admin_bp
@@ -53,6 +54,16 @@ def create_app(settings: Settings, pool) -> Flask:
         )
 
     @app.before_request
+    async def resolve_site_title():
+        # Queried fresh per request rather than cached, so a guild rename is
+        # reflected immediately -- one extra trivial single-row-PK lookup on
+        # the request's own connection, consistent with this app's existing
+        # no-pooling-across-requests cost model (see web/db.py's docstring).
+        async with pool.connection() as conn:
+            guild = await queries.get_guild(conn, settings.discord_guild_id)
+        g.site_title = f"{guild['name']} (threadbare view)" if guild else "Threadbare"
+
+    @app.before_request
     def require_login():
         if not authz.requires_login(request.endpoint):
             return None
@@ -66,6 +77,7 @@ def create_app(settings: Settings, pool) -> Flask:
             "theme_stylesheet": themes.AVAILABLE_THEMES[g.theme],
             "themes_available": list(themes.AVAILABLE_THEMES),
             "theme_switch_url": _theme_switch_url,
+            "site_title": g.site_title,
         }
 
     @app.after_request

@@ -1,13 +1,9 @@
 {% extends "base.html" %}
-{% block title %}{{ channel.name }} — Threadbare{% endblock %}
+{% block title %}{{ channel.name }} — {{ site_title }}{% endblock %}
 {% block content %}
 <h1 class="board-title">{{ channel.name }}</h1>
 {% if mode == "freeform" %}
-<p class="board-freeform-controls">
-  <a href="{{ url_for('board.board_continuous_page', channel_id=channel.id, page=1) }}">Browse continuously</a>
-  &middot;
-  <a href="{{ url_for('board.board_weeks_index', channel_id=channel.id) }}">Browse by week</a>
-</p>
+{% include "_freeform_controls.html" %}
 {% endif %}
 <table class="board-topic-list">
 {% for thread in threads %}

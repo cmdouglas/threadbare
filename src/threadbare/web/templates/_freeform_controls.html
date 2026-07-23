@@ -1,0 +1,8 @@
+{# Expects: channel #}
+<p class="board-freeform-controls">
+  <a href="{{ url_for('board.board_continuous_page', channel_id=channel.id, page=1) }}">Browse continuously</a>
+  &middot;
+  <a href="{{ url_for('board.board_weeks_index', channel_id=channel.id) }}">Browse by week</a>
+  &middot;
+  <a href="{{ url_for('board.board_topics', channel_id=channel.id) }}">View topics list</a>
+</p>

@@ -443,6 +443,12 @@ async def get_user(conn: psycopg.AsyncConnection, user_id: int) -> dict | None:
         return await cur.fetchone()
 
 
+async def get_guild(conn: psycopg.AsyncConnection, guild_id: int) -> dict | None:
+    async with conn.cursor() as cur:
+        await cur.execute("SELECT id, name, icon FROM guilds WHERE id = %s", (guild_id,))
+        return await cur.fetchone()
+
+
 async def get_post_count_for_user(conn: psycopg.AsyncConnection, user_id: int) -> int:
     async with conn.cursor() as cur:
         await cur.execute(

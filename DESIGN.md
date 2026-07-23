@@ -146,7 +146,7 @@ Each phase is independently shippable and none requires schema-breaking changes 
 
 The defining feature of "full." Index non-public channels and show each logged-in user exactly what they can see on Discord.
 
-- On login (and on a refresh interval, e.g. hourly, plus on `GUILD_MEMBER_UPDATE` if the members intent is enabled), fetch the user's roles and compute effective read permission per channel using Discord's resolution order: base @everyone permissions → role allows/denies → category overwrites → channel overwrites, with admin short-circuit.
+- On login (and on a refresh interval, e.g. hourly, plus on `GUILD_MEMBER_UPDATE` if the members intent is enabled), fetch the user's roles and compute effective read permission per channel using Discord's resolution order: base @everyone permissions → role allows/denies → category overwrites → channel overwrites, with admin short-circuit. (A `GUILD_MEMBER_UPDATE` handler, once it exists, is also the natural place to refresh a renamed member's `users.display_name` for members who don't post again — see `ROADMAP.md`'s UI polish backlog.)
 - Cache the resulting channel-visibility set per user session; invalidate on role events.
 - Search must filter by the requesting user's visibility set — this is the easy-to-forget bypass vector, so it's an explicit test target.
 - Risk note: this is the fiddliest code in the project and the only place where a bug is a *disclosure* bug rather than a rendering bug. It ships behind a per-channel opt-in flag so mods enroll sensitive channels deliberately, and it merits the most test coverage in the codebase (golden tests against permission fixtures exported from a real server).
@@ -284,7 +284,7 @@ All three paths converge on the same first-run setup wizard (§8.1), so the host
 
 **Open questions**
 
-1. Freeform channels: weekly pseudo-topics vs. continuous board view as the default reading mode? (Ship both, instrument nothing, ask the three people who use it.)
+1. Freeform channels: weekly pseudo-topics vs. continuous board view as the default reading mode? (Ship both, instrument nothing, ask the three people who use it.) Leaning continuous-as-default per early usage feedback — tracked as a backlog item in `ROADMAP.md`.
 2. Should reactions display per-emoji reactor lists (requires storing user-reaction pairs) or aggregate counts only? Current design says counts only — less data, simpler compliance story.
 3. Bucket boundaries for pseudo-topics: calendar weeks vs. activity-gap detection (a lull of >N hours starts a new "topic")? Gap detection reads better but is less predictable for permalinks.
 

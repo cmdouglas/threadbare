@@ -74,28 +74,71 @@ def test_board_landing_returns_404_for_a_category(client, web_conn):
     assert resp.status_code == 404
 
 
-def test_board_landing_shows_topics_for_a_forum_channel(client, web_conn):
+def test_board_landing_redirects_forum_channel_to_its_topics_list(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10, type=15, name="a forum"))
+
+    resp = client.get("/board/10")
+
+    assert resp.status_code == 302
+    assert resp.headers["Location"] == "/board/10/topics"
+
+
+def test_board_landing_redirects_text_channel_to_continuous_browsing(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10, type=0, name="general"))
+
+    resp = client.get("/board/10")
+
+    assert resp.status_code == 302
+    assert resp.headers["Location"] == "/board/10/continuous/page/1"
+
+
+def test_board_topics_shows_topics_for_a_forum_channel(client, web_conn):
     run(_seed_guild(web_conn))
     run(_seed_board(web_conn, channel_id=10, type=15, name="a forum"))
     run(_seed_thread(web_conn, thread_id=3000, parent_channel_id=10, name="my topic"))
     run(_seed_thread_message(web_conn, message_id=1, thread_id=3000, content="hello"))
 
-    resp = client.get("/board/10")
+    resp = client.get("/board/10/topics")
 
     assert resp.status_code == 200
     assert b"my topic" in resp.data
     assert b"alice" in resp.data
 
 
-def test_board_landing_shows_freeform_controls_for_a_text_channel(client, web_conn):
+def test_board_topics_shows_freeform_controls_for_a_text_channel(client, web_conn):
     run(_seed_guild(web_conn))
     run(_seed_board(web_conn, channel_id=10, type=0, name="general"))
 
-    resp = client.get("/board/10")
+    resp = client.get("/board/10/topics")
 
     assert resp.status_code == 200
     assert b"Browse continuously" in resp.data
     assert b"Browse by week" in resp.data
+    assert b"View topics list" in resp.data
+
+
+def test_board_continuous_page_shows_freeform_nav_links(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10, type=0, name="general"))
+
+    resp = client.get("/board/10/continuous/page/1")
+
+    assert resp.status_code == 200
+    assert b"Browse by week" in resp.data
+    assert b"View topics list" in resp.data
+
+
+def test_board_week_page_shows_freeform_nav_links(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10, type=0, name="general"))
+
+    resp = client.get("/board/10/week/2026-W01/page/1")
+
+    assert resp.status_code == 200
+    assert b"Browse continuously" in resp.data
+    assert b"View topics list" in resp.data
 
 
 def test_board_continuous_index_redirects_to_page_one(client, web_conn):

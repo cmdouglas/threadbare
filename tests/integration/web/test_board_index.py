@@ -77,3 +77,19 @@ def test_board_index_groups_boards_under_their_category(client, web_conn):
     assert resp.status_code == 200
     assert b"Main" in resp.data
     assert b"general" in resp.data
+
+
+def test_board_index_shows_guild_name_in_title_and_header(client, web_conn):
+    run(_seed_guild(web_conn))
+
+    resp = client.get("/")
+
+    assert b"<title>Test Guild (threadbare view)</title>" in resp.data
+    assert b'class="site-title"' in resp.data
+    assert b"Test Guild (threadbare view)" in resp.data
+
+
+def test_board_index_falls_back_to_threadbare_when_guild_is_unknown(client):
+    resp = client.get("/")
+
+    assert b"<title>Threadbare</title>" in resp.data

@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}{{ thread.name }} — Threadbare{% endblock %}
+{% block title %}{{ thread.name }} — {{ site_title }}{% endblock %}
 {% block content %}
 <h1 class="topic-title">{{ thread.name }}</h1>
 <form class="jump-to-date" action="{{ url_for('topic.topic_jump', thread_id=thread.id) }}" method="get">
