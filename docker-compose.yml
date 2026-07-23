@@ -64,6 +64,17 @@ services:
       DATABASE_URL: postgresql://threadbare:${POSTGRES_PASSWORD}@postgres:5432/threadbare
     env_file:
       - .env
+    # Read-only bind mount (sync-worker never writes .env -- only the wizard,
+    # running inside `web`, does): without this, `env_file:` above only
+    # materializes into the container's environment once, at container
+    # creation, and `docker compose restart sync-worker` (the documented way
+    # to pick up the wizard's freshly-written config) restarts the existing
+    # process in place without re-resolving it -- so the sync worker kept
+    # running on stale blank values forever, never connected, and channels
+    # never got their `is_public` flag set (see DESIGN.md §10). Matches
+    # web's own read-write mount for the same underlying reason.
+    volumes:
+      - ./.env:/app/.env:ro
     depends_on:
       migrate:
         condition: service_completed_successfully

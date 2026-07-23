@@ -220,6 +220,14 @@ Everything here targets a single Discord server, public (`@everyone`-readable) c
     adding a real entry point later is additive, not a redesign, but no route/button exists yet.
 - [x] Generated mod-facing pitch kit (what's stored, how deletions propagate, admin page link)
   - `/pitch-kit` — pure template, no new data beyond what DESIGN.md §8.3 already specifies.
+- [ ] `/oauth` step: hide the client-secret form once already submitted this session
+  - Found on a real deployment: the client-secret `<form>` (`web/templates/wizard_oauth.html`)
+    renders unconditionally on every GET, so it stays visible alongside the "Test login" link
+    even after the secret's already been saved to the session — confirmed to be a missing
+    feature, not a broken `{% if %}` (the view never computes/passes a flag like
+    `has_client_secret=("client_secret" in session)`, and no existing test encodes any
+    hide-after-submit behavior). Fix shape: compute that flag in `oauth()`, gate the form behind
+    it in the template, add an "edit"/re-enter affordance to flip back to input mode.
 
 ## 8. Deployment (~1–1.5 days, CDK severable as its own 0.5 day)
 
@@ -247,6 +255,11 @@ Everything here targets a single Discord server, public (`@everyone`-readable) c
     the container, never that `finish` completes a write through the real bind mount. Fixed
     with a fallback in-place write; documented gap, not a bug left unaddressed — see
     `DESIGN.md` §10.
+  - `sync-worker` didn't get a matching bind mount at first — only `env_file:` — so the
+    `docker compose restart sync-worker` this same section (and the wizard's own finish page)
+    tells operators to run never actually delivered the wizard's config: found on a real
+    production deployment as an empty channel list. Fixed by giving `sync-worker` the same
+    `./.env:/app/.env` mount, read-only (it never writes the file). See `DESIGN.md` §10.
   - Build and boot verified directly: image builds cleanly, both `threadbare-migrate` and the
     other entrypoints import and run inside the container, `docker compose config` validates,
     and a full local run (`postgres`/`migrate`/`web`/`sync-worker`, no real domain/Caddy needed
