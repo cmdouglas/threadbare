@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Guidance for working in this repo. See [`DESIGN.md`](./DESIGN.md) for the full design, [`README.md`](./README.md) for the project overview, and [`ROADMAP.md`](./ROADMAP.md) for v1 build order.
+Guidance for working in this repo. See [`DESIGN.md`](./DESIGN.md) for the full design, [`README.md`](./README.md) for the project overview, [`ROADMAP.md`](./ROADMAP.md) for v1 build order, and [`RESOLVED_ISSUES.md`](./RESOLVED_ISSUES.md) for a log of real bugs found and fixed.
 
 ## Stack
 
