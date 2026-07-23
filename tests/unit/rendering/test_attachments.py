@@ -63,6 +63,15 @@ def test_render_attachment_html_generic_file_for_missing_content_type():
     assert 'class="attachment attachment-file"' in html
 
 
+def test_render_attachment_html_falls_back_to_extension_when_content_type_missing():
+    # Discord omits content_type for some attachments (older uploads, or
+    # detection failures) -- filename is the only field Discord guarantees.
+    html = render_attachment_html(_row(filename="image0.jpg", content_type=None))
+
+    assert 'class="attachment attachment-image"' in html
+    assert "<img" in html
+
+
 def test_render_attachment_html_wraps_spoiler_attachments():
     html = render_attachment_html(_row(filename="SPOILER_cat.png", content_type="image/png"))
 

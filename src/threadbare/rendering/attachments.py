@@ -4,6 +4,7 @@ column) — parseable from attachments.filename alone.
 """
 
 import html
+import mimetypes
 
 from threadbare import urls
 
@@ -14,6 +15,17 @@ def is_spoiler_attachment(filename: str) -> bool:
     return filename.startswith(SPOILER_PREFIX)
 
 
+def _is_image(row: dict) -> bool:
+    content_type = row["content_type"]
+    if content_type:
+        return content_type.startswith("image/")
+    # Discord omits content_type for some attachments (older uploads, or
+    # detection failures) -- filename is the only field Discord guarantees,
+    # so fall back to guessing from its extension.
+    guessed_type, _ = mimetypes.guess_type(row["filename"])
+    return (guessed_type or "").startswith("image/")
+
+
 def display_filename(filename: str) -> str:
     if is_spoiler_attachment(filename):
         return filename[len(SPOILER_PREFIX) :]
@@ -21,7 +33,7 @@ def display_filename(filename: str) -> str:
 
 
 def render_attachment_html(row: dict, *, script_root: str = "") -> str:
-    is_image = (row["content_type"] or "").startswith("image/")
+    is_image = _is_image(row)
     safe_filename = html.escape(display_filename(row["filename"]))
     # Routed through the /att/{id} proxy, not row["cached_url"] directly --
     # Discord's signed CDN URLs expire (~24h) and are frequently already
