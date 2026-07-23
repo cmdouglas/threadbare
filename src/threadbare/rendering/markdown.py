@@ -19,7 +19,10 @@ import nh3
 from discord_markdown_ast_parser import parse
 from discord_markdown_ast_parser.parser import Node, NodeType
 
-from threadbare.rendering.emoji import render_custom_emoji_html
+from threadbare.rendering.emoji import (
+    render_custom_emoji_html,
+    render_unicode_text_with_emoji_titles,
+)
 
 ALLOWED_TAGS = {
     "strong",
@@ -36,7 +39,7 @@ ALLOWED_TAGS = {
     "img",
 }
 ALLOWED_ATTRIBUTES = {
-    "span": {"class", "data-channel-id"},
+    "span": {"class", "data-channel-id", "title"},
     "a": {"href"},
     "img": {"class", "src", "alt", "title"},
     "code": {"class"},
@@ -116,7 +119,7 @@ def _render_children(node: Node, refs: ResolvedRefs, animated_emoji_ids: frozens
 def _render_node(node: Node, refs: ResolvedRefs, animated_emoji_ids: frozenset[int]) -> str:
     match node.node_type:
         case NodeType.TEXT:
-            return html.escape(node.text_content or "")
+            return render_unicode_text_with_emoji_titles(node.text_content or "")
         case NodeType.BOLD:
             return f"<strong>{_render_children(node, refs, animated_emoji_ids)}</strong>"
         case NodeType.ITALIC:

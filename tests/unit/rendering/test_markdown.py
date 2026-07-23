@@ -134,6 +134,12 @@ def test_render_message_content_animated_emoji_id_does_not_leak_to_other_static_
     assert 'src="https://cdn.discordapp.com/emojis/456.png"' in html
 
 
+def test_render_message_content_unicode_emoji_gets_a_shortcode_tooltip():
+    assert render_message_content("hi 😏 there", refs=EMPTY_REFS) == (
+        'hi <span title=":smirk:">😏</span> there'
+    )
+
+
 def test_render_message_content_unicode_emoji_shortcode_passthrough():
     # Discord's own client resolves :name: shortcodes to real unicode before
     # sending, so this only appears from bots/webhooks bypassing that -- we

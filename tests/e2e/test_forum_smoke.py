@@ -51,6 +51,10 @@ def _seed(conn):
         (900200, CHANNEL_ID, USER_ID, "a pizza recipe for testing search"),
     )
     conn.execute(
+        "INSERT INTO reactions (message_id, emoji, count) VALUES (%s, %s, %s)",
+        (900200, "👍", 3),
+    )
+    conn.execute(
         """
         INSERT INTO attachments
             (id, message_id, filename, content_type, size, cached_url, url_expires_at)
@@ -288,6 +292,13 @@ def test_attachment_image_is_capped_to_the_viewport_height(page, live_server, se
         "el => getComputedStyle(el).maxHeight"
     )
     assert max_height != "none"
+
+
+def test_reaction_shows_shortcode_tooltip_on_hover(page, live_server, seeded):
+    page.goto(f"{live_server}/board/{CHANNEL_ID}/continuous/page/1")
+
+    badge = page.locator("#post-900200 .reaction-badge span[title]")
+    assert badge.get_attribute("title") == ":thumbsup:"
 
 
 def test_embed_image_does_not_overflow_the_post_box(page, live_server, seeded):

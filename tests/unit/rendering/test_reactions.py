@@ -6,7 +6,8 @@ def test_render_reaction_badges_html_single_unicode_reaction():
 
     assert html == (
         '<div class="reactions">'
-        '<span class="reaction-badge">👍<span class="reaction-count">3</span></span>'
+        '<span class="reaction-badge"><span title=":thumbsup:">👍</span>'
+        '<span class="reaction-count">3</span></span>'
         "</div>"
     )
 
