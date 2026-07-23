@@ -21,9 +21,7 @@ async def _seed_guild(conn, *, guild_id):
     )
 
 
-async def _seed_user(
-    conn, *, user_id, display_name, avatar_hash=None, is_bot=False, role_ids=None
-):
+async def _seed_user(conn, *, user_id, display_name, avatar_hash=None, is_bot=False, role_ids=None):
     await conn.execute(
         "INSERT INTO users (id, display_name, avatar_hash, is_bot, role_ids) "
         "VALUES (%s, %s, %s, %s, %s) ON CONFLICT DO NOTHING",
@@ -31,10 +29,37 @@ async def _seed_user(
     )
 
 
-async def _seed_role(conn, *, role_id, guild_id=1, name="a role", color=0, position=0):
+async def _seed_role(
+    conn, *, role_id, guild_id=1, name="a role", color=0, position=0, permissions=0
+):
     await conn.execute(
-        "INSERT INTO roles (id, guild_id, name, color, position) VALUES (%s, %s, %s, %s, %s)",
-        (role_id, guild_id, name, color, position),
+        "INSERT INTO roles (id, guild_id, name, color, position, permissions) "
+        "VALUES (%s, %s, %s, %s, %s, %s)",
+        (role_id, guild_id, name, color, position, permissions),
+    )
+
+
+async def _seed_channel(conn, *, channel_id, guild_id=1, type=0, parent_id=None):
+    await conn.execute(
+        "INSERT INTO channels (id, guild_id, type, name, parent_id) "
+        "VALUES (%s, %s, %s, 'a channel', %s)",
+        (channel_id, guild_id, type, parent_id),
+    )
+
+
+async def _seed_channel_role_overwrite(conn, *, channel_id, role_id, allow=0, deny=0):
+    await conn.execute(
+        "INSERT INTO channel_role_overwrites (channel_id, role_id, allow, deny) "
+        "VALUES (%s, %s, %s, %s)",
+        (channel_id, role_id, allow, deny),
+    )
+
+
+async def _seed_channel_member_overwrite(conn, *, channel_id, user_id, allow=0, deny=0):
+    await conn.execute(
+        "INSERT INTO channel_member_overwrites (channel_id, user_id, allow, deny) "
+        "VALUES (%s, %s, %s, %s)",
+        (channel_id, user_id, allow, deny),
     )
 
 
@@ -791,3 +816,103 @@ async def test_get_recent_posts_for_user_orders_newest_first_and_respects_limit(
     rows = await queries.get_recent_posts_for_user(db_conn, 100, limit=2)
 
     assert [r["id"] for r in rows] == [3, 2]
+
+
+async def test_get_base_permissions_ors_everyone_and_held_roles(db_conn):
+    await _seed_guild(db_conn, guild_id=1)
+    await _seed_role(db_conn, role_id=1, guild_id=1, permissions=1 << 10)
+    await _seed_role(db_conn, role_id=42, guild_id=1, permissions=1 << 16)
+
+    result = await queries.get_base_permissions(db_conn, guild_id=1, role_ids=[42])
+
+    assert result == ((1 << 10) | (1 << 16))
+
+
+async def test_get_base_permissions_with_empty_role_ids_still_includes_everyone(db_conn):
+    await _seed_guild(db_conn, guild_id=1)
+    await _seed_role(db_conn, role_id=1, guild_id=1, permissions=1 << 10)
+
+    result = await queries.get_base_permissions(db_conn, guild_id=1, role_ids=[])
+
+    assert result == (1 << 10)
+
+
+async def test_get_base_permissions_ignores_unknown_role_id(db_conn):
+    await _seed_guild(db_conn, guild_id=1)
+    await _seed_role(db_conn, role_id=1, guild_id=1, permissions=1 << 10)
+
+    result = await queries.get_base_permissions(db_conn, guild_id=1, role_ids=[999999])
+
+    assert result == (1 << 10)
+
+
+async def test_get_visibility_channels_excludes_categories_and_voice(db_conn):
+    await _seed_guild(db_conn, guild_id=1)
+    await _seed_channel(db_conn, channel_id=10, guild_id=1, type=0)
+    await _seed_channel(db_conn, channel_id=20, guild_id=1, type=4)  # category
+    await _seed_channel(db_conn, channel_id=30, guild_id=1, type=2)  # voice
+    await _seed_channel(db_conn, channel_id=31, guild_id=1, type=13)  # stage voice
+
+    rows = await queries.get_visibility_channels(db_conn, guild_id=1)
+
+    assert [r["id"] for r in rows] == [10]
+
+
+async def test_get_visibility_channels_includes_parent_id(db_conn):
+    await _seed_guild(db_conn, guild_id=1)
+    await _seed_channel(db_conn, channel_id=20, guild_id=1, type=4)
+    await _seed_channel(db_conn, channel_id=10, guild_id=1, type=0, parent_id=20)
+
+    rows = await queries.get_visibility_channels(db_conn, guild_id=1)
+
+    assert rows == [{"id": 10, "parent_id": 20}]
+
+
+async def test_get_visibility_channels_scoped_to_guild(db_conn):
+    await _seed_guild(db_conn, guild_id=1)
+    await _seed_guild(db_conn, guild_id=2)
+    await _seed_channel(db_conn, channel_id=10, guild_id=1)
+    await _seed_channel(db_conn, channel_id=11, guild_id=2)
+
+    rows = await queries.get_visibility_channels(db_conn, guild_id=1)
+
+    assert [r["id"] for r in rows] == [10]
+
+
+async def test_get_channel_role_overwrites_filters_by_channel_and_role(db_conn):
+    await _seed_guild(db_conn, guild_id=1)
+    await _seed_channel(db_conn, channel_id=10, guild_id=1)
+    await _seed_channel(db_conn, channel_id=11, guild_id=1)
+    await _seed_role(db_conn, role_id=1, guild_id=1)
+    await _seed_role(db_conn, role_id=42, guild_id=1)
+    await _seed_channel_role_overwrite(db_conn, channel_id=10, role_id=1, allow=5)
+    await _seed_channel_role_overwrite(db_conn, channel_id=10, role_id=42, deny=5)
+    await _seed_channel_role_overwrite(db_conn, channel_id=11, role_id=1, allow=9)
+
+    rows = await queries.get_channel_role_overwrites(db_conn, channel_ids=[10], role_ids=[1])
+
+    assert [(r["channel_id"], r["role_id"]) for r in rows] == [(10, 1)]
+
+
+async def test_get_channel_role_overwrites_returns_empty_for_empty_input(db_conn):
+    assert await queries.get_channel_role_overwrites(db_conn, channel_ids=[], role_ids=[1]) == []
+    assert await queries.get_channel_role_overwrites(db_conn, channel_ids=[10], role_ids=[]) == []
+
+
+async def test_get_channel_member_overwrites_filters_by_channel_and_user(db_conn):
+    await _seed_guild(db_conn, guild_id=1)
+    await _seed_channel(db_conn, channel_id=10, guild_id=1)
+    await _seed_channel(db_conn, channel_id=11, guild_id=1)
+    await _seed_user(db_conn, user_id=7, display_name="a")
+    await _seed_user(db_conn, user_id=8, display_name="b")
+    await _seed_channel_member_overwrite(db_conn, channel_id=10, user_id=7, deny=5)
+    await _seed_channel_member_overwrite(db_conn, channel_id=10, user_id=8, deny=5)
+    await _seed_channel_member_overwrite(db_conn, channel_id=11, user_id=7, deny=5)
+
+    rows = await queries.get_channel_member_overwrites(db_conn, channel_ids=[10], user_id=7)
+
+    assert [(r["channel_id"],) for r in rows] == [(10,)]
+
+
+async def test_get_channel_member_overwrites_returns_empty_for_empty_channel_ids(db_conn):
+    assert await queries.get_channel_member_overwrites(db_conn, channel_ids=[], user_id=7) == []

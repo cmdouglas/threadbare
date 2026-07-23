@@ -10,7 +10,7 @@ from datetime import datetime
 
 import psycopg
 
-from threadbare.channel_types import CATEGORY, STAGE_VOICE, VOICE
+from threadbare.channel_types import CATEGORY, NON_CONTENT_TYPES, STAGE_VOICE, VOICE
 from threadbare.pagination import DEFAULT_PAGE_SIZE
 
 _MESSAGE_COLUMNS_SQL = """
@@ -460,6 +460,85 @@ async def get_guild(conn: psycopg.AsyncConnection, guild_id: int) -> dict | None
     async with conn.cursor() as cur:
         await cur.execute("SELECT id, name, icon FROM guilds WHERE id = %s", (guild_id,))
         return await cur.fetchone()
+
+
+async def get_base_permissions(
+    conn: psycopg.AsyncConnection, *, guild_id: int, role_ids: list[int]
+) -> int:
+    """@everyone's permissions OR'd with every role in role_ids. @everyone's
+    row id equals guild_id (Discord's own convention -- discover_roles's
+    guild.fetch_roles() always includes guild.default_role, whose id is the
+    guild's id), and a member's stored role_ids never includes it, so
+    guild_id is added explicitly here rather than assumed present.
+    """
+    async with conn.cursor() as cur:
+        await cur.execute(
+            """
+            SELECT COALESCE(bit_or(permissions), 0) AS base_permissions
+            FROM roles
+            WHERE guild_id = %(guild_id)s AND id = ANY(%(ids)s)
+            """,
+            {"guild_id": guild_id, "ids": [guild_id, *role_ids]},
+        )
+        row = await cur.fetchone()
+    return row["base_permissions"]
+
+
+async def get_visibility_channels(conn: psycopg.AsyncConnection, *, guild_id: int) -> list[dict]:
+    """id, parent_id for every real content channel in the guild (excludes
+    categories/voice/stage-voice) -- the full population
+    channel_visibility.compute_visible_channel_ids walks. Deliberately
+    unfiltered by is_public/indexed: this computes genuine per-identity
+    visibility, not "already publicly indexed channels only" -- a role can
+    regain access @everyone can't see.
+    """
+    async with conn.cursor() as cur:
+        await cur.execute(
+            """
+            SELECT id, parent_id FROM channels
+            WHERE guild_id = %(guild_id)s AND type != ALL(%(non_content)s)
+            """,
+            {"guild_id": guild_id, "non_content": list(NON_CONTENT_TYPES)},
+        )
+        return await cur.fetchall()
+
+
+async def get_channel_role_overwrites(
+    conn: psycopg.AsyncConnection, *, channel_ids: list[int], role_ids: list[int]
+) -> list[dict]:
+    """channel_ids should cover both the content channels being evaluated
+    and their distinct parent category ids in one call, avoiding N+1 per
+    channel. role_ids should already include everyone_role_id (guild_id).
+    """
+    if not channel_ids or not role_ids:
+        return []
+    async with conn.cursor() as cur:
+        await cur.execute(
+            """
+            SELECT channel_id, role_id, allow, deny
+            FROM channel_role_overwrites
+            WHERE channel_id = ANY(%(channel_ids)s) AND role_id = ANY(%(role_ids)s)
+            """,
+            {"channel_ids": channel_ids, "role_ids": role_ids},
+        )
+        return await cur.fetchall()
+
+
+async def get_channel_member_overwrites(
+    conn: psycopg.AsyncConnection, *, channel_ids: list[int], user_id: int
+) -> list[dict]:
+    if not channel_ids:
+        return []
+    async with conn.cursor() as cur:
+        await cur.execute(
+            """
+            SELECT channel_id, allow, deny
+            FROM channel_member_overwrites
+            WHERE channel_id = ANY(%(channel_ids)s) AND user_id = %(user_id)s
+            """,
+            {"channel_ids": channel_ids, "user_id": user_id},
+        )
+        return await cur.fetchall()
 
 
 async def get_post_count_for_user(conn: psycopg.AsyncConnection, user_id: int) -> int:
