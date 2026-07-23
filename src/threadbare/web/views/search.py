@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from flask import Blueprint, current_app, render_template, request, url_for
+from flask import Blueprint, current_app, g, render_template, request, url_for
 
 from threadbare.db import queries
 from threadbare.pagination import page_number_for_offset
@@ -48,14 +48,15 @@ async def search():
                 after=after,
                 before=before,
                 page=page,
+                page_size=g.posts_per_page,
             )
             total = await queries.count_search_results(
                 conn, query=query, author=author, channel_id=channel_id, after=after, before=before
             )
         for row in results:
-            row["page"] = page_number_for_offset(row["preceding_count"])
+            row["page"] = page_number_for_offset(row["preceding_count"], page_size=g.posts_per_page)
 
-    total_pages = page_number_for_offset(total - 1) if total > 0 else 1
+    total_pages = page_number_for_offset(total - 1, page_size=g.posts_per_page) if total > 0 else 1
 
     return render_template(
         "search_results.html",
@@ -65,4 +66,5 @@ async def search():
         page=page,
         total_pages=total_pages,
         page_url=_make_page_url(),
+        jump_action=url_for("search.search"),
     )

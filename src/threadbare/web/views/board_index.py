@@ -1,7 +1,7 @@
-from flask import Blueprint, current_app, render_template
+from flask import Blueprint, current_app, g, render_template
 
 from threadbare.db import queries
-from threadbare.pagination import page_number_for_offset
+from threadbare.pagination import DEFAULT_PAGE_SIZE, page_number_for_offset
 from threadbare.web.board_tree import board_view_mode, group_channels_by_category
 
 bp = Blueprint("board_index", __name__)
@@ -30,10 +30,12 @@ async def board_index():
             for board in group["boards"]:
                 if board_view_mode(board) == "freeform":
                     total = await queries.count_messages_before(conn, channel_id=board["id"])
+                    page_size = g.posts_per_page
                 else:
                     total = await queries.count_topics_for_board(conn, board["id"])
+                    page_size = DEFAULT_PAGE_SIZE
                 board_total_pages[board["id"]] = (
-                    page_number_for_offset(total - 1) if total > 0 else 1
+                    page_number_for_offset(total - 1, page_size=page_size) if total > 0 else 1
                 )
 
     return render_template(

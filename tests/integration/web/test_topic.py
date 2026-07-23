@@ -73,6 +73,7 @@ def test_topic_page_renders_messages_with_permalink_anchor(client, web_conn):
     assert b"hello world" in resp.data
     assert b"my thread" in resp.data
     assert b"View on Discord" in resp.data
+    assert b'class="jump-to-page" action="/topic/3000/jump_to_page"' in resp.data
 
 
 def test_topic_page_shows_the_author_avatar_by_default(client, web_conn):
@@ -170,3 +171,28 @@ def test_topic_jump_redirects_to_the_page_containing_the_date(client, web_conn):
 
     assert resp.status_code == 302
     assert resp.headers["Location"] == "/topic/3000/page/2"
+
+
+def test_topic_jump_to_page_redirects_to_the_requested_page(client, web_conn):
+    run(_seed_guild_and_channel(web_conn))
+    run(_seed_thread(web_conn, thread_id=3000, parent_channel_id=10))
+
+    resp = client.get("/topic/3000/jump_to_page?page=5")
+
+    assert resp.status_code == 302
+    assert resp.headers["Location"] == "/topic/3000/page/5"
+
+
+def test_topic_jump_to_page_clamps_a_missing_or_zero_page_to_one(client, web_conn):
+    run(_seed_guild_and_channel(web_conn))
+    run(_seed_thread(web_conn, thread_id=3000, parent_channel_id=10))
+
+    resp = client.get("/topic/3000/jump_to_page?page=0")
+
+    assert resp.status_code == 302
+    assert resp.headers["Location"] == "/topic/3000/page/1"
+
+    resp = client.get("/topic/3000/jump_to_page")
+
+    assert resp.status_code == 302
+    assert resp.headers["Location"] == "/topic/3000/page/1"

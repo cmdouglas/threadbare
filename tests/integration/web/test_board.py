@@ -105,6 +105,7 @@ def test_board_topics_shows_topics_for_a_forum_channel(client, web_conn):
     assert resp.status_code == 200
     assert b"my topic" in resp.data
     assert b"alice" in resp.data
+    assert b'class="jump-to-page" action="/board/10/topics"' in resp.data
 
 
 def test_board_topics_shows_no_pagination_control_for_a_single_page_topic(client, web_conn):
@@ -212,6 +213,26 @@ def test_board_continuous_jump_redirects_to_the_right_page(client, web_conn):
     assert resp.headers["Location"] == "/board/10/continuous/page/2"
 
 
+def test_board_continuous_jump_to_page_redirects_to_the_requested_page(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10))
+
+    resp = client.get("/board/10/continuous/jump_to_page?page=5")
+
+    assert resp.status_code == 302
+    assert resp.headers["Location"] == "/board/10/continuous/page/5"
+
+
+def test_board_continuous_jump_to_page_clamps_a_missing_or_zero_page_to_one(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10))
+
+    resp = client.get("/board/10/continuous/jump_to_page?page=0")
+
+    assert resp.status_code == 302
+    assert resp.headers["Location"] == "/board/10/continuous/page/1"
+
+
 def test_board_weeks_index_lists_weeks_with_counts(client, web_conn):
     run(_seed_guild(web_conn))
     run(_seed_board(web_conn, channel_id=10))
@@ -255,3 +276,13 @@ def test_board_week_page_shows_only_messages_in_that_week(client, web_conn):
     assert resp.status_code == 200
     assert b"in week 28" in resp.data
     assert b"in week 29" not in resp.data
+
+
+def test_board_week_jump_to_page_redirects_to_the_requested_page(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10))
+
+    resp = client.get("/board/10/week/2026-W28/jump_to_page?page=3")
+
+    assert resp.status_code == 302
+    assert resp.headers["Location"] == "/board/10/week/2026-W28/page/3"

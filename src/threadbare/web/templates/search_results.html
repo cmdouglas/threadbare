@@ -21,6 +21,12 @@
   </li>
   {% endfor %}
 </ul>
-{% if total > 0 %}{% include "_pagination.html" %}{% endif %}
+{% if total > 0 %}
+<nav class="posts-per-page-switcher">
+  Posts per page:
+  {% for n in posts_per_page_options %}<a href="{{ posts_per_page_switch_url(n) }}">{{ n }}</a>{% endfor %}
+</nav>
+{% include "_pagination.html" %}
+{% endif %}
 {% endif %}
 {% endblock %}

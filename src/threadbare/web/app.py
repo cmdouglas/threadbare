@@ -8,7 +8,6 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from threadbare import pagination, urls
 from threadbare.config import Settings
 from threadbare.db import queries
-from threadbare.pagination import DEFAULT_PAGE_SIZE
 from threadbare.rendering import avatars
 from threadbare.web import authz, board_tree, preferences, themes
 from threadbare.web.views.admin import bp as admin_bp
@@ -43,6 +42,14 @@ def _avatar_toggle_url() -> str:
     return url_for(request.endpoint, **args)
 
 
+def _posts_per_page_switch_url(value: int) -> str:
+    """Same arg-merging idea as _theme_switch_url."""
+    if request.endpoint is None:
+        return request.path
+    args = {**request.view_args, **request.args.to_dict(), "posts_per_page": value}
+    return url_for(request.endpoint, **args)
+
+
 def create_app(settings: Settings, pool) -> Flask:
     app = Flask(__name__)
     app.config["SETTINGS"] = settings
@@ -59,7 +66,6 @@ def create_app(settings: Settings, pool) -> Flask:
     app.jinja_env.globals["pagination"] = pagination
     app.jinja_env.globals["board_tree"] = board_tree
     app.jinja_env.globals["guild_id"] = settings.discord_guild_id
-    app.jinja_env.globals["default_page_size"] = DEFAULT_PAGE_SIZE
 
     @app.before_request
     def resolve_current_theme():
@@ -73,6 +79,13 @@ def create_app(settings: Settings, pool) -> Flask:
         g.show_avatars = preferences.resolve_show_avatars(
             query_param=request.args.get("avatars"),
             cookie_value=request.cookies.get(preferences.AVATAR_COOKIE_NAME),
+        )
+
+    @app.before_request
+    def resolve_posts_per_page():
+        g.posts_per_page = preferences.resolve_posts_per_page(
+            query_param=request.args.get("posts_per_page"),
+            cookie_value=request.cookies.get(preferences.POSTS_PER_PAGE_COOKIE_NAME),
         )
 
     @app.before_request
@@ -102,6 +115,9 @@ def create_app(settings: Settings, pool) -> Flask:
             "site_title": g.site_title,
             "show_avatars": g.show_avatars,
             "avatar_toggle_href": _avatar_toggle_url(),
+            "posts_per_page": g.posts_per_page,
+            "posts_per_page_options": preferences.POSTS_PER_PAGE_OPTIONS,
+            "posts_per_page_switch_url": _posts_per_page_switch_url,
         }
 
     @app.after_request
@@ -125,6 +141,19 @@ def create_app(settings: Settings, pool) -> Flask:
                 preferences.AVATAR_COOKIE_NAME,
                 requested,
                 max_age=preferences.AVATAR_COOKIE_MAX_AGE,
+                path="/",
+                samesite="Lax",
+            )
+        return response
+
+    @app.after_request
+    def persist_posts_per_page_choice(response):
+        requested = request.args.get("posts_per_page", type=int)
+        if requested in preferences.POSTS_PER_PAGE_OPTIONS:
+            response.set_cookie(
+                preferences.POSTS_PER_PAGE_COOKIE_NAME,
+                str(requested),
+                max_age=preferences.POSTS_PER_PAGE_COOKIE_MAX_AGE,
                 path="/",
                 samesite="Lax",
             )

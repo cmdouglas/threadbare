@@ -9,7 +9,7 @@ import psycopg
 
 from threadbare import urls
 from threadbare.db import queries
-from threadbare.pagination import page_number_for_offset
+from threadbare.pagination import DEFAULT_PAGE_SIZE, page_number_for_offset
 
 DEFAULT_SNIPPET_LIMIT = 280
 
@@ -21,7 +21,11 @@ def truncate_snippet(text: str, limit: int = DEFAULT_SNIPPET_LIMIT) -> str:
 
 
 async def render_reply_quote(
-    conn: psycopg.AsyncConnection, message_row: dict, *, script_root: str = ""
+    conn: psycopg.AsyncConnection,
+    message_row: dict,
+    *,
+    script_root: str = "",
+    page_size: int = DEFAULT_PAGE_SIZE,
 ) -> str | None:
     reply_to_id = message_row.get("reply_to_id")
     if reply_to_id is None:
@@ -40,7 +44,7 @@ async def render_reply_quote(
         channel_id=target["channel_id"],
         before=(target["posted_at"], target["id"]),
     )
-    page = page_number_for_offset(preceding)
+    page = page_number_for_offset(preceding, page_size=page_size)
     # script_root prepended here, not in urls.py, which must stay importable
     # outside a Flask request context (see urls.py's docstring).
     href = html.escape(script_root + urls.permalink_for_message(target, page=page), quote=True)

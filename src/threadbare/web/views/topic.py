@@ -1,9 +1,9 @@
 from datetime import UTC, datetime
 
-from flask import Blueprint, abort, current_app, redirect, render_template, request, url_for
+from flask import Blueprint, abort, current_app, g, redirect, render_template, request, url_for
 
 from threadbare.db import queries
-from threadbare.pagination import DEFAULT_PAGE_SIZE, page_number_for_offset
+from threadbare.pagination import page_number_for_offset
 from threadbare.rendering.render_service import render_message_for_display
 
 bp = Blueprint("topic", __name__)
@@ -23,14 +23,19 @@ async def topic_page(thread_id: int, page: int):
             abort(404)
         total = await queries.count_messages_before(conn, thread_id=thread_id)
         rows = await queries.get_messages_page(
-            conn, thread_id=thread_id, page=page, page_size=DEFAULT_PAGE_SIZE
+            conn, thread_id=thread_id, page=page, page_size=g.posts_per_page
         )
         posts = [
-            (row, await render_message_for_display(conn, row, script_root=request.script_root))
+            (
+                row,
+                await render_message_for_display(
+                    conn, row, script_root=request.script_root, page_size=g.posts_per_page
+                ),
+            )
             for row in rows
         ]
 
-    total_pages = page_number_for_offset(total - 1) if total > 0 else 1
+    total_pages = page_number_for_offset(total - 1, page_size=g.posts_per_page) if total > 0 else 1
 
     def page_url(n: int) -> str:
         return url_for("topic.topic_page", thread_id=thread_id, page=n)
@@ -42,6 +47,7 @@ async def topic_page(thread_id: int, page: int):
         page=page,
         total_pages=total_pages,
         page_url=page_url,
+        jump_action=url_for("topic.topic_jump_to_page", thread_id=thread_id),
     )
 
 
@@ -59,5 +65,11 @@ async def topic_jump(thread_id: int):
         preceding = await queries.count_messages_before(
             conn, thread_id=thread_id, before=target_date
         )
-    page = page_number_for_offset(preceding)
+    page = page_number_for_offset(preceding, page_size=g.posts_per_page)
+    return redirect(url_for("topic.topic_page", thread_id=thread_id, page=page))
+
+
+@bp.route("/topic/<int:thread_id>/jump_to_page")
+async def topic_jump_to_page(thread_id: int):
+    page = max(request.args.get("page", type=int) or 1, 1)
     return redirect(url_for("topic.topic_page", thread_id=thread_id, page=page))

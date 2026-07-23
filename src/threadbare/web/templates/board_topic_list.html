@@ -8,7 +8,7 @@
 <table class="board-topic-list">
 {% for thread in threads %}
   {% set agg = aggregates.get(thread.id, {"post_count": 0, "last_message_id": None, "last_posted_at": None, "last_author_id": None}) %}
-  {% set topic_total_pages = pagination.page_number_for_offset(agg.post_count - 1) if agg.post_count > 0 else 1 %}
+  {% set topic_total_pages = pagination.page_number_for_offset(agg.post_count - 1, page_size=posts_per_page) if agg.post_count > 0 else 1 %}
   <tr class="topic-row">
     <td class="topic-name"><a href="{{ request.script_root }}{{ urls.topic_url(thread.id) }}">{{ thread.name }}</a></td>
     <td class="topic-post-count">{{ agg.post_count }}</td>

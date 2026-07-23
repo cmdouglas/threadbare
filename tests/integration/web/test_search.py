@@ -74,3 +74,21 @@ def test_search_with_no_matches(client, web_conn):
 
     assert resp.status_code == 200
     assert b"0 results" in resp.data
+
+
+def test_search_jump_to_page_form_preserves_the_current_filters(client, web_conn):
+    run(_seed_guild_and_channel(web_conn))
+    run(_seed_user(web_conn, user_id=100, display_name="alice"))
+    run(
+        _seed_message(
+            web_conn, message_id=1, channel_id=10, author_id=100, content="a pizza recipe"
+        )
+    )
+
+    resp = client.get("/search?q=pizza&author=alice")
+
+    assert resp.status_code == 200
+    assert b'class="jump-to-page" action="/search"' in resp.data
+    assert b'<input type="hidden" name="q" value="pizza">' in resp.data
+    assert b'<input type="hidden" name="author" value="alice">' in resp.data
+    assert b'name="page"' in resp.data

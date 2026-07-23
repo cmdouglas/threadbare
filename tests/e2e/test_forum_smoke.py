@@ -144,6 +144,26 @@ def test_topic_pagination_and_permalink_round_trip(page, live_server, seeded):
     assert page.locator("#post-900125").is_visible()
 
 
+def test_posts_per_page_switcher_changes_how_many_posts_render(page, live_server, seeded):
+    page.goto(f"{live_server}/topic/{THREAD_ID}/page/1")
+    assert page.locator("article.post").count() == 25
+
+    page.locator(".posts-per-page-switcher a", has_text="50").click()
+
+    assert "posts_per_page=50" in page.url
+    assert page.locator("article.post").count() == 30
+
+
+def test_jump_to_page_form_navigates_to_the_typed_page(page, live_server, seeded):
+    page.goto(f"{live_server}/topic/{THREAD_ID}/page/1")
+
+    page.locator(".jump-to-page input[name=page]").first.fill("2")
+    page.locator(".jump-to-page button[type=submit]").first.click()
+
+    assert page.url.endswith(f"/topic/{THREAD_ID}/page/2")
+    assert "topic message 25" in page.content()
+
+
 def test_topic_list_shows_per_topic_pagination_control(page, live_server, seeded):
     page.goto(f"{live_server}/board/{CHANNEL_ID}/topics")
 

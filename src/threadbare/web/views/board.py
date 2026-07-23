@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from flask import Blueprint, abort, current_app, redirect, render_template, request, url_for
+from flask import Blueprint, abort, current_app, g, redirect, render_template, request, url_for
 
 from threadbare.channel_types import CATEGORY
 from threadbare.db import queries
@@ -67,6 +67,7 @@ async def board_topics(channel_id: int):
         page=page,
         total_pages=total_pages,
         page_url=page_url,
+        jump_action=url_for("board.board_topics", channel_id=channel_id),
     )
 
 
@@ -82,14 +83,19 @@ async def board_continuous_page(channel_id: int, page: int):
         channel = await _get_board_or_404(conn, channel_id)
         total = await queries.count_messages_before(conn, channel_id=channel_id)
         rows = await queries.get_messages_page(
-            conn, channel_id=channel_id, page=page, page_size=DEFAULT_PAGE_SIZE
+            conn, channel_id=channel_id, page=page, page_size=g.posts_per_page
         )
         posts = [
-            (row, await render_message_for_display(conn, row, script_root=request.script_root))
+            (
+                row,
+                await render_message_for_display(
+                    conn, row, script_root=request.script_root, page_size=g.posts_per_page
+                ),
+            )
             for row in rows
         ]
 
-    total_pages = page_number_for_offset(total - 1) if total > 0 else 1
+    total_pages = page_number_for_offset(total - 1, page_size=g.posts_per_page) if total > 0 else 1
 
     def page_url(n: int) -> str:
         return url_for("board.board_continuous_page", channel_id=channel_id, page=n)
@@ -102,6 +108,7 @@ async def board_continuous_page(channel_id: int, page: int):
         page=page,
         total_pages=total_pages,
         page_url=page_url,
+        jump_action=url_for("board.board_continuous_jump_to_page", channel_id=channel_id),
     )
 
 
@@ -119,7 +126,13 @@ async def board_continuous_jump(channel_id: int):
         preceding = await queries.count_messages_before(
             conn, channel_id=channel_id, before=target_date
         )
-    page = page_number_for_offset(preceding)
+    page = page_number_for_offset(preceding, page_size=g.posts_per_page)
+    return redirect(url_for("board.board_continuous_page", channel_id=channel_id, page=page))
+
+
+@bp.route("/board/<int:channel_id>/continuous/jump_to_page")
+async def board_continuous_jump_to_page(channel_id: int):
+    page = max(request.args.get("page", type=int) or 1, 1)
     return redirect(url_for("board.board_continuous_page", channel_id=channel_id, page=page))
 
 
@@ -146,16 +159,21 @@ async def board_week_page(channel_id: int, week_id: str, page: int):
             conn,
             channel_id=channel_id,
             page=page,
-            page_size=DEFAULT_PAGE_SIZE,
+            page_size=g.posts_per_page,
             since=since,
             until=until,
         )
         posts = [
-            (row, await render_message_for_display(conn, row, script_root=request.script_root))
+            (
+                row,
+                await render_message_for_display(
+                    conn, row, script_root=request.script_root, page_size=g.posts_per_page
+                ),
+            )
             for row in rows
         ]
 
-    total_pages = page_number_for_offset(total - 1) if total > 0 else 1
+    total_pages = page_number_for_offset(total - 1, page_size=g.posts_per_page) if total > 0 else 1
 
     def page_url(n: int) -> str:
         return url_for("board.board_week_page", channel_id=channel_id, week_id=week_id, page=n)
@@ -168,4 +186,15 @@ async def board_week_page(channel_id: int, week_id: str, page: int):
         page=page,
         total_pages=total_pages,
         page_url=page_url,
+        jump_action=url_for(
+            "board.board_week_jump_to_page", channel_id=channel_id, week_id=week_id
+        ),
+    )
+
+
+@bp.route("/board/<int:channel_id>/week/<week_id>/jump_to_page")
+async def board_week_jump_to_page(channel_id: int, week_id: str):
+    page = max(request.args.get("page", type=int) or 1, 1)
+    return redirect(
+        url_for("board.board_week_page", channel_id=channel_id, week_id=week_id, page=page)
     )

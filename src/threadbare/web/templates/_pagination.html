@@ -1,4 +1,5 @@
-{# Expects: page (current, 1-indexed), total_pages, page_url (callable int -> str) #}
+{# Expects: page (current, 1-indexed), total_pages, page_url (callable int -> str),
+   jump_action (URL string the jump-to-page form submits to) #}
 <nav class="pagination">
   <span class="pagination-label">Page</span>
   {% for p in pagination.page_window(page, total_pages) %}
@@ -11,3 +12,10 @@
     {% endif %}
   {% endfor %}
 </nav>
+<form class="jump-to-page" action="{{ jump_action }}" method="get">
+  {% for key, value in request.args.items() %}
+    {% if key != "page" %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endif %}
+  {% endfor %}
+  <label>Jump to page <input type="number" name="page" min="1" max="{{ total_pages }}" value="{{ page }}"></label>
+  <button type="submit">Go</button>
+</form>
