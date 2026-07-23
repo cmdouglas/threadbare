@@ -245,6 +245,22 @@ a:visited {
   border-radius: var(--radius);
 }
 
+.embed-image {
+  display: block;
+  max-width: 100%;
+  max-height: 80vh;
+  margin-top: var(--space-xs);
+  border-radius: var(--radius);
+}
+
+.embed-thumbnail {
+  max-width: 80px;
+  max-height: 80px;
+  float: right;
+  margin-left: var(--space-sm);
+  border-radius: var(--radius);
+}
+
 .pagination {
   display: flex;
   gap: var(--space-sm);

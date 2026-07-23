@@ -8,6 +8,7 @@ CHANNEL_ID = 900001
 THREAD_ID = 900010
 USER_ID = 900002
 ATTACHMENT_ID = 900300
+EMBED_MESSAGE_ID = 900201
 BASE = datetime(2026, 1, 1, tzinfo=UTC)
 
 
@@ -61,6 +62,20 @@ def _seed(conn):
             BASE + timedelta(days=1),
         ),
     )
+    conn.execute(
+        """
+        INSERT INTO messages (id, channel_id, author_id, content, posted_at)
+        VALUES (%s, %s, %s, %s, now())
+        """,
+        (EMBED_MESSAGE_ID, CHANNEL_ID, USER_ID, "a link with a big embed image"),
+    )
+    conn.execute(
+        """
+        INSERT INTO embeds (message_id, position, image_url)
+        VALUES (%s, %s, %s)
+        """,
+        (EMBED_MESSAGE_ID, 0, "https://cdn.example/wide-screenshot.png"),
+    )
     conn.commit()
 
 
@@ -85,7 +100,7 @@ def test_board_index_shows_seeded_board_and_post_count(page, live_server, seeded
 
     row = page.locator(".board-row", has_text="general")
     assert row.count() == 1
-    assert "31" in row.locator(".board-post-count").inner_text()
+    assert "32" in row.locator(".board-post-count").inner_text()
 
 
 def test_topic_pagination_and_permalink_round_trip(page, live_server, seeded):
@@ -123,6 +138,18 @@ def test_attachment_image_is_capped_to_the_viewport_height(page, live_server, se
         "el => getComputedStyle(el).maxHeight"
     )
     assert max_height != "none"
+
+
+def test_embed_image_does_not_overflow_the_post_box(page, live_server, seeded):
+    page.goto(f"{live_server}/board/{CHANNEL_ID}/continuous/page/1")
+
+    post_box = page.locator(f"#post-{EMBED_MESSAGE_ID}")
+    image = post_box.locator(".embed-image")
+    assert image.count() == 1
+
+    post_right_edge = post_box.evaluate("el => el.getBoundingClientRect().right")
+    image_right_edge = image.evaluate("el => el.getBoundingClientRect().right")
+    assert image_right_edge <= post_right_edge + 1
 
 
 def test_avatar_toggle_round_trip(page, live_server, seeded):

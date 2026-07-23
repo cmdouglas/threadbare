@@ -232,6 +232,20 @@ a:visited {
   border: var(--border-width) solid var(--color-border);
 }
 
+.embed-image {
+  display: block;
+  max-width: 100%;
+  max-height: 80vh;
+  margin-top: var(--space-xs);
+}
+
+.embed-thumbnail {
+  max-width: 80px;
+  max-height: 80px;
+  float: right;
+  margin-left: var(--space-sm);
+}
+
 .pagination {
   display: flex;
   gap: var(--space-sm);
