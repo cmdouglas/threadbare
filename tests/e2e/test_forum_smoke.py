@@ -157,6 +157,64 @@ def test_topic_list_shows_per_topic_pagination_control(page, live_server, seeded
     assert "topic message 25" in page.content()
 
 
+FORUM_CHANNEL_ID = 900600
+
+
+def _seed_forum_board_with_many_topics(conn):
+    conn.execute(
+        "INSERT INTO guilds (id, name) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+        (E2E_GUILD_ID, "E2E Guild"),
+    )
+    conn.execute(
+        """
+        INSERT INTO channels (id, guild_id, type, name, is_public, indexed)
+        VALUES (%s, %s, 15, 'a forum', true, true) ON CONFLICT DO NOTHING
+        """,
+        (FORUM_CHANNEL_ID, E2E_GUILD_ID),
+    )
+    for i in range(26):
+        conn.execute(
+            "INSERT INTO threads (id, parent_channel_id, name, created_at) "
+            "VALUES (%s, %s, %s, now())",
+            (900610 + i, FORUM_CHANNEL_ID, f"forum topic {i}"),
+        )
+    conn.commit()
+
+
+def _cleanup_forum_board_with_many_topics(conn):
+    conn.execute("DELETE FROM threads WHERE parent_channel_id = %s", (FORUM_CHANNEL_ID,))
+    conn.execute("DELETE FROM channels WHERE id = %s", (FORUM_CHANNEL_ID,))
+    conn.commit()
+
+
+@pytest.fixture
+def seeded_forum_board(seed_conn):
+    _seed_forum_board_with_many_topics(seed_conn)
+    yield
+    _cleanup_forum_board_with_many_topics(seed_conn)
+
+
+def test_board_index_shows_pagination_control_for_a_multi_page_forum_board(
+    page, live_server, seeded_forum_board
+):
+    page.goto(f"{live_server}/")
+
+    row = page.locator(".board-row", has_text="a forum")
+    assert row.count() == 1
+
+    pagination = page.locator("tr.board-pagination-row .pagination")
+    assert pagination.count() == 1
+    assert "Page 1 of 2" in pagination.inner_text()
+
+    pagination.locator(".pagination-last").click()
+
+    assert page.url.endswith(f"/board/{FORUM_CHANNEL_ID}/topics?page=2")
+    # threads are listed newest-first (created_at DESC, id DESC); with all 26
+    # sharing one created_at (single tx), the oldest (lowest id, "topic 0")
+    # is the one left over on page 2.
+    assert "forum topic 0" in page.content()
+
+
 def test_search_click_through_lands_on_the_right_post(page, live_server, seeded):
     page.goto(f"{live_server}/search?q=pizza")
     assert "1 result" in page.content()

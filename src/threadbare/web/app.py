@@ -10,7 +10,7 @@ from threadbare.config import Settings
 from threadbare.db import queries
 from threadbare.pagination import DEFAULT_PAGE_SIZE
 from threadbare.rendering import avatars
-from threadbare.web import authz, preferences, themes
+from threadbare.web import authz, board_tree, preferences, themes
 from threadbare.web.views.admin import bp as admin_bp
 from threadbare.web.views.attachments import bp as attachments_bp
 from threadbare.web.views.auth import bp as auth_bp
@@ -57,6 +57,7 @@ def create_app(settings: Settings, pool) -> Flask:
     app.jinja_env.globals["urls"] = urls
     app.jinja_env.globals["avatars"] = avatars
     app.jinja_env.globals["pagination"] = pagination
+    app.jinja_env.globals["board_tree"] = board_tree
     app.jinja_env.globals["guild_id"] = settings.discord_guild_id
     app.jinja_env.globals["default_page_size"] = DEFAULT_PAGE_SIZE
 

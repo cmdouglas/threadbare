@@ -22,6 +22,10 @@ def week_url(channel_id: int, week_id: str, *, page: int = 1) -> str:
     return f"/board/{channel_id}/week/{week_id}/page/{page}"
 
 
+def topics_url(channel_id: int, *, page: int = 1) -> str:
+    return f"/board/{channel_id}/topics?page={page}"
+
+
 def user_url(user_id: int) -> str:
     return f"/user/{user_id}"
 

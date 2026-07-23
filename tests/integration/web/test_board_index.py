@@ -38,6 +38,23 @@ async def _seed_message(conn, *, message_id, channel_id, author_id=100, content=
     )
 
 
+async def _seed_forum_board(conn, *, channel_id, guild_id=1, name="a forum"):
+    await conn.execute(
+        """
+        INSERT INTO channels (id, guild_id, type, name, is_public, indexed)
+        VALUES (%s, %s, 15, %s, true, true)
+        """,
+        (channel_id, guild_id, name),
+    )
+
+
+async def _seed_thread(conn, *, thread_id, parent_channel_id, name="a thread"):
+    await conn.execute(
+        "INSERT INTO threads (id, parent_channel_id, name, created_at) VALUES (%s, %s, %s, now())",
+        (thread_id, parent_channel_id, name),
+    )
+
+
 def test_board_index_renders_with_no_boards(client, web_conn):
     run(_seed_guild(web_conn))
 
@@ -56,6 +73,45 @@ def test_board_index_shows_a_board_and_its_post_count(client, web_conn):
     assert resp.status_code == 200
     assert b"general" in resp.data
     assert b"alice" in resp.data
+
+
+def test_board_index_shows_no_pagination_control_for_a_single_page_board(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10, name="general"))
+    run(_seed_message(web_conn, message_id=1000, channel_id=10))
+
+    resp = client.get("/")
+
+    assert resp.status_code == 200
+    assert b"board-pagination-row" not in resp.data
+
+
+def test_board_index_shows_a_pagination_control_for_a_multi_page_freeform_board(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10, name="general"))
+    for i in range(26):
+        run(_seed_message(web_conn, message_id=1000 + i, channel_id=10, content=f"msg {i}"))
+
+    resp = client.get("/")
+
+    assert resp.status_code == 200
+    assert b"board-pagination-row" in resp.data
+    assert b"Page 1 of 2" in resp.data
+    assert b"/board/10/continuous/page/2" in resp.data
+
+
+def test_board_index_shows_a_pagination_control_for_a_multi_page_forum_board(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_forum_board(web_conn, channel_id=10, name="a forum"))
+    for i in range(26):
+        run(_seed_thread(web_conn, thread_id=3000 + i, parent_channel_id=10, name=f"topic {i}"))
+
+    resp = client.get("/")
+
+    assert resp.status_code == 200
+    assert b"board-pagination-row" in resp.data
+    assert b"Page 1 of 2" in resp.data
+    assert b"/board/10/topics?page=2" in resp.data
 
 
 def test_board_index_excludes_non_public_boards(client, web_conn):

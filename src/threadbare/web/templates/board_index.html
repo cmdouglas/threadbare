@@ -17,6 +17,21 @@
       {% endif %}
     </td>
   </tr>
+  {% set total_pages = board_total_pages.get(board.id, 1) %}
+  {% if total_pages > 1 %}
+    {% set mode = board_tree.board_view_mode(board) %}
+    {% set next_href = urls.continuous_url(board.id, page=2) if mode == "freeform" else urls.topics_url(board.id, page=2) %}
+    {% set last_href = urls.continuous_url(board.id, page=total_pages) if mode == "freeform" else urls.topics_url(board.id, page=total_pages) %}
+  <tr class="board-row board-pagination-row">
+    <td colspan="3">
+      <nav class="pagination">
+        <span class="pagination-current">Page 1 of {{ total_pages }}</span>
+        <a class="pagination-next" href="{{ request.script_root }}{{ next_href }}">Next &rsaquo;</a>
+        <a class="pagination-last" href="{{ request.script_root }}{{ last_href }}">Last &raquo;</a>
+      </nav>
+    </td>
+  </tr>
+  {% endif %}
   {% endfor %}
 {% endfor %}
 </table>
