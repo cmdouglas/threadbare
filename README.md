@@ -75,7 +75,9 @@ gets to a box that isn't sitting behind a real public IP and domain already.
 
 **Full step-by-step instructions for both options — including DNS, firewall, SSH, and
 troubleshooting, written for admins who haven't run a server before — are in
-[`docs/self-hosting.md`](./docs/self-hosting.md).**
+[`docs/self-hosting.md`](./docs/self-hosting.md).** Once Docker's installed and the repo's
+cloned, `./scripts/install.sh` automates the rest of either option: prompts for your site's URL,
+writes `.env`, and starts the stack.
 
 ### Option C — Cloud via infrastructure-as-code
 

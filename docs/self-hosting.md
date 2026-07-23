@@ -111,6 +111,12 @@ ships work unmodified for a normal domain-root deployment.
 
 A $5–10/month instance (Hetzner, DigitalOcean, Vultr, etc.) is comfortable at 2GB RAM.
 
+**Shortcut**: once you've cloned the repo onto the box (step 1 below), `./scripts/install.sh`
+automates steps 2-4 — it prompts for your site's URL, generates `.env` (random
+`POSTGRES_PASSWORD`, parsed `THREADBARE_DOMAIN`, rewriting the `Caddyfile` for you if you give it
+a subpath), and runs `docker compose up -d`. The steps below are the fully manual version, for
+understanding what it's doing or if you'd rather do it by hand.
+
 1. Create an account with a VPS provider and provision a box running **Ubuntu LTS** (24.04 or
    22.04). During creation, upload your SSH key if the provider offers it — this saves you from
    a password login later. Note the box's **public IPv4 address**, shown in the provider's
@@ -180,6 +186,10 @@ Gotchas worth knowing before you go further:
 The cheapest option: run `docker compose up` on any machine that stays on — a desktop, a home
 server, or a Raspberry Pi–class box (the whole stack idles under 1GB RAM). Same
 `docker-compose.yml` as Option B; the only real difference is *reachability*.
+
+**Shortcut**: `./scripts/install.sh` (see Option B above) automates the `.env` setup and starting
+the stack — for `localhost`-only access (see the note below), just answer `localhost` when it
+prompts for the site URL.
 
 1. Install Docker + the Compose plugin on the machine, clone the repo, `cp .env.example .env`
    and fill in `POSTGRES_PASSWORD` (`THREADBARE_DOMAIN` only matters once you've picked a

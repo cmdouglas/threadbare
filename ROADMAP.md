@@ -341,17 +341,25 @@ Everything here targets a single Discord server, public (`@everyone`-readable) c
     Compose project, the existing dev stack untouched) showed gunicorn's real boot banner (4
     worker PIDs), and sending `SIGTERM` to the container's PID 1 showed Compose bringing it
     back up with a fresh boot banner and worker set within ~2 seconds.
-- [ ] `install.sh`: a one-command installer for Options A/B, automating the manual
+- [x] `install.sh`: a one-command installer for Options A/B, automating the manual
       `cp .env.example .env` → edit → `docker compose up -d` walkthrough that
       `docs/self-hosting.md` currently spells out by hand. Prompts for the site's URL and parses
       it into `THREADBARE_DOMAIN` plus an optional subpath, rewriting the `Caddyfile`'s
       `redir`/`handle_path`/`header_up` block only if a subpath was given (see "Running at a
       subpath" in `docs/self-hosting.md`) — a root deployment leaves the shipped `Caddyfile`
-      untouched. Generates a random `POSTGRES_PASSWORD` and writes a `.env` with just that and
+      untouched. Generates a random `POSTGRES_PASSWORD` (via `openssl rand -hex`, so it's always
+      URL-safe once interpolated into `DATABASE_URL`) and writes a `.env` with just that and
       `THREADBARE_DOMAIN` populated (everything Discord-specific still comes from the setup
       wizard afterward, unchanged), then runs `docker compose up -d`. Fails fast with a clear
-      message on missing prerequisites (Docker/Compose not installed, port 80/443 already bound)
-      rather than a confusing failure partway through.
+      message on missing prerequisites (Docker/Compose not installed, port 80/443 already
+      bound, an `.env` that already exists) rather than a confusing failure partway through.
+      `scripts/install.sh`, matching `scripts/upgrade.sh`'s location and style. Verified manually
+      against a real, isolated (`-p`-namespaced) Docker Compose stack in both the root-domain and
+      subpath branches (`.env` contents, Caddyfile rewrite, `docker compose config`/`up -d`
+      all confirmed) — not automated-tested, since it's shell orchestration over real
+      infrastructure, same convention as `scripts/upgrade.sh` and the rest of this project's
+      live-only verifications. Docs updated: `docs/self-hosting.md` and `README.md` both point
+      at it as a shortcut over the fully manual walkthrough.
 
 ## 9. Upgrade path (~0.5–1 day)
 
