@@ -10,6 +10,7 @@ USER_ID = 900002
 ATTACHMENT_ID = 900300
 EMBED_MESSAGE_ID = 900201
 LINK_EMBED_MESSAGE_ID = 900202
+SYSTEM_MESSAGE_ID = 900203
 BASE = datetime(2026, 1, 1, tzinfo=UTC)
 
 
@@ -91,6 +92,13 @@ def _seed(conn):
         """,
         (LINK_EMBED_MESSAGE_ID, 0, "link", "https://cdn.example/vox-thumb.png"),
     )
+    conn.execute(
+        """
+        INSERT INTO messages (id, channel_id, author_id, content, posted_at, type)
+        VALUES (%s, %s, %s, %s, now(), %s)
+        """,
+        (SYSTEM_MESSAGE_ID, CHANNEL_ID, USER_ID, "", 7),
+    )
     conn.commit()
 
 
@@ -115,7 +123,7 @@ def test_board_index_shows_seeded_board_and_post_count(page, live_server, seeded
 
     row = page.locator(".board-row", has_text="general")
     assert row.count() == 1
-    assert "33" in row.locator(".board-post-count").inner_text()
+    assert "34" in row.locator(".board-post-count").inner_text()
 
 
 def test_topic_pagination_and_permalink_round_trip(page, live_server, seeded):
@@ -178,6 +186,15 @@ def test_link_unfurl_thumbnail_renders_large_not_small_and_floated(page, live_se
     post_right_edge = post_box.evaluate("el => el.getBoundingClientRect().right")
     image_right_edge = image.evaluate("el => el.getBoundingClientRect().right")
     assert image_right_edge <= post_right_edge + 1
+
+
+def test_system_message_renders_real_text_not_a_blank_post(page, live_server, seeded):
+    page.goto(f"{live_server}/board/{CHANNEL_ID}/continuous/page/1")
+
+    content = page.locator(f"#post-{SYSTEM_MESSAGE_ID} .post-content")
+    assert content.get_attribute("class") == "post-content post-content-system"
+    assert content.inner_text().strip() != ""
+    assert "alice" in content.inner_text()
 
 
 def test_avatar_toggle_round_trip(page, live_server, seeded):

@@ -18,6 +18,7 @@ from threadbare.sync_worker.discord_types import (
 
 def message_to_row(message: MessageLike, *, channel_id: int | None, thread_id: int | None) -> dict:
     reply_to_id = message.reference.message_id if message.reference else None
+    message_type = getattr(message, "type", None)
     return {
         "id": message.id,
         "channel_id": channel_id,
@@ -28,6 +29,7 @@ def message_to_row(message: MessageLike, *, channel_id: int | None, thread_id: i
         "posted_at": message.created_at,
         "edited_at": message.edited_at,
         "flags": 0,
+        "type": message_type.value if message_type is not None else 0,
     }
 
 

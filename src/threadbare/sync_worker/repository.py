@@ -94,11 +94,11 @@ async def upsert_message(conn: psycopg.AsyncConnection, row: dict) -> None:
         """
         INSERT INTO messages (
             id, channel_id, thread_id, author_id, content, reply_to_id,
-            posted_at, edited_at, flags
+            posted_at, edited_at, flags, type
         )
         VALUES (
             %(id)s, %(channel_id)s, %(thread_id)s, %(author_id)s, %(content)s,
-            %(reply_to_id)s, %(posted_at)s, %(edited_at)s, %(flags)s
+            %(reply_to_id)s, %(posted_at)s, %(edited_at)s, %(flags)s, %(type)s
         )
         ON CONFLICT (id) DO UPDATE SET
             content = EXCLUDED.content,

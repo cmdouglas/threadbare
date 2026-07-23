@@ -10,10 +10,15 @@ import psycopg
 from threadbare.db import queries
 from threadbare.rendering.attachments import render_attachment_html
 from threadbare.rendering.embeds import render_embed_html
-from threadbare.rendering.markdown import collect_referenced_ids, render_message_content
+from threadbare.rendering.markdown import (
+    ResolvedRefs,
+    collect_referenced_ids,
+    render_message_content,
+)
 from threadbare.rendering.quotes import render_reply_quote
 from threadbare.rendering.reactions import render_reaction_badges_html
 from threadbare.rendering.resolve import build_resolved_refs
+from threadbare.rendering.system_messages import is_system_message_type, render_system_message_text
 
 
 @dataclass(frozen=True)
@@ -23,11 +28,33 @@ class RenderedMessage:
     attachments_html: str
     embeds_html: str
     reactions_html: str
+    is_system_message: bool = False
 
 
 async def render_message_for_display(
     conn: psycopg.AsyncConnection, message_row: dict, *, script_root: str = ""
 ) -> RenderedMessage:
+    message_type = message_row.get("type", 0)
+
+    if is_system_message_type(message_type):
+        system_text = render_system_message_text(
+            message_type,
+            content=message_row["content"],
+            author_display_name=message_row["author_display_name"],
+            posted_at=message_row["posted_at"],
+        )
+        content_html = render_message_content(
+            system_text, refs=ResolvedRefs(users={}, channels={})
+        )
+        return RenderedMessage(
+            content_html=content_html,
+            reply_quote_html=None,
+            attachments_html="",
+            embeds_html="",
+            reactions_html="",
+            is_system_message=True,
+        )
+
     message_id = message_row["id"]
 
     referenced_ids = collect_referenced_ids(message_row["content"])

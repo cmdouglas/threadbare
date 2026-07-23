@@ -113,8 +113,8 @@ def test_admin_index_shows_app_version_and_latest_schema_migration(client, web_c
     assert threadbare.__version__ in body
     # The real test DB has every real migration applied (see
     # tests/integration/db/test_migrate.py's idempotency test) --
-    # 0005_wizard_state is the current latest by filename ordering.
-    assert "0005_wizard_state" in body
+    # 0006_message_type is the current latest by filename ordering.
+    assert "0006_message_type" in body
 
 
 def test_admin_does_not_render_a_rebackfill_trigger_control(client, web_conn):

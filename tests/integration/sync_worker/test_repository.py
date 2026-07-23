@@ -60,6 +60,52 @@ async def test_delete_messages_removes_multiple_rows(db_conn):
     assert remaining == {1003}
 
 
+def _message_row(**overrides):
+    row = {
+        "id": 2000,
+        "channel_id": 10,
+        "thread_id": None,
+        "author_id": 100,
+        "content": "",
+        "reply_to_id": None,
+        "posted_at": datetime(2026, 1, 1, tzinfo=UTC),
+        "edited_at": None,
+        "flags": 0,
+        "type": 0,
+    }
+    row.update(overrides)
+    return row
+
+
+async def test_upsert_message_persists_type(db_conn):
+    await _seed_guild_and_channel(db_conn, is_public=True)
+    await db_conn.execute(
+        "INSERT INTO users (id, display_name) VALUES (%s, %s)", (100, "someone")
+    )
+
+    await repository.upsert_message(db_conn, _message_row(type=7))
+
+    async with db_conn.cursor() as cur:
+        await cur.execute("SELECT type FROM messages WHERE id = %s", (2000,))
+        assert (await cur.fetchone())["type"] == 7
+
+
+async def test_upsert_message_type_is_immutable_on_conflict(db_conn):
+    await _seed_guild_and_channel(db_conn, is_public=True)
+    await db_conn.execute(
+        "INSERT INTO users (id, display_name) VALUES (%s, %s)", (100, "someone")
+    )
+    await repository.upsert_message(db_conn, _message_row(type=7))
+
+    await repository.upsert_message(db_conn, _message_row(type=0, content="edited"))
+
+    async with db_conn.cursor() as cur:
+        await cur.execute("SELECT type, content FROM messages WHERE id = %s", (2000,))
+        result = await cur.fetchone()
+        assert result["type"] == 7
+        assert result["content"] == "edited"
+
+
 async def test_get_channel_sync_flags_returns_none_for_unknown_channel(db_conn):
     assert await repository.get_channel_sync_flags(db_conn, 999) is None
 

@@ -251,6 +251,11 @@ a:visited {
   margin-left: var(--space-sm);
 }
 
+.post-content-system {
+  font-style: italic;
+  color: var(--color-fg-muted);
+}
+
 .pagination {
   display: flex;
   gap: var(--space-xs);

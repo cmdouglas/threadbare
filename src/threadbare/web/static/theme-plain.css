@@ -215,6 +215,11 @@ a:visited {
   border-radius: var(--radius);
 }
 
+.post-content-system {
+  font-style: italic;
+  color: var(--color-fg-muted);
+}
+
 .pagination {
   display: flex;
   gap: var(--space-sm);

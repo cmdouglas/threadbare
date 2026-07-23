@@ -13,7 +13,7 @@
   {% if rendered.reply_quote_html %}
   <div class="post-reply-quote">{{ rendered.reply_quote_html | safe }}</div>
   {% endif %}
-  <div class="post-content">{{ rendered.content_html | safe }}</div>
+  <div class="post-content{% if rendered.is_system_message %} post-content-system{% endif %}">{{ rendered.content_html | safe }}</div>
   {% if rendered.attachments_html %}<div class="post-attachments">{{ rendered.attachments_html | safe }}</div>{% endif %}
   {% if rendered.embeds_html %}<div class="post-embeds">{{ rendered.embeds_html | safe }}</div>{% endif %}
   {% if rendered.reactions_html %}{{ rendered.reactions_html | safe }}{% endif %}

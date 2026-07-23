@@ -22,14 +22,21 @@ async def _seed_user(conn, *, user_id, display_name):
 
 
 async def _seed_message(
-    conn, *, message_id, channel_id, author_id, content="hello", reply_to_id=None
+    conn,
+    *,
+    message_id,
+    channel_id,
+    author_id,
+    content="hello",
+    reply_to_id=None,
+    message_type=0,
 ):
     await conn.execute(
         """
-        INSERT INTO messages (id, channel_id, author_id, content, reply_to_id, posted_at)
-        VALUES (%s, %s, %s, %s, %s, now())
+        INSERT INTO messages (id, channel_id, author_id, content, reply_to_id, posted_at, type)
+        VALUES (%s, %s, %s, %s, %s, now(), %s)
         """,
-        (message_id, channel_id, author_id, content, reply_to_id),
+        (message_id, channel_id, author_id, content, reply_to_id, message_type),
     )
 
 
@@ -115,6 +122,24 @@ async def test_render_message_for_display_with_no_optional_pieces(db_conn):
     rendered = await render_message_for_display(db_conn, message_row)
 
     assert rendered.content_html == "just text"
+    assert rendered.reply_quote_html is None
+    assert rendered.attachments_html == ""
+    assert rendered.embeds_html == ""
+    assert rendered.reactions_html == ""
+
+
+async def test_render_message_for_display_renders_system_message_text(db_conn):
+    await _seed_guild_and_channel(db_conn)
+    await _seed_user(db_conn, user_id=1, display_name="alice")
+    await _seed_message(
+        db_conn, message_id=100, channel_id=10, author_id=1, content="", message_type=7
+    )
+
+    message_row = await queries.get_message_for_render(db_conn, 100)
+    rendered = await render_message_for_display(db_conn, message_row)
+
+    assert rendered.is_system_message is True
+    assert "alice" in rendered.content_html
     assert rendered.reply_quote_html is None
     assert rendered.attachments_html == ""
     assert rendered.embeds_html == ""

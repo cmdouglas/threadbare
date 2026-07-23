@@ -47,6 +47,7 @@ class FakeMessage:
     edited_at: datetime | None = None
     reference: FakeReference | None = None
     attachments: list = field(default_factory=list)
+    type: object | None = None
 
 
 @dataclass
@@ -120,6 +121,7 @@ def test_message_to_row_maps_basic_fields_for_a_channel_message():
         "posted_at": NOW,
         "edited_at": None,
         "flags": 0,
+        "type": 0,
     }
 
 
@@ -162,6 +164,26 @@ def test_message_to_row_handles_reference_with_no_message_id():
     row = message_to_row(message, channel_id=10, thread_id=None)
 
     assert row["reply_to_id"] is None
+
+
+def test_message_to_row_captures_message_type():
+    author = FakeUser(id=1, display_name="alice")
+    message = FakeMessage(
+        id=100, author=author, content="", created_at=NOW, type=discord.MessageType.new_member
+    )
+
+    row = message_to_row(message, channel_id=10, thread_id=None)
+
+    assert row["type"] == discord.MessageType.new_member.value
+
+
+def test_message_to_row_defaults_type_to_zero_when_absent():
+    author = FakeUser(id=1, display_name="alice")
+    message = FakeMessage(id=100, author=author, content="hi", created_at=NOW)
+
+    row = message_to_row(message, channel_id=10, thread_id=None)
+
+    assert row["type"] == 0
 
 
 def test_message_to_row_captures_edited_at():

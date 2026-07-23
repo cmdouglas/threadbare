@@ -92,6 +92,11 @@ class MessageLike(Protocol):
     content: str
     created_at: datetime
     edited_at: datetime | None
+    # discord.py's MessageType enum; only .value (int) is read. Real
+    # discord.Message.type is always populated (confirmed identical parsing
+    # for both gateway and REST/history payloads, message.py:2209) -- test
+    # fakes may omit it (see transform.message_to_row's getattr fallback).
+    type: object
     reference: MessageReferenceLike | None
     attachments: list[AttachmentLike]
     reactions: list[ReactionLike]
