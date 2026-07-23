@@ -99,8 +99,8 @@ Because messages live in Postgres, real offset pagination ("page 47 of 212") wor
 4. **Full-text search** — with author, channel, and date-range filters; results link into paginated context, not isolated snippets.
 5. **Faithful rendering** — Discord-flavored markdown, custom emoji, mentions resolved to display names, reply-chain quoting rendered as classic forum quote blocks, embeds, spoilers, reactions as aggregate counts.
 6. **Live sync** — new posts visible within seconds; edits marked with an "edited" timestamp; deletions removed.
-7. **User pages** — display name, avatar, post count, recent posts (public content only).
-8. **Mod controls** — a minimal admin page for the bot installer: choose which channels are indexed, trigger re-backfill, view sync health.
+7. **User pages** — display name, avatar, post count, recent posts (public content only). Planned: also surface a poster's Discord roles and bot/human status, both on posts and the user page — exact presentation (badge, icon, name color) is undecided; see ROADMAP.md's UI polish backlog.
+8. **Mod controls** — a minimal admin page for the bot installer: choose which channels are indexed (with a planned option to auto-index newly discovered channels by default, so mods don't have to hand-toggle every new one), trigger re-backfill, view sync health.
 9. **Theming** — user-selectable themes with a mod-set default. Implemented as pure CSS: the templates emit stable, semantic, classed markup and every color, font, border, and radius lives in CSS custom properties, so a theme is a single stylesheet and third-party themes are a drop-in file. Display preferences (theme choice, avatar visibility, and posts-per-page) persist per user via a cookie today; see the "Display preferences" note under §6's OAuth login flow for the planned migration to account-level storage. All three are set from a single `/preferences` page linked from the masthead — the canonical place to change them, rather than scattered inline toggles. Avatar display: each post (and the user page) shows the poster's Discord avatar, resolved directly from `users.avatar_hash` against Discord's static/unsigned avatar CDN (no signed-URL refresh needed, unlike attachments) — with a toggle to hide them.
 
 ## 6. v1 scope: public channels, membership-gated
@@ -290,6 +290,7 @@ All three paths converge on the same first-run setup wizard (§8.1), so the host
 1. Freeform channels: weekly pseudo-topics vs. continuous board view as the default reading mode? (Ship both, instrument nothing, ask the three people who use it.) Leaning continuous-as-default per early usage feedback — tracked as a backlog item in `ROADMAP.md`.
 2. Should reactions display per-emoji reactor lists (requires storing user-reaction pairs) or aggregate counts only? Current design says counts only — less data, simpler compliance story.
 3. Bucket boundaries for pseudo-topics: calendar weeks vs. activity-gap detection (a lull of >N hours starts a new "topic")? Gap detection reads better but is less predictable for permalinks.
+4. Voice channels are a stated non-goal (§2), but not yet enforced anywhere in code (tracked in ROADMAP.md's UI polish backlog). Is that exclusion truly categorical, or should a voice channel's text-chat sub-feature be indexed if it turns out to hold real, readable content? Undecided — revisit if it comes up in practice.
 
 ## 11. Alternatives considered
 
