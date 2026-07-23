@@ -355,6 +355,11 @@ async def oauth():
         session["client_secret"] = client_secret
         async with pool.connection() as conn:
             await wizard_queries.update_wizard_state(conn, discord_oauth_redirect_uri=redirect_uri)
+        # state was fetched before the update above, so its
+        # discord_oauth_redirect_uri is still stale (None on the very first
+        # save) -- patch in the value we just persisted rather than
+        # re-querying, since it's the exact value we just wrote.
+        state = {**state, "discord_oauth_redirect_uri": redirect_uri}
         flash('Saved. Click "Test login" below to verify the round trip.')
         return render_template(
             "wizard_oauth.html",

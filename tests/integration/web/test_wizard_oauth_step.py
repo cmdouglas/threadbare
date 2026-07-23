@@ -74,6 +74,20 @@ def test_oauth_post_success_shows_saved_state_not_the_form(wizard_client, web_co
     assert b"Change it" in resp.data
 
 
+def test_oauth_post_success_shows_test_login_link_immediately(wizard_client, web_conn):
+    # Regression test: the first-ever save used to render with a `state`
+    # fetched before update_wizard_state() persisted discord_oauth_redirect_uri,
+    # so the "Test login" link the flash message tells the mod to click was
+    # missing from that exact response (only reappearing on the next GET).
+    # Assert on the link's href, not just the word "Test login" -- the flash
+    # message itself ("Click "Test login" below...") contains that phrase too.
+    _seed_oauth_step(wizard_client, web_conn)
+
+    resp = wizard_client.post("/oauth", data={"client_secret": "shh"})
+
+    assert b'href="/oauth/test-login"' in resp.data
+
+
 def test_oauth_post_saves_client_secret_to_session_only(wizard_client, web_conn):
     _seed_oauth_step(wizard_client, web_conn)
 
