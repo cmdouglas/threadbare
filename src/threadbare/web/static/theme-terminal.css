@@ -113,7 +113,13 @@ a:visited {
   gap: var(--space-xs);
 }
 
-.theme-switcher a {
+.preferences-nav a,
+.preferences-nav a:visited,
+.account-nav a,
+.account-nav a:visited {
+  /* These sit on the header's --color-accent background, same as
+     .site-title -- the default link color is identical to that
+     background here, so without this override the links are invisible. */
   color: var(--color-accent-fg);
 }
 

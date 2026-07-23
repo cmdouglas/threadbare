@@ -112,7 +112,12 @@ a:visited {
   gap: var(--space-xs);
 }
 
-.theme-switcher a {
+.preferences-nav a,
+.preferences-nav a:visited,
+.account-nav a,
+.account-nav a:visited {
+  /* These sit on the header's --color-accent background, same as
+     .site-title -- the default link color is too close to it to read. */
   color: var(--color-accent-fg);
 }
 
@@ -153,6 +158,10 @@ a:visited {
   color: var(--color-accent-fg);
   padding: var(--space-xs) var(--space-sm);
   font-weight: bold;
+}
+
+td.board-name a {
+  font-size: 1rem;
 }
 
 .board-topic {
