@@ -112,6 +112,32 @@ def test_board_index_shows_a_pagination_control_for_a_multi_page_forum_board(cli
     assert b'class="pagination-page" href="/board/10/topics?page=2">2</a>' in resp.data
 
 
+def test_board_index_pagination_control_has_a_jump_to_page_form_for_a_freeform_board(
+    client, web_conn
+):
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10, name="general"))
+    for i in range(26):
+        run(_seed_message(web_conn, message_id=1000 + i, channel_id=10, content=f"msg {i}"))
+
+    resp = client.get("/")
+
+    assert resp.status_code == 200
+    assert b'class="jump-to-page" action="/board/10/continuous/jump_to_page"' in resp.data
+
+
+def test_board_index_pagination_control_has_a_jump_to_page_form_for_a_forum_board(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_forum_board(web_conn, channel_id=10, name="a forum"))
+    for i in range(26):
+        run(_seed_thread(web_conn, thread_id=3000 + i, parent_channel_id=10, name=f"topic {i}"))
+
+    resp = client.get("/")
+
+    assert resp.status_code == 200
+    assert b'class="jump-to-page" action="/board/10/topics"' in resp.data
+
+
 def test_board_index_excludes_non_public_boards(client, web_conn):
     run(_seed_guild(web_conn))
     run(_seed_board(web_conn, channel_id=10, name="secret", is_public=False))

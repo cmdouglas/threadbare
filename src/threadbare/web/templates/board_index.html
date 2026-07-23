@@ -33,6 +33,10 @@
           {% endif %}
         {% endfor %}
       </nav>
+      <form class="jump-to-page" action="{{ board_jump_action[board.id] }}" method="get">
+        <label>Jump to page <input type="number" name="page" min="1" max="{{ total_pages }}" value="1"></label>
+        <button type="submit">Go</button>
+      </form>
     </td>
   </tr>
   {% endif %}

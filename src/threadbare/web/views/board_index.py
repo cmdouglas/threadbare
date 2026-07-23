@@ -1,4 +1,4 @@
-from flask import Blueprint, current_app, g, render_template
+from flask import Blueprint, current_app, g, render_template, url_for
 
 from threadbare.db import queries
 from threadbare.pagination import DEFAULT_PAGE_SIZE, page_number_for_offset
@@ -26,14 +26,21 @@ async def board_index():
         # nothing else would ever need (ROADMAP.md already reasoned the whole
         # feature is only worth it at this scale).
         board_total_pages: dict[int, int] = {}
+        board_jump_action: dict[int, str] = {}
         for group in groups:
             for board in group["boards"]:
                 if board_view_mode(board) == "freeform":
                     total = await queries.count_messages_before(conn, channel_id=board["id"])
                     page_size = g.posts_per_page
+                    board_jump_action[board["id"]] = url_for(
+                        "board.board_continuous_jump_to_page", channel_id=board["id"]
+                    )
                 else:
                     total = await queries.count_topics_for_board(conn, board["id"])
                     page_size = DEFAULT_PAGE_SIZE
+                    board_jump_action[board["id"]] = url_for(
+                        "board.board_topics", channel_id=board["id"]
+                    )
                 board_total_pages[board["id"]] = (
                     page_number_for_offset(total - 1, page_size=page_size) if total > 0 else 1
                 )
@@ -44,4 +51,5 @@ async def board_index():
         aggregates=aggregates,
         authors=authors,
         board_total_pages=board_total_pages,
+        board_jump_action=board_jump_action,
     )

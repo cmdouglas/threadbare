@@ -235,6 +235,20 @@ def test_board_index_shows_pagination_control_for_a_multi_page_forum_board(
     assert "forum topic 0" in page.content()
 
 
+def test_board_index_pagination_control_jump_to_page_form_navigates_to_the_typed_page(
+    page, live_server, seeded_forum_board
+):
+    page.goto(f"{live_server}/")
+
+    row = page.locator("tr.board-pagination-row")
+    assert row.count() == 1
+    row.locator(".jump-to-page input[name=page]").fill("2")
+    row.locator(".jump-to-page button[type=submit]").click()
+
+    assert page.url.endswith(f"/board/{FORUM_CHANNEL_ID}/topics?page=2")
+    assert "forum topic 0" in page.content()
+
+
 def test_search_click_through_lands_on_the_right_post(page, live_server, seeded):
     page.goto(f"{live_server}/search?q=pizza")
     assert "1 result" in page.content()
