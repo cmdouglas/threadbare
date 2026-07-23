@@ -26,6 +26,7 @@ async def index():
         channels = await admin_queries.get_channels_with_sync_state(conn, settings.discord_guild_id)
         heartbeat = await admin_queries.get_worker_heartbeat(conn)
         schema_version = await admin_queries.get_latest_migration_version(conn)
+        auto_index_new_channels = await admin_queries.get_auto_index_new_channels(conn)
 
     return render_template(
         "admin.html",
@@ -34,6 +35,7 @@ async def index():
         heartbeat_stale=admin_queries.is_heartbeat_stale(heartbeat),
         app_version=threadbare.__version__,
         schema_version=schema_version,
+        auto_index_new_channels=auto_index_new_channels,
     )
 
 
@@ -46,5 +48,16 @@ async def toggle_indexed(channel_id: int):
         if current is None:
             abort(404)
         await admin_queries.set_channel_indexed(conn, channel_id, not current)
+
+    return redirect(url_for("admin.index"))
+
+
+@bp.route("/settings/toggle-auto-index", methods=["POST"])
+@mod_required
+async def toggle_auto_index():
+    pool = current_app.config["POOL"]
+    async with pool.connection() as conn:
+        current = await admin_queries.get_auto_index_new_channels(conn)
+        await admin_queries.set_auto_index_new_channels(conn, not current)
 
     return redirect(url_for("admin.index"))

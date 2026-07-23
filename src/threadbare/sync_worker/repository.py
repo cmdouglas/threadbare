@@ -22,18 +22,25 @@ async def upsert_guild(conn: psycopg.AsyncConnection, row: dict) -> None:
     )
 
 
-async def upsert_channel(conn: psycopg.AsyncConnection, row: dict) -> None:
+async def upsert_channel(conn: psycopg.AsyncConnection, row: dict, *, indexed: bool = True) -> None:
     """Insert a channel, or update its metadata if already known. Never
     touches is_public or indexed on conflict — is_public is owned exclusively
-    by refresh_channel_public_status, indexed by the future admin page. On
-    a fresh INSERT, both take their schema defaults (is_public=false,
-    indexed=true) and the caller is expected to compute is_public separately
-    (see discovery.discover_channels).
+    by refresh_channel_public_status, indexed by the admin page (or, for a
+    fresh INSERT only, the indexed= param below). On a fresh INSERT,
+    is_public takes its schema default (false) and the caller is expected to
+    compute it separately (see discovery.discover_channels); indexed takes
+    whatever indexed= the caller passes (default True, the schema default's
+    value) — discover_channels threads its site-wide auto-index setting
+    through here, but only ever affects a genuinely new row, since ON
+    CONFLICT never touches it.
     """
     await conn.execute(
         """
-        INSERT INTO channels (id, guild_id, parent_id, type, name, position, topic)
-        VALUES (%(id)s, %(guild_id)s, %(parent_id)s, %(type)s, %(name)s, %(position)s, %(topic)s)
+        INSERT INTO channels (id, guild_id, parent_id, type, name, position, topic, indexed)
+        VALUES (
+            %(id)s, %(guild_id)s, %(parent_id)s, %(type)s, %(name)s, %(position)s, %(topic)s,
+            %(indexed)s
+        )
         ON CONFLICT (id) DO UPDATE SET
             parent_id = EXCLUDED.parent_id,
             type = EXCLUDED.type,
@@ -41,8 +48,21 @@ async def upsert_channel(conn: psycopg.AsyncConnection, row: dict) -> None:
             position = EXCLUDED.position,
             topic = EXCLUDED.topic
         """,
-        row,
+        {**row, "indexed": indexed},
     )
+
+
+async def get_auto_index_new_channels(conn: psycopg.AsyncConnection) -> bool:
+    """Site-wide setting read by discovery.discover_channels: whether a
+    genuinely new channel found on a batch reconnect scan should default to
+    indexed=true (this function's own fallback, and the historical
+    behavior) or false. Falls back to True when no site_settings row exists
+    yet -- see migration 0009's docstring.
+    """
+    async with conn.cursor() as cur:
+        await cur.execute("SELECT auto_index_new_channels FROM site_settings WHERE id = true")
+        row = await cur.fetchone()
+    return row["auto_index_new_channels"] if row else True
 
 
 async def insert_new_channel(conn: psycopg.AsyncConnection, row: dict) -> None:

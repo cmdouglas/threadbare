@@ -76,3 +76,41 @@ async def test_upsert_channel_never_touches_is_public_or_indexed_on_conflict(db_
     assert row["name"] == "renamed"
     assert row["is_public"] is True
     assert row["indexed"] is False
+
+
+async def test_upsert_channel_inserts_with_indexed_false_when_passed(db_conn):
+    await repository.upsert_guild(db_conn, {"id": 1, "name": "Test Guild", "icon": None})
+
+    await repository.upsert_channel(db_conn, _channel_row(), indexed=False)
+
+    async with db_conn.cursor() as cur:
+        await cur.execute("SELECT indexed FROM channels WHERE id = 10")
+        assert (await cur.fetchone())["indexed"] is False
+
+
+async def test_upsert_channel_ignores_the_indexed_param_on_conflict(db_conn):
+    await repository.upsert_guild(db_conn, {"id": 1, "name": "Test Guild", "icon": None})
+    await repository.upsert_channel(db_conn, _channel_row(), indexed=True)
+    await db_conn.execute("UPDATE channels SET indexed = false WHERE id = 10")
+
+    # A mod un-indexed this channel; a later rediscovery pass must not
+    # revert that, even if it happens to pass indexed=True again.
+    await repository.upsert_channel(db_conn, _channel_row(name="renamed"), indexed=True)
+
+    async with db_conn.cursor() as cur:
+        await cur.execute("SELECT name, indexed FROM channels WHERE id = 10")
+        row = await cur.fetchone()
+    assert row["name"] == "renamed"
+    assert row["indexed"] is False
+
+
+async def test_get_auto_index_new_channels_defaults_to_true_with_no_row(db_conn):
+    assert await repository.get_auto_index_new_channels(db_conn) is True
+
+
+async def test_get_auto_index_new_channels_returns_the_stored_value(db_conn):
+    await db_conn.execute(
+        "INSERT INTO site_settings (id, auto_index_new_channels) VALUES (true, false)"
+    )
+
+    assert await repository.get_auto_index_new_channels(db_conn) is False

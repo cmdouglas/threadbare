@@ -31,6 +31,17 @@
   {% endif %}
 </section>
 
+<section class="admin-settings">
+  <h2>Settings</h2>
+  <p>
+    New channels discovered on reconnect:
+    <strong>{{ "auto-indexed" if auto_index_new_channels else "not auto-indexed" }}</strong>
+  </p>
+  <form method="post" action="{{ url_for('admin.toggle_auto_index') }}">
+    <button type="submit">{{ "Disable" if auto_index_new_channels else "Enable" }}</button>
+  </form>
+</section>
+
 <section class="admin-channels">
   <h2>Channels</h2>
   <table class="admin-channel-list">

@@ -251,6 +251,23 @@ async def test_discover_channels_does_not_clobber_indexed_on_rediscovery(db_conn
     assert row["indexed"] is False
 
 
+async def test_discover_channels_respects_the_auto_index_setting_for_a_new_channel(db_conn):
+    await db_conn.execute(
+        "INSERT INTO site_settings (id, auto_index_new_channels) VALUES (true, false)"
+    )
+    role = FakeRole(BOTH_REQUIRED)
+    guild = FakeGuild(id=1, name="Test Guild", default_role=role, channels=[])
+    channel = FakeChannel(id=10, name="general", guild=guild)
+    guild._channels = [channel]
+    client = FakeClient(guild)
+
+    await discover_channels(client, db_conn, guild_id=1)
+
+    async with db_conn.cursor() as cur:
+        await cur.execute("SELECT indexed FROM channels WHERE id = 10")
+        assert (await cur.fetchone())["indexed"] is False
+
+
 async def test_discover_active_threads_upserts_a_thread_of_a_public_indexed_channel(db_conn):
     role = FakeRole(BOTH_REQUIRED)
     guild = FakeGuild(id=1, name="Test Guild", default_role=role, channels=[])

@@ -139,8 +139,52 @@ def test_admin_index_shows_app_version_and_latest_schema_migration(client, web_c
     assert threadbare.__version__ in body
     # The real test DB has every real migration applied (see
     # tests/integration/db/test_migrate.py's idempotency test) --
-    # 0008_user_roles is the current latest by filename ordering.
-    assert "0008_user_roles" in body
+    # 0009_site_settings is the current latest by filename ordering.
+    assert "0009_site_settings" in body
+
+
+def test_admin_index_shows_auto_index_setting_enabled_by_default(client, web_conn):
+    run(_seed_guild(web_conn))
+    _make_mod(client)
+
+    resp = client.get("/admin/")
+
+    assert resp.status_code == 200
+    body = resp.data.decode()
+    assert "auto-indexed" in body
+
+
+def test_toggle_auto_index_flips_the_flag_and_redirects(client, web_conn):
+    run(_seed_guild(web_conn))
+    _make_mod(client)
+
+    resp = client.post("/admin/settings/toggle-auto-index")
+
+    assert resp.status_code == 302
+
+    async def _fetch():
+        async with web_conn.cursor() as cur:
+            await cur.execute("SELECT auto_index_new_channels FROM site_settings WHERE id = true")
+            return await cur.fetchone()
+
+    row = run(_fetch())
+    assert row["auto_index_new_channels"] is False
+
+
+def test_toggle_auto_index_flips_back_to_true_on_a_second_toggle(client, web_conn):
+    run(_seed_guild(web_conn))
+    _make_mod(client)
+
+    client.post("/admin/settings/toggle-auto-index")
+    client.post("/admin/settings/toggle-auto-index")
+
+    async def _fetch():
+        async with web_conn.cursor() as cur:
+            await cur.execute("SELECT auto_index_new_channels FROM site_settings WHERE id = true")
+            return await cur.fetchone()
+
+    row = run(_fetch())
+    assert row["auto_index_new_channels"] is True
 
 
 def test_admin_does_not_render_a_rebackfill_trigger_control(client, web_conn):

@@ -61,6 +61,28 @@ async def get_worker_heartbeat(conn: psycopg.AsyncConnection) -> dict | None:
         return await cur.fetchone()
 
 
+async def get_auto_index_new_channels(conn: psycopg.AsyncConnection) -> bool:
+    """Mirrors sync_worker/repository.py's own copy of this read (same
+    split-by-module convention as get_channel_indexed vs.
+    sync_worker.repository.get_channel_is_public) -- falls back to True
+    when no site_settings row exists yet.
+    """
+    async with conn.cursor() as cur:
+        await cur.execute("SELECT auto_index_new_channels FROM site_settings WHERE id = true")
+        row = await cur.fetchone()
+    return row["auto_index_new_channels"] if row else True
+
+
+async def set_auto_index_new_channels(conn: psycopg.AsyncConnection, value: bool) -> None:
+    await conn.execute(
+        """
+        INSERT INTO site_settings (id, auto_index_new_channels) VALUES (true, %s)
+        ON CONFLICT (id) DO UPDATE SET auto_index_new_channels = EXCLUDED.auto_index_new_channels
+        """,
+        (value,),
+    )
+
+
 async def get_latest_migration_version(conn: psycopg.AsyncConnection) -> str | None:
     """The most recently applied migration's version string -- the
     concrete way an operator confirms an upgrade's migration step actually

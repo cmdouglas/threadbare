@@ -28,8 +28,13 @@ async def discover_channels(client: discord.Client, conn, *, guild_id: int) -> l
     is_public. Voice/stage-voice channels get no row at all — a stated
     non-goal (DESIGN.md §2), and unlike categories, nothing parents off
     them. Safe to call repeatedly (e.g. on every gateway reconnect):
-    metadata updates, is_public/indexed never do. Returns the ids of the
-    content-bearing channels processed.
+    metadata updates, is_public/indexed never do for a channel already
+    known. A genuinely new channel's indexed value instead comes from the
+    site-wide auto_index_new_channels setting (repository.
+    get_auto_index_new_channels) — the "batch reconnect" half of indexing
+    defaults; the live CHANNEL_CREATE path always defaults to false
+    regardless of this setting (see events.handle_channel_create). Returns
+    the ids of the content-bearing channels processed.
     """
     guild = client.get_guild(guild_id) or await client.fetch_guild(guild_id)
     await repository.upsert_guild(
@@ -59,10 +64,13 @@ async def discover_channels(client: discord.Client, conn, *, guild_id: int) -> l
         await repository.upsert_channel(conn, transform.channel_to_row(category, guild_id=guild.id))
 
     default_role_permissions = guild.default_role.permissions.value
+    auto_index = await repository.get_auto_index_new_channels(conn)
     discovered_ids = []
 
     for channel in others:
-        await repository.upsert_channel(conn, transform.channel_to_row(channel, guild_id=guild.id))
+        await repository.upsert_channel(
+            conn, transform.channel_to_row(channel, guild_id=guild.id), indexed=auto_index
+        )
 
         category_overwrite = everyone_overwrite(channel.category) if channel.category else None
         await refresh_channel_public_status(
