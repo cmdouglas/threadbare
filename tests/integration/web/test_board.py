@@ -134,6 +134,51 @@ def test_board_topics_shows_topics_for_a_forum_channel(client, web_conn):
     assert b'class="jump-to-page" action="/board/10/topics"' in resp.data
 
 
+def test_board_topics_shows_column_headers(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10, type=15, name="a forum"))
+    run(_seed_thread(web_conn, thread_id=3000, parent_channel_id=10, name="my topic"))
+
+    resp = client.get("/board/10/topics")
+
+    assert b'<th class="topic-name">Topic</th>' in resp.data
+    assert b'<th class="topic-post-count">Posts</th>' in resp.data
+    assert b'<th class="topic-last-post">Last post</th>' in resp.data
+
+
+def test_board_topics_omits_column_headers_when_there_are_no_topics(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10, type=15, name="a forum"))
+
+    resp = client.get("/board/10/topics")
+
+    assert b'class="column-headings"' not in resp.data
+
+
+def test_board_topics_links_last_post_author_to_their_profile(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10, type=15, name="a forum"))
+    run(_seed_thread(web_conn, thread_id=3000, parent_channel_id=10, name="my topic"))
+    run(_seed_thread_message(web_conn, message_id=1, thread_id=3000, content="hello"))
+
+    resp = client.get("/board/10/topics")
+
+    assert b'<a href="/user/100">alice</a>' in resp.data
+
+
+def test_board_topics_per_topic_pagination_has_a_jump_to_page_form(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10, type=15, name="a forum"))
+    run(_seed_thread(web_conn, thread_id=3000, parent_channel_id=10, name="my topic"))
+    for i in range(26):
+        run(_seed_thread_message(web_conn, message_id=i + 1, thread_id=3000, content=f"msg {i}"))
+
+    resp = client.get("/board/10/topics")
+
+    assert b'class="pagination-bar"' in resp.data
+    assert b'class="jump-to-page" action="/topic/3000/jump_to_page"' in resp.data
+
+
 def test_board_topics_shows_no_pagination_control_for_a_single_page_topic(client, web_conn):
     run(_seed_guild(web_conn))
     run(_seed_board(web_conn, channel_id=10, type=15, name="a forum"))

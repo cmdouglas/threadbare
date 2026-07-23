@@ -161,7 +161,8 @@ a:visited {
   font-size: 1.15em;
 }
 
-td.board-name a {
+td.board-name a,
+td.topic-name a {
   display: inline-flex;
   align-items: center;
   gap: var(--space-xs);

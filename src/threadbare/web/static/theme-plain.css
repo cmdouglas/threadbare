@@ -129,7 +129,8 @@ a:visited {
   font-size: 1.15em;
 }
 
-.board-name a {
+.board-name a,
+.topic-name a {
   display: inline-flex;
   align-items: center;
   gap: var(--space-xs);

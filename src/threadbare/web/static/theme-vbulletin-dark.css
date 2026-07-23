@@ -165,7 +165,8 @@ a:visited {
   border-radius: var(--radius) var(--radius) 0 0;
 }
 
-.board-name a {
+.board-name a,
+.topic-name a {
   display: inline-flex;
   align-items: center;
   gap: var(--space-xs);

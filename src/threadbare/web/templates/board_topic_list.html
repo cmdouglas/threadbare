@@ -6,6 +6,13 @@
 {% include "_freeform_controls.html" %}
 {% endif %}
 <table class="board-topic-list">
+{% if threads %}
+  <tr class="column-headings">
+    <th class="topic-name">Topic</th>
+    <th class="topic-post-count">Posts</th>
+    <th class="topic-last-post">Last post</th>
+  </tr>
+{% endif %}
 {% for thread in threads %}
   {% set agg = aggregates.get(thread.id, {"post_count": 0, "last_message_id": None, "last_posted_at": None, "last_author_id": None}) %}
   {% set topic_total_pages = pagination.page_number_for_offset(agg.post_count - 1, page_size=posts_per_page) if agg.post_count > 0 else 1 %}
@@ -14,24 +21,35 @@
     <td class="topic-post-count">{{ agg.post_count }}</td>
     <td class="topic-last-post">
       {% if agg.last_posted_at %}
-        <time datetime="{{ agg.last_posted_at.isoformat() }}">{{ agg.last_posted_at }}</time>
-        by {{ authors.get(agg.last_author_id, "unknown") }}
+        <time datetime="{{ agg.last_posted_at.isoformat() }}" title="{{ agg.last_posted_at }}">{{ relative_time.relative_time(agg.last_posted_at) }}</time>
+        by
+        {% if agg.last_author_id in authors %}
+          <a href="{{ request.script_root }}{{ urls.user_url(agg.last_author_id) }}">{{ authors[agg.last_author_id] }}</a>
+        {% else %}
+          unknown
+        {% endif %}
       {% endif %}
     </td>
   </tr>
   {% if topic_total_pages > 1 %}
   <tr class="topic-row topic-pagination-row">
     <td colspan="3">
-      <nav class="pagination">
-        <span class="pagination-label">Page</span>
-        {% for p in pagination.page_window(1, topic_total_pages) %}
-          {% if p is none %}
-            <span class="pagination-ellipsis">&hellip;</span>
-          {% else %}
-            <a class="pagination-page" href="{{ request.script_root }}{{ urls.topic_url(thread.id, page=p) }}">{{ p }}</a>
-          {% endif %}
-        {% endfor %}
-      </nav>
+      <div class="pagination-bar">
+        <nav class="pagination">
+          <span class="pagination-label">Page</span>
+          {% for p in pagination.page_window(1, topic_total_pages) %}
+            {% if p is none %}
+              <span class="pagination-ellipsis">&hellip;</span>
+            {% else %}
+              <a class="pagination-page" href="{{ request.script_root }}{{ urls.topic_url(thread.id, page=p) }}">{{ p }}</a>
+            {% endif %}
+          {% endfor %}
+        </nav>
+        <form class="jump-to-page" action="{{ url_for('topic.topic_jump_to_page', thread_id=thread.id) }}" method="get">
+          <label>Jump to page <input type="number" name="page" min="1" max="{{ topic_total_pages }}" value="1"></label>
+          <button type="submit">Go</button>
+        </form>
+      </div>
     </td>
   </tr>
   {% endif %}
