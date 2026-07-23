@@ -343,19 +343,34 @@ async def oauth():
         client_secret = request.form.get("client_secret", "").strip()
         if not client_secret:
             flash("The client secret is required.")
-            return render_template("wizard_oauth.html", state=state, redirect_uri=redirect_uri)
+            return render_template(
+                "wizard_oauth.html",
+                state=state,
+                redirect_uri=redirect_uri,
+                has_client_secret="client_secret" in session,
+                show_secret_form=True,
+            )
 
         session["client_secret"] = client_secret
         async with pool.connection() as conn:
             await wizard_queries.update_wizard_state(conn, discord_oauth_redirect_uri=redirect_uri)
         flash('Saved. Click "Test login" below to verify the round trip.')
-        return render_template("wizard_oauth.html", state=state, redirect_uri=redirect_uri)
+        return render_template(
+            "wizard_oauth.html",
+            state=state,
+            redirect_uri=redirect_uri,
+            has_client_secret=True,
+            show_secret_form=False,
+        )
 
+    has_client_secret = "client_secret" in session
     return render_template(
         "wizard_oauth.html",
         state=state,
         redirect_uri=redirect_uri,
         oauth_verified=session.get("oauth_verified", False),
+        has_client_secret=has_client_secret,
+        show_secret_form=request.args.get("edit") == "1" or not has_client_secret,
     )
 
 

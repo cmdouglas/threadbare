@@ -35,6 +35,45 @@ def test_oauth_get_shows_redirect_uri(wizard_client, web_conn):
     assert b"/oauth/callback" in resp.data
 
 
+def test_oauth_get_shows_secret_form_when_no_secret_saved_yet(wizard_client, web_conn):
+    _seed_oauth_step(wizard_client, web_conn)
+
+    resp = wizard_client.get("/oauth")
+
+    assert b'name="client_secret"' in resp.data
+    assert b"Change it" not in resp.data
+
+
+def test_oauth_get_hides_secret_form_after_secret_saved(wizard_client, web_conn):
+    _seed_oauth_step(wizard_client, web_conn)
+    wizard_client.post("/oauth", data={"client_secret": "shh"})
+
+    resp = wizard_client.get("/oauth")
+
+    assert b'name="client_secret"' not in resp.data
+    assert b"Change it" in resp.data
+    # unaffected by this change -- still shown once the redirect URI is saved
+    assert b"Test login" in resp.data
+
+
+def test_oauth_get_with_edit_param_shows_secret_form_again(wizard_client, web_conn):
+    _seed_oauth_step(wizard_client, web_conn)
+    wizard_client.post("/oauth", data={"client_secret": "shh"})
+
+    resp = wizard_client.get("/oauth?edit=1")
+
+    assert b'name="client_secret"' in resp.data
+
+
+def test_oauth_post_success_shows_saved_state_not_the_form(wizard_client, web_conn):
+    _seed_oauth_step(wizard_client, web_conn)
+
+    resp = wizard_client.post("/oauth", data={"client_secret": "shh"})
+
+    assert b'name="client_secret"' not in resp.data
+    assert b"Change it" in resp.data
+
+
 def test_oauth_post_saves_client_secret_to_session_only(wizard_client, web_conn):
     _seed_oauth_step(wizard_client, web_conn)
 

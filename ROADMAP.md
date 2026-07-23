@@ -230,14 +230,15 @@ Everything here targets a single Discord server, public (`@everyone`-readable) c
     adding a real entry point later is additive, not a redesign, but no route/button exists yet.
 - [x] Generated mod-facing pitch kit (what's stored, how deletions propagate, admin page link)
   - `/pitch-kit` — pure template, no new data beyond what DESIGN.md §8.3 already specifies.
-- [ ] `/oauth` step: hide the client-secret form once already submitted this session
+- [x] `/oauth` step: hide the client-secret form once already submitted this session
   - Found on a real deployment: the client-secret `<form>` (`web/templates/wizard_oauth.html`)
-    renders unconditionally on every GET, so it stays visible alongside the "Test login" link
-    even after the secret's already been saved to the session — confirmed to be a missing
-    feature, not a broken `{% if %}` (the view never computes/passes a flag like
-    `has_client_secret=("client_secret" in session)`, and no existing test encodes any
-    hide-after-submit behavior). Fix shape: compute that flag in `oauth()`, gate the form behind
-    it in the template, add an "edit"/re-enter affordance to flip back to input mode.
+    rendered unconditionally on every GET, so it stayed visible alongside the "Test login" link
+    even after the secret had already been saved to the session. Fixed: `oauth()` now computes
+    `has_client_secret`/`show_secret_form` (reusing the existing `"client_secret" in session`
+    expression `wizard/steps.py::resolve_resume_step` already relies on, rather than inventing a
+    new check) and passes both to the template on every GET/POST branch; the template gates the
+    form behind `show_secret_form` and shows a "Client secret saved. Change it" link
+    (`?edit=1`) in its place otherwise. Unit/integration tested (`test_wizard_oauth_step.py`).
 
 ## 8. Deployment (~1–1.5 days, CDK severable as its own 0.5 day)
 

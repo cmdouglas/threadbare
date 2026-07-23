@@ -4,6 +4,7 @@
 <h1>Member login gate</h1>
 <p>Under OAuth2 → General → Redirects in the developer portal, add this exact URI:</p>
 <p><code>{{ redirect_uri }}</code></p>
+{% if show_secret_form %}
 <p>Then paste in the application's client secret (also on the OAuth2 tab):</p>
 <form method="post" class="wizard-form">
   <label>Client secret
@@ -11,6 +12,9 @@
   </label>
   <button type="submit">Save</button>
 </form>
+{% else %}
+<p>Client secret saved. <a href="{{ url_for('wizard.oauth', edit=1) }}">Change it</a></p>
+{% endif %}
 
 {% if state.discord_oauth_redirect_uri %}
 <p><a href="{{ url_for('wizard.oauth_test_login') }}">Test login</a></p>
