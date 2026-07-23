@@ -11,6 +11,7 @@ ATTACHMENT_ID = 900300
 EMBED_MESSAGE_ID = 900201
 LINK_EMBED_MESSAGE_ID = 900202
 SYSTEM_MESSAGE_ID = 900203
+VIDEO_EMBED_MESSAGE_ID = 900204
 BASE = datetime(2026, 1, 1, tzinfo=UTC)
 
 
@@ -100,6 +101,20 @@ def _seed(conn):
         """,
         (SYSTEM_MESSAGE_ID, CHANNEL_ID, USER_ID, "", 7),
     )
+    conn.execute(
+        """
+        INSERT INTO messages (id, channel_id, author_id, content, posted_at)
+        VALUES (%s, %s, %s, %s, now())
+        """,
+        (VIDEO_EMBED_MESSAGE_ID, CHANNEL_ID, USER_ID, "https://example.com/animated-gif-link"),
+    )
+    conn.execute(
+        """
+        INSERT INTO embeds (message_id, position, type, video_url)
+        VALUES (%s, %s, %s, %s)
+        """,
+        (VIDEO_EMBED_MESSAGE_ID, 0, "gifv", "https://cdn.example/clip.mp4"),
+    )
     conn.commit()
 
 
@@ -124,7 +139,7 @@ def test_board_index_shows_seeded_board_and_post_count(page, live_server, seeded
 
     row = page.locator(".board-row", has_text="general")
     assert row.count() == 1
-    assert "34" in row.locator(".board-post-count").inner_text()
+    assert "35" in row.locator(".board-post-count").inner_text()
 
 
 def test_topic_pagination_and_permalink_round_trip(page, live_server, seeded):
@@ -279,6 +294,17 @@ def test_embed_image_does_not_overflow_the_post_box(page, live_server, seeded):
     post_right_edge = post_box.evaluate("el => el.getBoundingClientRect().right")
     image_right_edge = image.evaluate("el => el.getBoundingClientRect().right")
     assert image_right_edge <= post_right_edge + 1
+
+
+def test_gifv_embed_renders_an_autoplaying_video_not_a_static_image(page, live_server, seeded):
+    page.goto(f"{live_server}/board/{CHANNEL_ID}/continuous/page/1")
+
+    post_box = page.locator(f"#post-{VIDEO_EMBED_MESSAGE_ID}")
+    video = post_box.locator(".embed-video")
+    assert video.count() == 1
+    assert video.get_attribute("src") == "https://cdn.example/clip.mp4"
+    assert video.evaluate("el => el.autoplay && el.loop && el.muted")
+    assert post_box.locator(".embed-image").count() == 0
 
 
 def test_link_unfurl_thumbnail_renders_large_not_small_and_floated(page, live_server, seeded):

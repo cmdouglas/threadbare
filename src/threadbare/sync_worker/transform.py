@@ -85,5 +85,6 @@ def embed_to_row(embed: EmbedLike, *, message_id: int, position: int) -> dict:
         "footer_text": embed.footer.text if embed.footer else None,
         "image_url": embed.image.url if embed.image else None,
         "thumbnail_url": embed.thumbnail.url if embed.thumbnail else None,
+        "video_url": embed.video.url if embed.video else None,
         "fields": [{"name": f.name, "value": f.value, "inline": f.inline} for f in embed.fields],
     }

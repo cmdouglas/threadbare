@@ -89,6 +89,7 @@ class FakeEmbed:
     footer: FakeEmbedFooter | None = None
     image: FakeEmbedMedia | None = None
     thumbnail: FakeEmbedMedia | None = None
+    video: FakeEmbedMedia | None = None
     fields: list = field(default_factory=list)
 
 
@@ -242,6 +243,7 @@ def test_embed_to_row_maps_basic_fields():
         footer=FakeEmbedFooter(text="a footer"),
         image=FakeEmbedMedia(url="https://example.com/image.png"),
         thumbnail=FakeEmbedMedia(url="https://example.com/thumb.png"),
+        video=FakeEmbedMedia(url="https://example.com/video.mp4"),
         fields=[FakeEmbedField(name="k", value="v", inline=True)],
     )
 
@@ -260,6 +262,7 @@ def test_embed_to_row_maps_basic_fields():
         "footer_text": "a footer",
         "image_url": "https://example.com/image.png",
         "thumbnail_url": "https://example.com/thumb.png",
+        "video_url": "https://example.com/video.mp4",
         "fields": [{"name": "k", "value": "v", "inline": True}],
     }
 
@@ -282,6 +285,7 @@ def test_embed_to_row_handles_missing_optional_fields():
         "footer_text": None,
         "image_url": None,
         "thumbnail_url": None,
+        "video_url": None,
         "fields": [],
     }
 

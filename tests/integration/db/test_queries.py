@@ -127,6 +127,20 @@ async def test_get_embeds_for_message_returns_rows_ordered_by_position(db_conn):
     assert [row["title"] for row in rows] == ["first", "second"]
 
 
+async def test_get_embeds_for_message_includes_video_url(db_conn):
+    await _seed_guild_and_channel(db_conn)
+    await _seed_user(db_conn, user_id=100, display_name="alice")
+    await _seed_message(db_conn, message_id=1000, channel_id=10, author_id=100)
+    await db_conn.execute(
+        "INSERT INTO embeds (message_id, position, video_url) VALUES (%s, %s, %s)",
+        (1000, 0, "https://example.com/clip.mp4"),
+    )
+
+    rows = await queries.get_embeds_for_message(db_conn, 1000)
+
+    assert rows[0]["video_url"] == "https://example.com/clip.mp4"
+
+
 async def test_get_reactions_for_message_returns_emoji_count_pairs(db_conn):
     await _seed_guild_and_channel(db_conn)
     await _seed_user(db_conn, user_id=100, display_name="alice")

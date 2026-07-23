@@ -47,10 +47,12 @@ ALLOWED_ATTRIBUTES = {
 # form (`<:name:id>`) — its EMOJI_CUSTOM regex has no `a` branch at all
 # (confirmed by reading lexer.py), so `<a:name:id>` falls through as broken
 # text plus a bogus EMOJI_UNICODE_ENCODED node instead of a real emoji.
-# Normalizing the `a:` prefix away before parsing loses the "animated" bit
-# but renders a correct static image instead of garbage — an acceptable
-# trade inside DESIGN.md's accepted ~80% fidelity.
+# Normalizing the `a:` prefix away before parsing avoids that garbled output;
+# the animated bit is recovered separately by scanning the raw content for
+# animated-emoji ids before normalizing (see _find_animated_emoji_ids) rather
+# than losing it, so the emoji still renders as its real animated .gif.
 _ANIMATED_EMOJI_RE = re.compile(r"<a(:[a-zA-Z0-9_]{2,}:[0-9]+>)")
+_ANIMATED_EMOJI_ID_RE = re.compile(r"<a:[a-zA-Z0-9_]{2,}:([0-9]+)>")
 
 
 @dataclass(frozen=True)
@@ -69,6 +71,10 @@ class ResolvedRefs:
 
 def _normalize_animated_emoji(content: str) -> str:
     return _ANIMATED_EMOJI_RE.sub(lambda m: f"<{m.group(1)}", content)
+
+
+def _find_animated_emoji_ids(content: str) -> frozenset[int]:
+    return frozenset(int(m.group(1)) for m in _ANIMATED_EMOJI_ID_RE.finditer(content))
 
 
 def collect_referenced_ids(content: str) -> ReferencedIds:
@@ -97,40 +103,44 @@ def collect_referenced_ids(content: str) -> ReferencedIds:
 
 
 def render_message_content(content: str, *, refs: ResolvedRefs) -> str:
+    animated_emoji_ids = _find_animated_emoji_ids(content)
     nodes = parse(_normalize_animated_emoji(content))
-    raw_html = "".join(_render_node(node, refs) for node in nodes)
+    raw_html = "".join(_render_node(node, refs, animated_emoji_ids) for node in nodes)
     return nh3.clean(raw_html, tags=ALLOWED_TAGS, attributes=ALLOWED_ATTRIBUTES)
 
 
-def _render_children(node: Node, refs: ResolvedRefs) -> str:
-    return "".join(_render_node(child, refs) for child in node.children or [])
+def _render_children(node: Node, refs: ResolvedRefs, animated_emoji_ids: frozenset[int]) -> str:
+    return "".join(_render_node(child, refs, animated_emoji_ids) for child in node.children or [])
 
 
-def _render_node(node: Node, refs: ResolvedRefs) -> str:
+def _render_node(node: Node, refs: ResolvedRefs, animated_emoji_ids: frozenset[int]) -> str:
     match node.node_type:
         case NodeType.TEXT:
             return html.escape(node.text_content or "")
         case NodeType.BOLD:
-            return f"<strong>{_render_children(node, refs)}</strong>"
+            return f"<strong>{_render_children(node, refs, animated_emoji_ids)}</strong>"
         case NodeType.ITALIC:
-            return f"<em>{_render_children(node, refs)}</em>"
+            return f"<em>{_render_children(node, refs, animated_emoji_ids)}</em>"
         case NodeType.UNDERLINE:
-            return f"<u>{_render_children(node, refs)}</u>"
+            return f"<u>{_render_children(node, refs, animated_emoji_ids)}</u>"
         case NodeType.STRIKETHROUGH:
-            return f"<s>{_render_children(node, refs)}</s>"
+            return f"<s>{_render_children(node, refs, animated_emoji_ids)}</s>"
         case NodeType.CODE_INLINE:
-            return f"<code>{_render_children(node, refs)}</code>"
+            return f"<code>{_render_children(node, refs, animated_emoji_ids)}</code>"
         case NodeType.CODE_BLOCK:
             lang_class = (
                 f' class="language-{html.escape(node.code_lang)}"' if node.code_lang else ""
             )
-            return f"<pre><code{lang_class}>{_render_children(node, refs)}</code></pre>"
+            return (
+                f"<pre><code{lang_class}>"
+                f"{_render_children(node, refs, animated_emoji_ids)}</code></pre>"
+            )
         case NodeType.QUOTE_BLOCK:
-            return f"<blockquote>{_render_children(node, refs)}</blockquote>"
+            return f"<blockquote>{_render_children(node, refs, animated_emoji_ids)}</blockquote>"
         case NodeType.SPOILER:
             return (
                 '<details class="spoiler"><summary>Spoiler</summary>'
-                f"{_render_children(node, refs)}</details>"
+                f"{_render_children(node, refs, animated_emoji_ids)}</details>"
             )
         case NodeType.USER:
             name = refs.users.get(node.discord_id, "unknown user")
@@ -147,7 +157,9 @@ def _render_node(node: Node, refs: ResolvedRefs) -> str:
             )
         case NodeType.EMOJI_CUSTOM:
             return render_custom_emoji_html(
-                emoji_id=node.discord_id, name=node.emoji_name, animated=False
+                emoji_id=node.discord_id,
+                name=node.emoji_name,
+                animated=node.discord_id in animated_emoji_ids,
             )
         case NodeType.EMOJI_UNICODE_ENCODED:
             # Discord's own client resolves :name: shortcodes to real unicode

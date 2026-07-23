@@ -83,6 +83,7 @@ class EmbedLike(Protocol):
     footer: EmbedFooterLike | None
     image: EmbedMediaLike | None
     thumbnail: EmbedMediaLike | None
+    video: EmbedMediaLike | None
     fields: list[EmbedFieldLike]
 
 

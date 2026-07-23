@@ -232,7 +232,8 @@ a:visited {
   border: var(--border-width) solid var(--color-border);
 }
 
-.embed-image {
+.embed-image,
+.embed-video {
   display: block;
   max-width: 100%;
   max-height: 80vh;

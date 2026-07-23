@@ -199,7 +199,8 @@ a:visited {
   border-radius: var(--radius);
 }
 
-.embed-image {
+.embed-image,
+.embed-video {
   display: block;
   max-width: 100%;
   max-height: 80vh;

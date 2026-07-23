@@ -11,12 +11,14 @@ from threadbare.rendering import markdown
 from threadbare.rendering.markdown import ResolvedRefs
 
 # A superset of markdown.ALLOWED_TAGS/ATTRIBUTES: embeds add their own
-# structural wrapper (div/dl/dt/dd) around markdown-rendered description text.
-ALLOWED_TAGS = markdown.ALLOWED_TAGS | {"div", "dl", "dt", "dd"}
+# structural wrapper (div/dl/dt/dd) around markdown-rendered description text,
+# plus <video> for gifv/video-type embeds (see render_embed_html below).
+ALLOWED_TAGS = markdown.ALLOWED_TAGS | {"div", "dl", "dt", "dd", "video"}
 ALLOWED_ATTRIBUTES = {
     **markdown.ALLOWED_ATTRIBUTES,
     "div": {"class", "style"},
     "dl": {"class"},
+    "video": {"class", "src", "autoplay", "loop", "muted", "playsinline"},
 }
 
 
@@ -59,7 +61,15 @@ def render_embed_html(embed_row: dict, *, refs: ResolvedRefs) -> str:
         )
         parts.append(f'<dl class="embed-fields">{field_items}</dl>')
 
-    if embed_row.get("image_url"):
+    if embed_row.get("video_url"):
+        # gifv/video-type unfurls (e.g. Tenor/Giphy): image/thumbnail are
+        # just a static preview frame of this same clip, so the video
+        # replaces the image rather than rendering both.
+        safe_url = html.escape(embed_row["video_url"], quote=True)
+        parts.append(
+            f'<video class="embed-video" src="{safe_url}" autoplay loop muted playsinline></video>'
+        )
+    elif embed_row.get("image_url"):
         safe_url = html.escape(embed_row["image_url"], quote=True)
         parts.append(f'<img class="embed-image" src="{safe_url}" alt="">')
 

@@ -17,6 +17,7 @@ def _full_embed_row(**overrides):
         "footer_text": "a footer",
         "image_url": "https://example.com/image.png",
         "thumbnail_url": "https://example.com/thumb.png",
+        "video_url": None,
         "fields": [{"name": "k", "value": "v", "inline": True}],
     }
     row.update(overrides)
@@ -36,6 +37,7 @@ def _empty_embed_row(**overrides):
         "footer_text": None,
         "image_url": None,
         "thumbnail_url": None,
+        "video_url": None,
         "fields": [],
     }
     row.update(overrides)
@@ -110,3 +112,25 @@ def test_render_embed_html_missing_type_lone_thumbnail_renders_large():
     html = render_embed_html(row, refs=EMPTY_REFS)
 
     assert 'class="embed-image"' in html
+
+
+def test_render_embed_html_video_renders_as_a_video_tag():
+    # e.g. a Tenor/Giphy "gifv"-style unfurl: image/thumbnail are just a
+    # static preview frame, the actual animated content is embed.video.
+    row = _empty_embed_row(video_url="https://example.com/clip.mp4")
+    html = render_embed_html(row, refs=EMPTY_REFS)
+
+    assert '<video class="embed-video" src="https://example.com/clip.mp4"' in html
+    assert "autoplay" in html
+    assert "loop" in html
+    assert "muted" in html
+
+
+def test_render_embed_html_video_takes_precedence_over_the_static_image():
+    row = _empty_embed_row(
+        video_url="https://example.com/clip.mp4", image_url="https://example.com/preview.png"
+    )
+    html = render_embed_html(row, refs=EMPTY_REFS)
+
+    assert "<video" in html
+    assert 'class="embed-image"' not in html

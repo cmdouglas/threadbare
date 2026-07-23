@@ -53,7 +53,7 @@ async def get_embeds_for_message(conn: psycopg.AsyncConnection, message_id: int)
         await cur.execute(
             """
             SELECT position, type, title, description, url, color, author_name,
-                   author_url, footer_text, image_url, thumbnail_url, fields
+                   author_url, footer_text, image_url, thumbnail_url, video_url, fields
             FROM embeds
             WHERE message_id = %s
             ORDER BY position

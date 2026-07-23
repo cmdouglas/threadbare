@@ -288,7 +288,7 @@ async def test_delete_thread_is_a_no_op_for_unknown_id(db_conn):
     await repository.delete_thread(db_conn, 999999)  # should not raise
 
 
-def _embed_row(*, message_id, position=0, title="a title", fields=None):
+def _embed_row(*, message_id, position=0, title="a title", fields=None, video_url=None):
     return {
         "message_id": message_id,
         "position": position,
@@ -302,6 +302,7 @@ def _embed_row(*, message_id, position=0, title="a title", fields=None):
         "footer_text": None,
         "image_url": None,
         "thumbnail_url": None,
+        "video_url": video_url,
         "fields": fields or [],
     }
 
@@ -323,6 +324,22 @@ async def test_sync_message_embeds_inserts_rows(db_conn):
         await cur.execute("SELECT title FROM embeds WHERE message_id = 1000 ORDER BY position")
         rows = await cur.fetchall()
     assert [row["title"] for row in rows] == ["first", "second"]
+
+
+async def test_sync_message_embeds_stores_video_url(db_conn):
+    await _seed_guild_and_channel(db_conn, is_public=True)
+    await _seed_message(db_conn, message_id=1000, channel_id=10)
+
+    await repository.sync_message_embeds(
+        db_conn,
+        1000,
+        [_embed_row(message_id=1000, video_url="https://example.com/clip.mp4")],
+    )
+
+    async with db_conn.cursor() as cur:
+        await cur.execute("SELECT video_url FROM embeds WHERE message_id = 1000")
+        row = await cur.fetchone()
+    assert row["video_url"] == "https://example.com/clip.mp4"
 
 
 async def test_sync_message_embeds_stores_fields_as_json(db_conn):

@@ -56,6 +56,7 @@ class FakeEmbed:
     footer: object | None = None
     image: object | None = None
     thumbnail: object | None = None
+    video: object | None = None
     fields: list = field(default_factory=list)
 
 

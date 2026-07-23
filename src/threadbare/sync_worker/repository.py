@@ -148,12 +148,13 @@ async def sync_message_embeds(
             """
             INSERT INTO embeds (
                 message_id, position, type, title, description, url, color,
-                author_name, author_url, footer_text, image_url, thumbnail_url, fields
+                author_name, author_url, footer_text, image_url, thumbnail_url,
+                video_url, fields
             )
             VALUES (
                 %(message_id)s, %(position)s, %(type)s, %(title)s, %(description)s,
                 %(url)s, %(color)s, %(author_name)s, %(author_url)s, %(footer_text)s,
-                %(image_url)s, %(thumbnail_url)s, %(fields)s
+                %(image_url)s, %(thumbnail_url)s, %(video_url)s, %(fields)s
             )
             """,
             {**embed, "fields": Json(embed["fields"])},

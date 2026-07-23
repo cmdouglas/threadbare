@@ -112,16 +112,24 @@ def test_render_message_content_custom_emoji():
     )
 
 
-def test_render_message_content_animated_custom_emoji_renders_static():
+def test_render_message_content_animated_custom_emoji_renders_animated():
     # discord-markdown-ast-parser's lexer doesn't recognize the <a:name:id>
-    # form at all (confirmed by reading its source); animated-ness is lost
-    # but it still renders a working (non-animated) emoji image rather than
-    # garbled text -- within DESIGN.md's accepted ~80% fidelity.
+    # form at all (confirmed by reading its source), so the `a:` prefix is
+    # stripped before parsing to avoid garbled output -- but the animated-ness
+    # is recovered separately (scanned from the raw content before that
+    # stripping) so the actual emoji still renders as a real animated .gif.
     html = render_message_content("hi <a:pog:123>", refs=EMPTY_REFS)
 
     assert html == (
-        'hi <img class="emoji" src="https://cdn.discordapp.com/emojis/123.png" alt=":pog:">'
+        'hi <img class="emoji" src="https://cdn.discordapp.com/emojis/123.gif" alt=":pog:">'
     )
+
+
+def test_render_message_content_animated_emoji_id_does_not_leak_to_other_static_emoji():
+    html = render_message_content("hi <a:pog:123> and <:wave:456>", refs=EMPTY_REFS)
+
+    assert 'src="https://cdn.discordapp.com/emojis/123.gif"' in html
+    assert 'src="https://cdn.discordapp.com/emojis/456.png"' in html
 
 
 def test_render_message_content_unicode_emoji_shortcode_passthrough():
