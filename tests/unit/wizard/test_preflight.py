@@ -89,6 +89,23 @@ def test_channel_member_specific_overwrite_denies_bot_despite_every_role_level_a
     assert (result & VIEW_CHANNEL) == 0
 
 
+def test_channel_role_overwrite_for_a_role_the_bot_does_not_have_is_ignored():
+    # Regression guard for _tier_from_rest_overwrites: filtering by role
+    # membership now happens only in that adapter, not inside the shared
+    # compute_effective_permissions, so this must still hold.
+    other_role_id = 12345
+    channel_overwrites = [_overwrite(other_role_id, ROLE_TYPE, deny=BOTH_REQUIRED)]
+    result = compute_bot_effective_permissions(
+        base_permissions=BOTH_REQUIRED,
+        everyone_role_id=EVERYONE_ROLE_ID,
+        bot_role_ids={BOT_ROLE_ID},
+        bot_user_id=BOT_USER_ID,
+        category_overwrites=[],
+        channel_overwrites=channel_overwrites,
+    )
+    assert (result & BOTH_REQUIRED) == BOTH_REQUIRED
+
+
 def test_administrator_base_permission_bypasses_every_overwrite():
     ADMINISTRATOR = 1 << 3
     channel_overwrites = [_overwrite(EVERYONE_ROLE_ID, ROLE_TYPE, deny=BOTH_REQUIRED)]

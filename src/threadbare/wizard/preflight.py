@@ -4,23 +4,22 @@ channel, not @everyone's (that's discord_permissions.compute_is_public's
 job). Pure functions over already-fetched REST JSON -- network calls stay
 in web/discord_rest.py.
 
-DESIGN.md §7 Phase 2 already calls full permission-mirroring math "the
-fiddliest code in the project"; this is a narrower, one-identity version of
-the same problem (resolving effective permissions for exactly one member --
-the bot -- rather than every guild member) and deserves comparably careful
-fixture coverage, not just happy-path cases.
+A thin wrapper over discord_permissions.compute_effective_permissions (the
+one shared implementation of Discord's permission-resolution order, also
+used by compute_is_public) -- this module's own job is narrower: adapting
+Discord's REST-JSON overwrite shape (a single list tagged by type: 0=role/
+1=member) into the OverwriteTier shape that function expects, for exactly
+one identity (the bot).
 """
 
 from dataclasses import dataclass
 from typing import TypedDict
 
-from threadbare.discord_permissions import REQUIRED_PERMISSIONS, apply_overwrite
-
-ADMINISTRATOR = 1 << 3
-# A permission bitmask wide enough to cover every documented Discord
-# permission bit (currently up to ~bit 46) -- used only as the
-# "everything is granted" sentinel Administrator short-circuits to.
-_ALL_PERMISSIONS = (1 << 49) - 1
+from threadbare.discord_permissions import (
+    REQUIRED_PERMISSIONS,
+    OverwriteTier,
+    compute_effective_permissions,
+)
 
 ROLE_OVERWRITE_TYPE = 0
 MEMBER_OVERWRITE_TYPE = 1
@@ -46,43 +45,35 @@ def parse_overwrites(raw: list[dict]) -> list[RestOverwrite]:
     ]
 
 
-def _apply_overwrite_tier(
-    permissions: int,
+def _tier_from_rest_overwrites(
     overwrites: list[RestOverwrite],
     *,
     everyone_role_id: int,
     role_ids: set[int],
     user_id: int,
-) -> int:
-    """One tier (category or channel) of Discord's overwrite resolution:
-    @everyone overwrite, then every applicable role overwrite combined
-    (all denies first, then all allows -- Discord's documented role-overwrite
-    merge order), then the member-specific overwrite for this exact user id.
+) -> OverwriteTier:
+    """Classifies one tier's (category's or channel's) tagged REST overwrite
+    list into the three pre-classified slots compute_effective_permissions
+    expects -- the caller-filters-first contract that function documents:
+    role_overwrites is filtered down to only roles this identity actually
+    holds (role_ids) here, not inside the shared function.
     """
     everyone_overwrite = next(
         (o for o in overwrites if o.type == ROLE_OVERWRITE_TYPE and o.id == everyone_role_id), None
     )
-    permissions = apply_overwrite(permissions, everyone_overwrite)
-
-    role_overwrites = [
+    role_overwrites = tuple(
         o
         for o in overwrites
         if o.type == ROLE_OVERWRITE_TYPE and o.id != everyone_role_id and o.id in role_ids
-    ]
-    if role_overwrites:
-        combined_deny = 0
-        combined_allow = 0
-        for o in role_overwrites:
-            combined_deny |= o.deny
-            combined_allow |= o.allow
-        permissions = (permissions & ~combined_deny) | combined_allow
-
+    )
     member_overwrite = next(
         (o for o in overwrites if o.type == MEMBER_OVERWRITE_TYPE and o.id == user_id), None
     )
-    permissions = apply_overwrite(permissions, member_overwrite)
-
-    return permissions
+    return OverwriteTier(
+        everyone_overwrite=everyone_overwrite,
+        role_overwrites=role_overwrites,
+        member_overwrite=member_overwrite,
+    )
 
 
 def compute_bot_effective_permissions(
@@ -94,33 +85,26 @@ def compute_bot_effective_permissions(
     category_overwrites: list[RestOverwrite],
     channel_overwrites: list[RestOverwrite],
 ) -> int:
-    """Discord's documented resolution order for the BOT's own identity
-    specifically (not @everyone, unlike discord_permissions.compute_is_public):
-    base (guild @everyone permissions OR'd with every role the bot has) ->
-    Administrator short-circuit (bypasses every overwrite) -> category
-    overwrites (@everyone, then combined role overwrites, then the bot's own
-    member overwrite) -> the same three-step application for the channel's
-    own overwrites, which always wins over category on a shared bit.
+    """The BOT's own identity specifically (not @everyone, unlike
+    discord_permissions.compute_is_public) -- base_permissions is expected
+    to already be the guild @everyone permissions OR'd with every role the
+    bot has. Adapts this module's REST-JSON overwrite shape into
+    OverwriteTier, then delegates the actual resolution order to the shared
+    compute_effective_permissions.
     """
-    if base_permissions & ADMINISTRATOR:
-        return _ALL_PERMISSIONS
-
-    permissions = base_permissions
-    permissions = _apply_overwrite_tier(
-        permissions,
+    category = _tier_from_rest_overwrites(
         category_overwrites,
         everyone_role_id=everyone_role_id,
         role_ids=bot_role_ids,
         user_id=bot_user_id,
     )
-    permissions = _apply_overwrite_tier(
-        permissions,
+    channel = _tier_from_rest_overwrites(
         channel_overwrites,
         everyone_role_id=everyone_role_id,
         role_ids=bot_role_ids,
         user_id=bot_user_id,
     )
-    return permissions
+    return compute_effective_permissions(base_permissions, category=category, channel=channel)
 
 
 class ChannelPermissionResult(TypedDict):
