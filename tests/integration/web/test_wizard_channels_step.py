@@ -188,3 +188,68 @@ def test_channels_revisit_preserves_prior_confirmation(wizard_client, web_conn, 
 
     assert resp.status_code == 200
     assert b"checked" in resp.data
+
+
+def test_channels_get_shows_auto_index_checked_by_default(wizard_client, web_conn, monkeypatch):
+    _seed_invite_step(wizard_client, web_conn)
+    _stub_discord(monkeypatch)
+
+    resp = wizard_client.get("/channels")
+
+    assert resp.status_code == 200
+    assert b'name="auto_index_new_channels"' in resp.data
+    assert b'name="auto_index_new_channels" checked' in resp.data
+
+
+def test_channels_post_without_the_checkbox_disables_auto_index(
+    wizard_client, web_conn, monkeypatch
+):
+    _seed_invite_step(wizard_client, web_conn)
+    _stub_discord(monkeypatch)
+    wizard_client.get("/channels")
+
+    resp = wizard_client.post("/channels", data={"indexed_channel_id": [str(CHANNEL_ID)]})
+
+    assert resp.status_code == 302
+
+    async def _fetch():
+        return await wizard_view.wizard_queries.get_auto_index_new_channels(web_conn)
+
+    assert run(_fetch()) is False
+
+
+def test_channels_post_with_the_checkbox_keeps_auto_index_enabled(
+    wizard_client, web_conn, monkeypatch
+):
+    _seed_invite_step(wizard_client, web_conn)
+    _stub_discord(monkeypatch)
+    wizard_client.get("/channels")
+
+    resp = wizard_client.post(
+        "/channels",
+        data={
+            "indexed_channel_id": [str(CHANNEL_ID)],
+            "auto_index_new_channels": "on",
+        },
+    )
+
+    assert resp.status_code == 302
+
+    async def _fetch():
+        return await wizard_view.wizard_queries.get_auto_index_new_channels(web_conn)
+
+    assert run(_fetch()) is True
+
+
+def test_channels_revisit_reflects_the_previously_saved_auto_index_value(
+    wizard_client, web_conn, monkeypatch
+):
+    _seed_invite_step(wizard_client, web_conn)
+    _stub_discord(monkeypatch)
+    wizard_client.get("/channels")
+    wizard_client.post("/channels", data={"indexed_channel_id": [str(CHANNEL_ID)]})
+
+    resp = wizard_client.get("/channels")
+
+    assert resp.status_code == 200
+    assert b'name="auto_index_new_channels" checked' not in resp.data

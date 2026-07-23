@@ -43,6 +43,13 @@ seen in a readable channel).</p>
     </tr>
     {% endfor %}
   </table>
+  <p class="wizard-auto-index">
+    <label>
+      <input type="checkbox" name="auto_index_new_channels" {% if auto_index_new_channels %}checked{% endif %}>
+      Automatically index new channels discovered later (a mod can always change this
+      afterward on the admin page)
+    </label>
+  </p>
   <button type="submit">Continue</button>
 </form>
 {% endblock %}

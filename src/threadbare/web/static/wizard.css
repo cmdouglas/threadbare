@@ -80,7 +80,7 @@ body {
   margin-bottom: 0.75rem;
 }
 
-.wizard-form input {
+.wizard-form input:not([type="checkbox"]) {
   display: block;
   width: 100%;
   margin-top: 0.25rem;
@@ -88,6 +88,12 @@ body {
   border: 1px solid var(--wizard-border);
   border-radius: 4px;
   font: inherit;
+}
+
+.wizard-form input[type="checkbox"] {
+  width: auto;
+  margin: 0 0.5rem 0 0;
+  vertical-align: middle;
 }
 
 .wizard-channel-table {

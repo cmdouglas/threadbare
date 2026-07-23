@@ -95,6 +95,19 @@ async def get_channels_for_guild(conn: psycopg.AsyncConnection, guild_id: int) -
         return await cur.fetchall()
 
 
+async def get_auto_index_new_channels(conn: psycopg.AsyncConnection) -> bool:
+    """Delegates to admin_queries (same site_settings row the admin page's
+    own toggle reads/writes) -- the wizard's channels step offers this same
+    setting up front so a mod doesn't have to find the admin page
+    separately just to turn it off.
+    """
+    return await admin_queries.get_auto_index_new_channels(conn)
+
+
+async def set_auto_index_new_channels(conn: psycopg.AsyncConnection, value: bool) -> None:
+    await admin_queries.set_auto_index_new_channels(conn, value)
+
+
 async def confirm_channel_selection(
     conn: psycopg.AsyncConnection, guild_id: int, indexed_channel_ids: set[int]
 ) -> None:

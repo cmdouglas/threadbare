@@ -216,8 +216,10 @@ async def channels():
 
     if request.method == "POST":
         selected_ids = {int(v) for v in request.form.getlist("indexed_channel_id")}
+        auto_index_new_channels = "auto_index_new_channels" in request.form
         async with pool.connection() as conn:
             await wizard_queries.confirm_channel_selection(conn, guild_id, selected_ids)
+            await wizard_queries.set_auto_index_new_channels(conn, auto_index_new_channels)
             await wizard_queries.update_wizard_state(conn, step="oauth", channels_confirmed=True)
         return redirect(url_for("wizard.oauth"))
 
@@ -286,6 +288,7 @@ async def channels():
             already_confirmed=state["channels_confirmed"],
         )
         existing = {c["id"]: c for c in await wizard_queries.get_channels_for_guild(conn, guild_id)}
+        auto_index_new_channels = await wizard_queries.get_auto_index_new_channels(conn)
 
     permission_table = compute_channel_permission_table(
         base_permissions=base_permissions,
@@ -328,7 +331,11 @@ async def channels():
         intent_status = message_content_intent_ok(sample_message)
 
     return render_template(
-        "wizard_channels.html", state=state, channel_rows=rows, intent_status=intent_status
+        "wizard_channels.html",
+        state=state,
+        channel_rows=rows,
+        intent_status=intent_status,
+        auto_index_new_channels=auto_index_new_channels,
     )
 
 
