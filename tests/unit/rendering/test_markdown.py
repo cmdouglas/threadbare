@@ -5,6 +5,16 @@ from threadbare.rendering.markdown import (
     render_message_content,
 )
 
+# discord-markdown-ast-parser 1.0.6 crashes with a TypeError instead of
+# treating an unmatched **, __, or ``` as literal text -- see markdown.py's
+# _search_for_closer_always_tuple patch for the upstream bug this guards
+# against.
+UNMATCHED_DELIMITER_MESSAGES = [
+    "wait ** hold on",
+    "nvm __ ignore that",
+    "```\noops forgot to close",
+]
+
 EMPTY_REFS = ResolvedRefs(users={}, channels={})
 
 
@@ -224,3 +234,21 @@ def test_collect_referenced_ids_finds_mentions_nested_inside_formatting():
     ids = collect_referenced_ids("**hi <@1>**")
 
     assert ids.user_ids == frozenset({1})
+
+
+def test_render_message_content_unmatched_bold_delimiter_falls_back_to_literal_text():
+    assert render_message_content("wait ** hold on", refs=EMPTY_REFS) == "wait ** hold on"
+
+
+def test_render_message_content_unmatched_underline_delimiter_falls_back_to_literal_text():
+    assert render_message_content("nvm __ ignore that", refs=EMPTY_REFS) == "nvm __ ignore that"
+
+
+def test_render_message_content_unmatched_code_block_delimiter_falls_back_to_literal_text():
+    html = render_message_content("```\noops forgot to close", refs=EMPTY_REFS)
+    assert html == "```\noops forgot to close"
+
+
+def test_collect_referenced_ids_unmatched_delimiter_does_not_raise():
+    for content in UNMATCHED_DELIMITER_MESSAGES:
+        collect_referenced_ids(content)

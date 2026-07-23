@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 
 import nh3
 from discord_markdown_ast_parser import parse
+from discord_markdown_ast_parser import parser as _discord_parser_module
 from discord_markdown_ast_parser.parser import Node, NodeType
 
 from threadbare.rendering.emoji import (
@@ -24,6 +25,24 @@ from threadbare.rendering.emoji import (
     render_unicode_text_with_emoji_titles,
     resolve_shortcode_to_unicode,
 )
+
+# discord-markdown-ast-parser 1.0.6's search_for_closer returns a bare `None`
+# when no closer is found, even though its own docstring promises `None,
+# None` and every caller unconditionally unpacks a 2-tuple. That mismatch
+# turns any message with an unmatched **, __, or ``` (a stray "**" in prose,
+# a pasted code fence someone forgot to close) into a TypeError that crashes
+# rendering entirely, instead of falling back to literal text the way
+# Discord's own client does. Patch the return value to match the documented
+# contract rather than forking the package for a one-line bug.
+_original_search_for_closer = _discord_parser_module.search_for_closer
+
+
+def _search_for_closer_always_tuple(tokens, closer):
+    result = _original_search_for_closer(tokens, closer)
+    return result if result is not None else (None, None)
+
+
+_discord_parser_module.search_for_closer = _search_for_closer_always_tuple
 
 ALLOWED_TAGS = {
     "strong",

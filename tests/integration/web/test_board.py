@@ -191,6 +191,28 @@ def test_board_continuous_page_renders_messages(client, web_conn):
     assert b"hello there" in resp.data
 
 
+def test_board_continuous_page_renders_message_with_unmatched_markdown_delimiter(
+    client, web_conn
+):
+    # Regression test: discord-markdown-ast-parser 1.0.6 raised a TypeError
+    # on an unmatched **, __, or ``` instead of falling back to literal text,
+    # crashing this whole route with a 500 (see markdown.py's
+    # _search_for_closer_always_tuple patch).
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10))
+    run(_seed_user(web_conn))
+    run(
+        _seed_message(
+            web_conn, message_id=1, channel_id=10, content="wait ** hold on", posted_at=T1
+        )
+    )
+
+    resp = client.get("/board/10/continuous/page/1")
+
+    assert resp.status_code == 200
+    assert b"wait ** hold on" in resp.data
+
+
 def test_board_continuous_jump_redirects_to_the_right_page(client, web_conn):
     run(_seed_guild(web_conn))
     run(_seed_board(web_conn, channel_id=10))
