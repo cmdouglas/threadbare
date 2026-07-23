@@ -6,10 +6,6 @@
   <label>Jump to date <input type="date" name="date"></label>
   <button type="submit">Go</button>
 </form>
-<nav class="posts-per-page-switcher">
-  Posts per page:
-  {% for n in posts_per_page_options %}<a href="{{ posts_per_page_switch_url(n) }}">{{ n }}</a>{% endfor %}
-</nav>
 {% include "_pagination.html" %}
 {% for message_row, rendered in posts %}
   {% include "_post.html" %}

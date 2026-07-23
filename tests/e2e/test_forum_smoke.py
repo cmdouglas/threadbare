@@ -145,12 +145,12 @@ def test_topic_pagination_and_permalink_round_trip(page, live_server, seeded):
 
 
 def test_posts_per_page_switcher_changes_how_many_posts_render(page, live_server, seeded):
-    page.goto(f"{live_server}/topic/{THREAD_ID}/page/1")
-    assert page.locator("article.post").count() == 25
-
+    page.goto(f"{live_server}/preferences")
     page.locator(".posts-per-page-switcher a", has_text="50").click()
-
     assert "posts_per_page=50" in page.url
+
+    page.goto(f"{live_server}/topic/{THREAD_ID}/page/1")
+
     assert page.locator("article.post").count() == 30
 
 
@@ -293,9 +293,8 @@ def test_avatar_toggle_round_trip(page, live_server, seeded):
     page.goto(f"{live_server}/topic/{THREAD_ID}/page/1")
     assert page.locator(".post-avatar").count() > 0
 
+    page.goto(f"{live_server}/preferences")
     page.click(".avatar-toggle a")
-
-    assert page.locator(".post-avatar").count() == 0
     assert "avatars=off" in page.url
 
     page.goto(f"{live_server}/topic/{THREAD_ID}/page/1")

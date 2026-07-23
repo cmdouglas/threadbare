@@ -94,14 +94,14 @@ Because messages live in Postgres, real offset pagination ("page 47 of 212") wor
 ## 5. Core features (the product across all versions)
 
 1. **Board index** — categories and boards with post counts, last-post author/time.
-2. **Paginated topic/board reading** — fixed posts-per-page (default 25), numbered pages, first/prev/next/last, jump-to-date.
+2. **Paginated topic/board reading** — user-configurable posts-per-page (10/25/50/100, default 25), truncated numbered page links (first 3 … current ± 2 … last 3), jump-to-page, jump-to-date.
 3. **Permalinks** — stable URLs per message (`/topic/{id}/page/{n}#post-{message_id}`), plus a "view on Discord" deep link per post.
 4. **Full-text search** — with author, channel, and date-range filters; results link into paginated context, not isolated snippets.
 5. **Faithful rendering** — Discord-flavored markdown, custom emoji, mentions resolved to display names, reply-chain quoting rendered as classic forum quote blocks, embeds, spoilers, reactions as aggregate counts.
 6. **Live sync** — new posts visible within seconds; edits marked with an "edited" timestamp; deletions removed.
 7. **User pages** — display name, avatar, post count, recent posts (public content only).
 8. **Mod controls** — a minimal admin page for the bot installer: choose which channels are indexed, trigger re-backfill, view sync health.
-9. **Theming** — user-selectable themes with a mod-set default. Implemented as pure CSS: the templates emit stable, semantic, classed markup and every color, font, border, and radius lives in CSS custom properties, so a theme is a single stylesheet and third-party themes are a drop-in file. Display preferences (theme choice, and — as of the avatars feature below — avatar visibility) persist per user via a cookie today; see the "Display preferences" note under §6's OAuth login flow for the planned migration to account-level storage. Avatar display: each post (and the user page) shows the poster's Discord avatar, resolved directly from `users.avatar_hash` against Discord's static/unsigned avatar CDN (no signed-URL refresh needed, unlike attachments) — with a toggle to hide them.
+9. **Theming** — user-selectable themes with a mod-set default. Implemented as pure CSS: the templates emit stable, semantic, classed markup and every color, font, border, and radius lives in CSS custom properties, so a theme is a single stylesheet and third-party themes are a drop-in file. Display preferences (theme choice, avatar visibility, and posts-per-page) persist per user via a cookie today; see the "Display preferences" note under §6's OAuth login flow for the planned migration to account-level storage. All three are set from a single `/preferences` page linked from the masthead — the canonical place to change them, rather than scattered inline toggles. Avatar display: each post (and the user page) shows the poster's Discord avatar, resolved directly from `users.avatar_hash` against Discord's static/unsigned avatar CDN (no signed-URL refresh needed, unlike attachments) — with a toggle to hide them.
 
 ## 6. v1 scope: public channels, membership-gated
 

@@ -15,6 +15,7 @@ from threadbare.web.views.attachments import bp as attachments_bp
 from threadbare.web.views.auth import bp as auth_bp
 from threadbare.web.views.board import bp as board_bp
 from threadbare.web.views.board_index import bp as board_index_bp
+from threadbare.web.views.preferences import bp as preferences_bp
 from threadbare.web.views.search import bp as search_bp
 from threadbare.web.views.topic import bp as topic_bp
 from threadbare.web.views.user import bp as user_bp
@@ -109,6 +110,7 @@ def create_app(settings: Settings, pool) -> Flask:
     @app.context_processor
     def inject_theme_context():
         return {
+            "theme": g.theme,
             "theme_stylesheet": themes.AVAILABLE_THEMES[g.theme],
             "themes_available": list(themes.AVAILABLE_THEMES),
             "theme_switch_url": _theme_switch_url,
@@ -162,6 +164,7 @@ def create_app(settings: Settings, pool) -> Flask:
     app.register_blueprint(auth_bp)
     app.register_blueprint(admin_bp)
     app.register_blueprint(board_index_bp)
+    app.register_blueprint(preferences_bp)
     app.register_blueprint(board_bp)
     app.register_blueprint(topic_bp)
     app.register_blueprint(search_bp)

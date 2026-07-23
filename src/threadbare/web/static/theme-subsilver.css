@@ -273,6 +273,10 @@ a:visited {
   font-weight: bold;
 }
 
+.preference-current {
+  font-weight: bold;
+}
+
 .search-form input[type="search"] {
   font: inherit;
   padding: var(--space-xs) var(--space-sm);

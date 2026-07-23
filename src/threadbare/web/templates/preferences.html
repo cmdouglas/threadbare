@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Preferences — {{ site_title }}{% endblock %}
+{% block content %}
+<h1>Preferences</h1>
+<section class="preference">
+  <h2>Theme</h2>
+  <nav class="theme-switcher">
+    {% for name in themes_available %}
+      {% if name == theme %}<strong class="preference-current">{{ name }}</strong>
+      {% else %}<a href="{{ theme_switch_url(name) }}">{{ name }}</a>{% endif %}
+    {% endfor %}
+  </nav>
+</section>
+<section class="preference">
+  <h2>Avatars</h2>
+  <nav class="avatar-toggle">
+    <a href="{{ avatar_toggle_href }}">{{ "Hide avatars" if show_avatars else "Show avatars" }}</a>
+  </nav>
+</section>
+<section class="preference">
+  <h2>Posts per page</h2>
+  <nav class="posts-per-page-switcher">
+    {% for n in posts_per_page_options %}
+      {% if n == posts_per_page %}<strong class="preference-current">{{ n }}</strong>
+      {% else %}<a href="{{ posts_per_page_switch_url(n) }}">{{ n }}</a>{% endif %}
+    {% endfor %}
+  </nav>
+</section>
+{% endblock %}
