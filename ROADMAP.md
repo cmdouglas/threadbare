@@ -440,7 +440,19 @@ Pulled from `DESIGN.md` §6 — the milestone isn't done until these hold:
 
 ## After v1
 
-Not this milestone — tracked in `DESIGN.md` §7 for when/if they happen: role-gated channels with permission mirroring (Phase 2), reading-experience depth like unread tracking (Phase 3), public/logged-out access (Phase 4), multi-guild hosting (Phase 5), other chat platforms (Phase 6).
+Not this milestone — tracked in `DESIGN.md` §7 for when/if they happen: role-gated channels with permission mirroring (Phase 2, next up — broken into build order below), reading-experience depth like unread tracking (Phase 3), public/logged-out access (Phase 4), multi-guild hosting (Phase 5), other chat platforms (Phase 6).
+
+## Phase 2: Role-gated channels with permission mirroring (~3–5 days, `DESIGN.md` §7)
+
+The defining feature of "full": index non-public channels and show each logged-in user exactly what they can see on Discord. Build order below front-loads the data/plumbing work, since every later step depends on roles and overwrites actually being in Postgres first.
+
+- [ ] New `roles` table (id, guild_id, name, permissions, position) and per-channel permission-overwrite tables (role tier + member tier), captured by the sync worker on `GUILD_ROLE_CREATE`/`UPDATE`/`DELETE` and `CHANNEL_UPDATE` — neither is captured anywhere today; `discord_permissions.compute_is_public` and `wizard/preflight.py` both currently read overwrites live off Discord's in-memory objects rather than storing them.
+- [ ] Persist each member's current role-ID list. `sync_worker/events.handle_member_update` (already shipped for display-name refresh, reusing the `GUILD_MEMBERS` intent — see UI polish backlog above) only reacts to *future* role changes; Phase 2 also needs an initial bulk backfill of every existing member's roles on startup, since that handler alone never populates a member who hasn't changed since the intent was added.
+- [ ] Generalize Discord's permission-resolution order (base @everyone → role allows/denies → category overwrite → channel overwrite → admin short-circuit) into one shared implementation, rather than a third reimplementation next to the two narrow cases that already exist: `discord_permissions.compute_is_public` (the @everyone-only case) and `wizard/preflight.py`'s `_apply_overwrite_tier`/`compute_bot_effective_permissions` (the bot-only case). Both should end up calling the shared version.
+- [ ] Compute a per-user channel-visibility set from stored roles/overwrites at login (and refresh on a timer plus the role/channel-update events above); cache it per session. This replaces `web/authz.py`'s current binary is-a-guild-member gate for channels enrolled in role-gating.
+- [ ] Filter every read path by the requesting user's visibility set, not just global `is_public`/`indexed` — board index, topic/continuous listings, and especially search (today's `db/queries._SEARCH_WHERE_SQL` filters only on `indexed`, with no per-user clause at all) all need a new join/parameter. The easiest bypass vector in the whole phase, per `DESIGN.md` §7's risk note.
+- [ ] Per-channel opt-in flag on the admin page, separate from the existing `is_public`/`indexed` toggle — mods enroll a role-gated channel into the new visibility system deliberately, never automatically.
+- [ ] Golden/fixture-based permission tests exported from a real test server, covering the actual resolution edge cases (explicit deny overrides allow, category-vs-channel precedence, multiple roles combined, admin short-circuit). The highest test-coverage bar in the codebase, per `DESIGN.md` §7 — this is the one place a bug is a disclosure bug, not a rendering bug.
 
 ## UI polish backlog
 
