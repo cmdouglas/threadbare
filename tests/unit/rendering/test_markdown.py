@@ -140,11 +140,20 @@ def test_render_message_content_unicode_emoji_gets_a_shortcode_tooltip():
     )
 
 
-def test_render_message_content_unicode_emoji_shortcode_passthrough():
-    # Discord's own client resolves :name: shortcodes to real unicode before
-    # sending, so this only appears from bots/webhooks bypassing that -- we
-    # don't have a lookup table, so render the literal shortcode text.
-    assert render_message_content("hi :thinking:", refs=EMPTY_REFS) == "hi :thinking:"
+def test_render_message_content_unresolved_shortcode_renders_as_real_emoji():
+    # Bots/webhooks bypass Discord's client-side shortcode-to-unicode
+    # conversion, so a real message can carry literal ":thinking:" text
+    # instead of the resolved glyph -- Discord's own client still renders
+    # this as the real 🤔 emoji, so this project should too.
+    assert render_message_content("hi :thinking:", refs=EMPTY_REFS) == (
+        'hi <span title=":thinking:">🤔</span>'
+    )
+
+
+def test_render_message_content_unrecognized_shortcode_stays_literal_text():
+    assert render_message_content("hi :not_a_real_emoji_name:", refs=EMPTY_REFS) == (
+        "hi :not_a_real_emoji_name:"
+    )
 
 
 def test_render_message_content_url_renders_as_link():

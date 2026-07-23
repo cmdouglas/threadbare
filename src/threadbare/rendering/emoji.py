@@ -52,6 +52,21 @@ def render_unicode_text_with_emoji_titles(text: str) -> str:
     return "".join(parts)
 
 
+def resolve_shortcode_to_unicode(name: str) -> str | None:
+    """Converts a bare `:name:` shortcode (no surrounding `<...>` markup,
+    just the name) back to its real unicode glyph, or None if `name` isn't a
+    recognized emoji. Needed for `NodeType.EMOJI_UNICODE_ENCODED` in
+    markdown.py: Discord's own client resolves a `:name:` shortcode to real
+    unicode client-side before sending, but bots/webhooks bypass that and
+    send the literal text -- Discord's client still renders these visually
+    as the real emoji (confirmed against a live example), so this project
+    should too rather than showing literal shortcode text.
+    """
+    token = f":{name}:"
+    resolved = _emoji_lib.emojize(token, language="alias")
+    return resolved if resolved != token else None
+
+
 def render_custom_emoji_html(*, emoji_id: int, name: str, animated: bool) -> str:
     ext = "gif" if animated else "png"
     safe_name = html.escape(name)

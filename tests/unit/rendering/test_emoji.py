@@ -2,6 +2,7 @@ from threadbare.rendering.emoji import (
     render_custom_emoji_html,
     render_emoji_token_html,
     render_unicode_text_with_emoji_titles,
+    resolve_shortcode_to_unicode,
     unicode_emoji_title,
 )
 
@@ -89,3 +90,18 @@ def test_render_unicode_text_with_emoji_titles_escapes_the_rest():
 
 def test_render_unicode_text_with_emoji_titles_handles_plain_text():
     assert render_unicode_text_with_emoji_titles("just text") == "just text"
+
+
+def test_resolve_shortcode_to_unicode_resolves_a_known_shortcode():
+    # Bots/webhooks bypass Discord client-side shortcode-to-unicode
+    # conversion, so a real message can carry literal ":game_die:" text --
+    # Discord's own client still renders that as the real 🎲 emoji.
+    assert resolve_shortcode_to_unicode("game_die") == "🎲"
+
+
+def test_resolve_shortcode_to_unicode_resolves_an_alias_form():
+    assert resolve_shortcode_to_unicode("thumbsup") == "👍"
+
+
+def test_resolve_shortcode_to_unicode_returns_none_for_an_unrecognized_name():
+    assert resolve_shortcode_to_unicode("not_a_real_emoji_name") is None

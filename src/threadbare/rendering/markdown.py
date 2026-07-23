@@ -22,6 +22,7 @@ from discord_markdown_ast_parser.parser import Node, NodeType
 from threadbare.rendering.emoji import (
     render_custom_emoji_html,
     render_unicode_text_with_emoji_titles,
+    resolve_shortcode_to_unicode,
 )
 
 ALLOWED_TAGS = {
@@ -167,9 +168,15 @@ def _render_node(node: Node, refs: ResolvedRefs, animated_emoji_ids: frozenset[i
         case NodeType.EMOJI_UNICODE_ENCODED:
             # Discord's own client resolves :name: shortcodes to real unicode
             # before sending; this only appears via bots/webhooks bypassing
-            # that, or a genuinely unmatched shortcode. No local emoji-name
-            # lookup exists, so render the literal text.
-            return html.escape(f":{node.emoji_name}:")
+            # that. Discord's client still renders a recognized shortcode as
+            # the real emoji (confirmed against a live example), so resolve
+            # it the same way rather than showing literal shortcode text --
+            # falling back to the literal text only for a genuinely
+            # unrecognized name.
+            resolved = resolve_shortcode_to_unicode(node.emoji_name or "")
+            if resolved is None:
+                return html.escape(f":{node.emoji_name}:")
+            return render_unicode_text_with_emoji_titles(resolved)
         case NodeType.URL_WITH_PREVIEW | NodeType.URL_WITHOUT_PREVIEW:
             # No distinct preview-card feature exists in this project (that's
             # embeds.py's job, driven by Discord's own structured embed data,

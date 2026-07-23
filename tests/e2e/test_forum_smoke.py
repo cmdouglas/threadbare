@@ -12,6 +12,7 @@ EMBED_MESSAGE_ID = 900201
 LINK_EMBED_MESSAGE_ID = 900202
 SYSTEM_MESSAGE_ID = 900203
 VIDEO_EMBED_MESSAGE_ID = 900204
+UNRESOLVED_SHORTCODE_MESSAGE_ID = 900205
 BASE = datetime(2026, 1, 1, tzinfo=UTC)
 
 
@@ -125,6 +126,18 @@ def _seed(conn):
             "https://cdn.example/clip-preview.png",
         ),
     )
+    conn.execute(
+        """
+        INSERT INTO messages (id, channel_id, author_id, content, posted_at)
+        VALUES (%s, %s, %s, %s, now())
+        """,
+        (
+            UNRESOLVED_SHORTCODE_MESSAGE_ID,
+            CHANNEL_ID,
+            USER_ID,
+            "@Charlie :game_die: 1 :game_die:",
+        ),
+    )
     conn.commit()
 
 
@@ -149,7 +162,7 @@ def test_board_index_shows_seeded_board_and_post_count(page, live_server, seeded
 
     row = page.locator(".board-row", has_text="general")
     assert row.count() == 1
-    assert "35" in row.locator(".board-post-count").inner_text()
+    assert "36" in row.locator(".board-post-count").inner_text()
 
 
 def test_topic_pagination_and_permalink_round_trip(page, live_server, seeded):
@@ -325,6 +338,18 @@ def test_gifv_embed_renders_an_autoplaying_video_not_a_static_image(page, live_s
     # This embed also carries a static thumbnail, matching a real gifv
     # unfurl -- only the video should render, not both.
     assert post_box.locator(".embed-thumbnail").count() == 0
+
+
+def test_unresolved_shortcode_from_a_bot_renders_as_the_real_emoji(page, live_server, seeded):
+    # A real bot/webhook message can carry literal ":game_die:" text instead
+    # of the resolved 🎲 glyph, since only Discord's own client (not bots)
+    # converts shortcodes to unicode before sending.
+    page.goto(f"{live_server}/board/{CHANNEL_ID}/continuous/page/1")
+
+    content = page.locator(f"#post-{UNRESOLVED_SHORTCODE_MESSAGE_ID} .post-content")
+    assert ":game_die:" not in content.inner_text()
+    assert "🎲" in content.inner_text()
+    assert content.locator('span[title=":game_die:"]').count() == 2
 
 
 def test_link_unfurl_thumbnail_renders_large_not_small_and_floated(page, live_server, seeded):
