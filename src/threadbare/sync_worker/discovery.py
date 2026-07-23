@@ -11,6 +11,7 @@ from "backfill its messages" into two passes (see ROADMAP.md).
 import discord
 
 from threadbare.sync_worker import repository, transform
+from threadbare.sync_worker.channel_overwrites import sync_channel_overwrites
 from threadbare.sync_worker.permissions import (
     everyone_overwrite,
     refresh_channel_public_status,
@@ -62,6 +63,7 @@ async def discover_channels(client: discord.Client, conn, *, guild_id: int) -> l
     # particular order.
     for category in categories:
         await repository.upsert_channel(conn, transform.channel_to_row(category, guild_id=guild.id))
+        await sync_channel_overwrites(conn, category)
 
     default_role_permissions = guild.default_role.permissions.value
     auto_index = await repository.get_auto_index_new_channels(conn)
@@ -71,6 +73,7 @@ async def discover_channels(client: discord.Client, conn, *, guild_id: int) -> l
         await repository.upsert_channel(
             conn, transform.channel_to_row(channel, guild_id=guild.id), indexed=auto_index
         )
+        await sync_channel_overwrites(conn, channel)
 
         category_overwrite = everyone_overwrite(channel.category) if channel.category else None
         await refresh_channel_public_status(
@@ -102,6 +105,32 @@ async def discover_roles(client: discord.Client, conn, *, guild_id: int) -> list
         discovered_ids.append(role.id)
 
     return discovered_ids
+
+
+async def discover_member_roles(client: discord.Client, conn, *, guild_id: int) -> int:
+    """Bulk-backfills every current member's role-ID list. Closes the one
+    remaining gap in "reflect Discord display-name changes"/username-color
+    (ROADMAP.md): handle_member_update only reacts to *future*
+    GUILD_MEMBER_UPDATE events, so a member who hasn't changed anything
+    since the bot connected has no `users` row (or a stale role_ids) at
+    all. Fresh REST pagination (fetch_members, not the gateway member
+    cache) -- same "don't trust cache" reasoning as
+    discover_channels'/discover_roles' own fresh fetch_channels()/
+    fetch_roles() calls. Unlike those, this is deliberately NOT re-run on
+    every reconnect (see bot.py) -- walking every member of a large guild
+    is real REST work a churny gateway connection shouldn't repeat
+    needlessly. Returns the number of members upserted.
+    """
+    guild = client.get_guild(guild_id) or await client.fetch_guild(guild_id)
+
+    count = 0
+    async for member in guild.fetch_members(limit=None):
+        await repository.upsert_user(conn, transform.user_to_row(member))
+        count += 1
+        if count % 200 == 0:
+            await conn.commit()
+
+    return count
 
 
 async def discover_active_threads(client: discord.Client, conn, *, guild_id: int) -> list[int]:

@@ -138,17 +138,20 @@ async def upsert_user(conn: psycopg.AsyncConnection, row: dict) -> None:
 
 
 async def upsert_role(conn: psycopg.AsyncConnection, row: dict) -> None:
-    """Insert a role, or update its mutable fields (name/color/position) if
-    already known -- mirrors upsert_channel's shape.
+    """Insert a role, or update its mutable fields (name/color/position/
+    permissions) if already known -- mirrors upsert_channel's shape.
+    Unlike upsert_channel's indexed/is_public split, permissions has no
+    mod-owned counterpart -- it's always safe to overwrite on conflict.
     """
     await conn.execute(
         """
-        INSERT INTO roles (id, guild_id, name, color, position)
-        VALUES (%(id)s, %(guild_id)s, %(name)s, %(color)s, %(position)s)
+        INSERT INTO roles (id, guild_id, name, color, position, permissions)
+        VALUES (%(id)s, %(guild_id)s, %(name)s, %(color)s, %(position)s, %(permissions)s)
         ON CONFLICT (id) DO UPDATE SET
             name = EXCLUDED.name,
             color = EXCLUDED.color,
-            position = EXCLUDED.position
+            position = EXCLUDED.position,
+            permissions = EXCLUDED.permissions
         """,
         row,
     )
@@ -156,6 +159,39 @@ async def upsert_role(conn: psycopg.AsyncConnection, row: dict) -> None:
 
 async def delete_role(conn: psycopg.AsyncConnection, role_id: int) -> None:
     await conn.execute("DELETE FROM roles WHERE id = %s", (role_id,))
+
+
+async def sync_channel_role_overwrites(
+    conn: psycopg.AsyncConnection, channel_id: int, rows: list[dict]
+) -> None:
+    """Replaces every stored role-tier overwrite for this channel with
+    exactly `rows` -- delete-then-bulk-insert, same "make it match exactly"
+    idiom as sync_message_embeds/sync_message_reactions, since a mod can
+    remove an overwrite on Discord, not just add one.
+    """
+    await conn.execute("DELETE FROM channel_role_overwrites WHERE channel_id = %s", (channel_id,))
+    for row in rows:
+        await conn.execute(
+            """
+            INSERT INTO channel_role_overwrites (channel_id, role_id, allow, deny)
+            VALUES (%(channel_id)s, %(role_id)s, %(allow)s, %(deny)s)
+            """,
+            row,
+        )
+
+
+async def sync_channel_member_overwrites(
+    conn: psycopg.AsyncConnection, channel_id: int, rows: list[dict]
+) -> None:
+    await conn.execute("DELETE FROM channel_member_overwrites WHERE channel_id = %s", (channel_id,))
+    for row in rows:
+        await conn.execute(
+            """
+            INSERT INTO channel_member_overwrites (channel_id, user_id, allow, deny)
+            VALUES (%(channel_id)s, %(user_id)s, %(allow)s, %(deny)s)
+            """,
+            row,
+        )
 
 
 async def upsert_message(conn: psycopg.AsyncConnection, row: dict) -> None:

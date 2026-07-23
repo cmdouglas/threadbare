@@ -118,35 +118,67 @@ async def test_upsert_role_inserts_a_new_row(db_conn):
     await _seed_guild_and_channel(db_conn)
 
     await repository.upsert_role(
-        db_conn, {"id": 111, "guild_id": 1, "name": "Moderators", "color": 0xFF0000, "position": 3}
+        db_conn,
+        {
+            "id": 111,
+            "guild_id": 1,
+            "name": "Moderators",
+            "color": 0xFF0000,
+            "position": 3,
+            "permissions": 0x800,
+        },
     )
 
     async with db_conn.cursor() as cur:
-        await cur.execute("SELECT name, color, position FROM roles WHERE id = 111")
+        await cur.execute("SELECT name, color, position, permissions FROM roles WHERE id = 111")
         row = await cur.fetchone()
-    assert row == {"name": "Moderators", "color": 0xFF0000, "position": 3}
+    assert row == {"name": "Moderators", "color": 0xFF0000, "position": 3, "permissions": 0x800}
 
 
 async def test_upsert_role_updates_mutable_fields_on_conflict(db_conn):
     await _seed_guild_and_channel(db_conn)
     await repository.upsert_role(
-        db_conn, {"id": 111, "guild_id": 1, "name": "Old Name", "color": 0, "position": 1}
+        db_conn,
+        {
+            "id": 111,
+            "guild_id": 1,
+            "name": "Old Name",
+            "color": 0,
+            "position": 1,
+            "permissions": 0,
+        },
     )
 
     await repository.upsert_role(
-        db_conn, {"id": 111, "guild_id": 1, "name": "New Name", "color": 0x00FF00, "position": 2}
+        db_conn,
+        {
+            "id": 111,
+            "guild_id": 1,
+            "name": "New Name",
+            "color": 0x00FF00,
+            "position": 2,
+            "permissions": 0x800,
+        },
     )
 
     async with db_conn.cursor() as cur:
-        await cur.execute("SELECT name, color, position FROM roles WHERE id = 111")
+        await cur.execute("SELECT name, color, position, permissions FROM roles WHERE id = 111")
         row = await cur.fetchone()
-    assert row == {"name": "New Name", "color": 0x00FF00, "position": 2}
+    assert row == {"name": "New Name", "color": 0x00FF00, "position": 2, "permissions": 0x800}
 
 
 async def test_delete_role_removes_the_row(db_conn):
     await _seed_guild_and_channel(db_conn)
     await repository.upsert_role(
-        db_conn, {"id": 111, "guild_id": 1, "name": "Moderators", "color": 0, "position": 1}
+        db_conn,
+        {
+            "id": 111,
+            "guild_id": 1,
+            "name": "Moderators",
+            "color": 0,
+            "position": 1,
+            "permissions": 0,
+        },
     )
 
     await repository.delete_role(db_conn, 111)

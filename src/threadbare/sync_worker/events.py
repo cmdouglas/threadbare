@@ -10,6 +10,7 @@ import discord
 
 from threadbare.sync_worker import repository, transform
 from threadbare.sync_worker.backfill import RepositoryBackfillSink
+from threadbare.sync_worker.channel_overwrites import sync_channel_overwrites
 from threadbare.sync_worker.discord_types import MessageLike, RoleLike, ThreadLike, UserLike
 from threadbare.sync_worker.permissions import (
     everyone_overwrite,
@@ -188,6 +189,12 @@ async def handle_channel_delete(conn, channel_id: int) -> None:
 
 
 async def handle_channel_permissions_changed(conn, channel: discord.abc.GuildChannel) -> None:
+    """Fired on CHANNEL_UPDATE (via handle_channel_upsert's caller) and
+    CHANNEL_CREATE (handle_channel_create below) -- exactly the two live
+    events where a channel's permission overwrites can change. Recomputes
+    is_public (the @everyone-only case) and, since Phase 2, also re-syncs
+    the full stored role/member overwrite tables to match Discord exactly.
+    """
     category_overwrite = everyone_overwrite(channel.category) if channel.category else None
     await refresh_channel_public_status(
         conn,
@@ -196,6 +203,7 @@ async def handle_channel_permissions_changed(conn, channel: discord.abc.GuildCha
         category_overwrite=category_overwrite,
         channel_overwrite=everyone_overwrite(channel),
     )
+    await sync_channel_overwrites(conn, channel)
 
 
 async def handle_role_permissions_changed(conn, guild: discord.Guild) -> None:

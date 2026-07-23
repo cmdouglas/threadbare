@@ -114,3 +114,95 @@ async def test_get_auto_index_new_channels_returns_the_stored_value(db_conn):
     )
 
     assert await repository.get_auto_index_new_channels(db_conn) is False
+
+
+async def _seed_guild_channel_role_and_user(db_conn):
+    await repository.upsert_guild(db_conn, {"id": 1, "name": "Test Guild", "icon": None})
+    await repository.upsert_channel(db_conn, _channel_row())
+    await repository.upsert_role(
+        db_conn,
+        {"id": 500, "guild_id": 1, "name": "Mods", "color": 0, "position": 1, "permissions": 0},
+    )
+    await repository.upsert_user(
+        db_conn,
+        {
+            "id": 900,
+            "display_name": "someone",
+            "avatar_hash": None,
+            "is_bot": False,
+            "role_ids": [],
+        },
+    )
+
+
+async def test_sync_channel_role_overwrites_inserts_rows(db_conn):
+    await _seed_guild_channel_role_and_user(db_conn)
+
+    await repository.sync_channel_role_overwrites(
+        db_conn, 10, [{"channel_id": 10, "role_id": 500, "allow": 0x400, "deny": 0x800}]
+    )
+
+    async with db_conn.cursor() as cur:
+        await cur.execute(
+            "SELECT role_id, allow, deny FROM channel_role_overwrites WHERE channel_id = 10"
+        )
+        rows = await cur.fetchall()
+    assert rows == [{"role_id": 500, "allow": 0x400, "deny": 0x800}]
+
+
+async def test_sync_channel_role_overwrites_replaces_prior_rows_exactly(db_conn):
+    await _seed_guild_channel_role_and_user(db_conn)
+    await repository.sync_channel_role_overwrites(
+        db_conn, 10, [{"channel_id": 10, "role_id": 500, "allow": 0x400, "deny": 0x800}]
+    )
+
+    # A later call with an empty list means "no overwrites anymore" -- the
+    # previously-stored row must be gone, not left behind.
+    await repository.sync_channel_role_overwrites(db_conn, 10, [])
+
+    async with db_conn.cursor() as cur:
+        await cur.execute("SELECT count(*) AS n FROM channel_role_overwrites WHERE channel_id = 10")
+        assert (await cur.fetchone())["n"] == 0
+
+
+async def test_sync_channel_role_overwrites_cascades_on_role_delete(db_conn):
+    await _seed_guild_channel_role_and_user(db_conn)
+    await repository.sync_channel_role_overwrites(
+        db_conn, 10, [{"channel_id": 10, "role_id": 500, "allow": 0x400, "deny": 0x800}]
+    )
+
+    await repository.delete_role(db_conn, 500)
+
+    async with db_conn.cursor() as cur:
+        await cur.execute("SELECT count(*) AS n FROM channel_role_overwrites WHERE channel_id = 10")
+        assert (await cur.fetchone())["n"] == 0
+
+
+async def test_sync_channel_member_overwrites_inserts_rows(db_conn):
+    await _seed_guild_channel_role_and_user(db_conn)
+
+    await repository.sync_channel_member_overwrites(
+        db_conn, 10, [{"channel_id": 10, "user_id": 900, "allow": 0x1, "deny": 0x2}]
+    )
+
+    async with db_conn.cursor() as cur:
+        await cur.execute(
+            "SELECT user_id, allow, deny FROM channel_member_overwrites WHERE channel_id = 10"
+        )
+        rows = await cur.fetchall()
+    assert rows == [{"user_id": 900, "allow": 0x1, "deny": 0x2}]
+
+
+async def test_sync_channel_member_overwrites_replaces_prior_rows_exactly(db_conn):
+    await _seed_guild_channel_role_and_user(db_conn)
+    await repository.sync_channel_member_overwrites(
+        db_conn, 10, [{"channel_id": 10, "user_id": 900, "allow": 0x1, "deny": 0x2}]
+    )
+
+    await repository.sync_channel_member_overwrites(db_conn, 10, [])
+
+    async with db_conn.cursor() as cur:
+        await cur.execute(
+            "SELECT count(*) AS n FROM channel_member_overwrites WHERE channel_id = 10"
+        )
+        assert (await cur.fetchone())["n"] == 0

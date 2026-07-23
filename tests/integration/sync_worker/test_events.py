@@ -418,6 +418,7 @@ class FakeGuildChannelForOverwrites:
         allow=0,
         deny=0,
         type=discord.ChannelType.text,
+        overwrites=None,
     ):
         self.id = id
         self.guild = guild
@@ -432,6 +433,7 @@ class FakeGuildChannelForOverwrites:
         self.type = type
         self._allow = allow
         self._deny = deny
+        self.overwrites = overwrites if overwrites is not None else {}
 
     def overwrites_for(self, role):
         return FakePermissionPair(self._allow, self._deny)
@@ -440,6 +442,17 @@ class FakeGuildChannelForOverwrites:
 class FakeRole:
     def __init__(self, permissions_value: int):
         self.permissions = type("Perms", (), {"value": permissions_value})()
+
+
+class FakeOverwriteTargetRole(discord.Role):
+    """Subclasses the real discord.Role for isinstance purposes -- see
+    tests/unit/sync_worker/test_transform.py's identical fake for why a
+    duck-typed double wouldn't exercise channel_overwrite_rows' real
+    isinstance branch.
+    """
+
+    def __init__(self, id):
+        self.id = id
 
 
 class FakeGuild:
@@ -474,6 +487,50 @@ async def test_handle_channel_permissions_changed_purges_on_revoke(db_conn):
     assert await repository.get_channel_is_public(db_conn, 10) is False
     async with db_conn.cursor() as cur:
         await cur.execute("SELECT count(*) AS n FROM messages WHERE channel_id = 10")
+        assert (await cur.fetchone())["n"] == 0
+
+
+async def test_handle_channel_permissions_changed_syncs_role_overwrites(db_conn):
+    await _seed_guild_and_channel(db_conn, is_public=False)
+    await db_conn.execute(
+        "INSERT INTO roles (id, guild_id, name, color, position, permissions) "
+        "VALUES (500, 1, 'Mods', 0, 0, 0)"
+    )
+    guild = FakeGuild(default_role=FakeRole(BOTH_REQUIRED), channels=[])
+    overwrite_role = FakeOverwriteTargetRole(id=500)
+    channel = FakeGuildChannelForOverwrites(
+        id=10, guild=guild, overwrites={overwrite_role: FakePermissionPair(0x400, 0x800)}
+    )
+
+    await events.handle_channel_permissions_changed(db_conn, channel)
+
+    async with db_conn.cursor() as cur:
+        await cur.execute(
+            "SELECT allow, deny FROM channel_role_overwrites "
+            "WHERE channel_id = 10 AND role_id = 500"
+        )
+        row = await cur.fetchone()
+    assert row == {"allow": 0x400, "deny": 0x800}
+
+
+async def test_handle_channel_permissions_changed_removes_overwrites_no_longer_present(db_conn):
+    await _seed_guild_and_channel(db_conn, is_public=False)
+    await db_conn.execute(
+        "INSERT INTO roles (id, guild_id, name, color, position, permissions) "
+        "VALUES (500, 1, 'Mods', 0, 0, 0)"
+    )
+    guild = FakeGuild(default_role=FakeRole(BOTH_REQUIRED), channels=[])
+    overwrite_role = FakeOverwriteTargetRole(id=500)
+    channel = FakeGuildChannelForOverwrites(
+        id=10, guild=guild, overwrites={overwrite_role: FakePermissionPair(0x400, 0x800)}
+    )
+    await events.handle_channel_permissions_changed(db_conn, channel)
+
+    channel.overwrites = {}  # the mod removed the overwrite on Discord
+    await events.handle_channel_permissions_changed(db_conn, channel)
+
+    async with db_conn.cursor() as cur:
+        await cur.execute("SELECT count(*) AS n FROM channel_role_overwrites WHERE channel_id = 10")
         assert (await cur.fetchone())["n"] == 0
 
 
@@ -665,6 +722,40 @@ async def test_handle_role_permissions_changed_recomputes_every_channel(db_conn)
     # the category itself was skipped, not blown up on (it has no row to update)
 
 
+async def test_handle_role_permissions_changed_does_not_touch_overwrite_tables(db_conn):
+    # A role's own permissions/name/color changing never changes which
+    # channels have an overwrite for it -- this recompute loop stays scoped
+    # to is_public, guarding against accidentally over-scoping it later to
+    # also re-sync overwrites (which handle_channel_permissions_changed
+    # already owns, on the events that actually change them).
+    await db_conn.execute("INSERT INTO guilds (id, name) VALUES (%s, %s)", (1, "Test Guild"))
+    await db_conn.execute(
+        "INSERT INTO channels (id, guild_id, type, name, is_public) "
+        "VALUES (10, 1, 0, 'general', true)"
+    )
+    await db_conn.execute(
+        "INSERT INTO roles (id, guild_id, name, color, position, permissions) "
+        "VALUES (500, 1, 'Mods', 0, 0, 0)"
+    )
+    await db_conn.execute(
+        "INSERT INTO channel_role_overwrites (channel_id, role_id, allow, deny) "
+        "VALUES (10, 500, 1024, 2048)"
+    )
+    role = FakeRole(BOTH_REQUIRED)
+    guild = FakeGuild(default_role=role, channels=[])
+    guild.channels = [FakeGuildChannelForOverwrites(id=10, guild=guild)]
+
+    await events.handle_role_permissions_changed(db_conn, guild)
+
+    async with db_conn.cursor() as cur:
+        await cur.execute(
+            "SELECT allow, deny FROM channel_role_overwrites "
+            "WHERE channel_id = 10 AND role_id = 500"
+        )
+        row = await cur.fetchone()
+    assert row == {"allow": 1024, "deny": 2048}
+
+
 @dataclass
 class FakeColour:
     value: int
@@ -676,18 +767,25 @@ class FakeDiscordRole:
     name: str = "a role"
     color: FakeColour = field(default_factory=lambda: FakeColour(value=0))
     position: int = 0
+    permissions: FakeColour = field(default_factory=lambda: FakeColour(value=0))
 
 
 async def test_handle_role_upsert_inserts_a_new_row(db_conn):
     await db_conn.execute("INSERT INTO guilds (id, name) VALUES (%s, %s)", (1, "Test Guild"))
-    role = FakeDiscordRole(id=111, name="Moderators", color=FakeColour(value=0xFF0000), position=3)
+    role = FakeDiscordRole(
+        id=111,
+        name="Moderators",
+        color=FakeColour(value=0xFF0000),
+        position=3,
+        permissions=FakeColour(value=0x800),
+    )
 
     await events.handle_role_upsert(db_conn, role, guild_id=1)
 
     async with db_conn.cursor() as cur:
-        await cur.execute("SELECT name, color, position FROM roles WHERE id = 111")
+        await cur.execute("SELECT name, color, position, permissions FROM roles WHERE id = 111")
         row = await cur.fetchone()
-    assert row == {"name": "Moderators", "color": 0xFF0000, "position": 3}
+    assert row == {"name": "Moderators", "color": 0xFF0000, "position": 3, "permissions": 0x800}
 
 
 async def test_handle_role_delete_removes_the_row(db_conn):

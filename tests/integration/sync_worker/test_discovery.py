@@ -7,6 +7,7 @@ from threadbare.sync_worker import repository
 from threadbare.sync_worker.discovery import (
     discover_active_threads,
     discover_channels,
+    discover_member_roles,
     discover_roles,
 )
 from threadbare.sync_worker.permissions import READ_MESSAGE_HISTORY, VIEW_CHANNEL
@@ -39,6 +40,7 @@ class FakeChannel:
         position=0,
         allow=0,
         deny=0,
+        overwrites=None,
     ):
         self.id = id
         self.name = name
@@ -50,6 +52,7 @@ class FakeChannel:
         self.position = position
         self._allow = allow
         self._deny = deny
+        self.overwrites = overwrites if overwrites is not None else {}
 
     def overwrites_for(self, role):
         return FakePermissionPair(self._allow, self._deny)
@@ -61,7 +64,9 @@ class FakeRole:
 
 
 class FakeGuild:
-    def __init__(self, *, id, name, default_role, channels, icon=None, threads=(), roles=()):
+    def __init__(
+        self, *, id, name, default_role, channels, icon=None, threads=(), roles=(), members=()
+    ):
         self.id = id
         self.name = name
         self.default_role = default_role
@@ -69,6 +74,7 @@ class FakeGuild:
         self.icon = icon
         self._threads = list(threads)
         self._roles = list(roles)
+        self._members = list(members)
 
     async def fetch_channels(self):
         return self._channels
@@ -78,6 +84,10 @@ class FakeGuild:
 
     async def fetch_roles(self):
         return self._roles
+
+    async def fetch_members(self, *, limit=None):
+        for member in self._members:
+            yield member
 
 
 @dataclass
@@ -91,6 +101,7 @@ class FakeGuildRole:
     name: str = "a role"
     color: FakeColour = field(default_factory=lambda: FakeColour(value=0))
     position: int = 0
+    permissions: FakeColour = field(default_factory=lambda: FakeColour(value=0))
 
 
 @dataclass
@@ -231,6 +242,107 @@ async def test_discover_channels_computes_is_public_for_forum_channels_like_any_
     assert row["is_public"] is True
 
 
+class FakeOverwriteTargetRole(discord.Role):
+    """Subclasses the real discord.Role for isinstance purposes -- see
+    tests/unit/sync_worker/test_transform.py's identical fake for why a
+    duck-typed double wouldn't exercise channel_overwrite_rows' real
+    isinstance branch.
+    """
+
+    def __init__(self, id):
+        self.id = id
+
+
+async def test_discover_channels_persists_role_tier_overwrites_for_channels_and_categories(
+    db_conn,
+):
+    role = FakeRole(BOTH_REQUIRED)
+    guild = FakeGuild(
+        id=1,
+        name="Test Guild",
+        default_role=role,
+        channels=[],
+        roles=[FakeGuildRole(id=500, name="Mods")],
+    )
+    overwrite_role = FakeOverwriteTargetRole(id=500)
+    category = FakeChannel(
+        id=99,
+        name="Category",
+        guild=guild,
+        type=discord.ChannelType.category,
+        overwrites={overwrite_role: FakePermissionPair(0x100, 0x200)},
+    )
+    channel = FakeChannel(
+        id=10,
+        name="general",
+        guild=guild,
+        category=category,
+        overwrites={overwrite_role: FakePermissionPair(0x400, 0x800)},
+    )
+    guild._channels = [category, channel]
+    client = FakeClient(guild)
+    # discover_roles must run first in real usage (bot.py's on_ready) so the
+    # role-tier overwrite's FK target already exists -- mirrored here.
+    await db_conn.execute("INSERT INTO guilds (id, name) VALUES (%s, %s)", (1, "Test Guild"))
+    await discover_roles(client, db_conn, guild_id=1)
+
+    await discover_channels(client, db_conn, guild_id=1)
+
+    async with db_conn.cursor() as cur:
+        await cur.execute(
+            "SELECT allow, deny FROM channel_role_overwrites "
+            "WHERE channel_id = 99 AND role_id = 500"
+        )
+        category_row = await cur.fetchone()
+        await cur.execute(
+            "SELECT allow, deny FROM channel_role_overwrites "
+            "WHERE channel_id = 10 AND role_id = 500"
+        )
+        channel_row = await cur.fetchone()
+    assert category_row == {"allow": 0x100, "deny": 0x200}
+    assert channel_row == {"allow": 0x400, "deny": 0x800}
+
+
+async def test_discover_roles_before_discover_channels_avoids_an_fk_violation_on_role_overwrites(
+    db_conn,
+):
+    # Regression test for the on_ready reordering fix: discover_channels now
+    # persists each channel's role-tier overwrites, which FK-reference
+    # roles.id -- if discover_channels ran before discover_roles (the old
+    # order), a fresh connect referencing a role not yet in `roles` would
+    # raise a ForeignKeyViolation immediately.
+    role = FakeRole(BOTH_REQUIRED)
+    overwrite_role = FakeOverwriteTargetRole(id=500)
+    guild = FakeGuild(
+        id=1,
+        name="Test Guild",
+        default_role=role,
+        channels=[],
+        roles=[FakeGuildRole(id=500, name="Mods")],
+    )
+    channel = FakeChannel(
+        id=10,
+        name="general",
+        guild=guild,
+        overwrites={overwrite_role: FakePermissionPair(0x400, 0x800)},
+    )
+    guild._channels = [channel]
+    client = FakeClient(guild)
+    await db_conn.execute("INSERT INTO guilds (id, name) VALUES (%s, %s)", (1, "Test Guild"))
+
+    # The correct order (roles before channels) -- must not raise.
+    await discover_roles(client, db_conn, guild_id=1)
+    await discover_channels(client, db_conn, guild_id=1)
+
+    async with db_conn.cursor() as cur:
+        await cur.execute(
+            "SELECT allow, deny FROM channel_role_overwrites "
+            "WHERE channel_id = 10 AND role_id = 500"
+        )
+        row = await cur.fetchone()
+    assert row == {"allow": 0x400, "deny": 0x800}
+
+
 async def test_discover_channels_does_not_clobber_indexed_on_rediscovery(db_conn):
     role = FakeRole(BOTH_REQUIRED)
     guild = FakeGuild(id=1, name="Test Guild", default_role=role, channels=[])
@@ -364,7 +476,13 @@ async def test_discover_roles_upserts_every_guild_role(db_conn):
         channels=[],
         roles=[
             FakeGuildRole(id=1, name="@everyone", color=FakeColour(value=0), position=0),
-            FakeGuildRole(id=111, name="Moderators", color=FakeColour(value=0xFF0000), position=3),
+            FakeGuildRole(
+                id=111,
+                name="Moderators",
+                color=FakeColour(value=0xFF0000),
+                position=3,
+                permissions=FakeColour(value=0x800),
+            ),
         ],
     )
     client = FakeClient(guild)
@@ -374,9 +492,15 @@ async def test_discover_roles_upserts_every_guild_role(db_conn):
 
     assert set(discovered) == {1, 111}
     async with db_conn.cursor() as cur:
-        await cur.execute("SELECT id, name, color, position FROM roles WHERE id = 111")
+        await cur.execute("SELECT id, name, color, position, permissions FROM roles WHERE id = 111")
         row = await cur.fetchone()
-    assert row == {"id": 111, "name": "Moderators", "color": 0xFF0000, "position": 3}
+    assert row == {
+        "id": 111,
+        "name": "Moderators",
+        "color": 0xFF0000,
+        "position": 3,
+        "permissions": 0x800,
+    }
 
 
 async def test_discover_roles_is_safe_to_call_repeatedly(db_conn):
@@ -401,3 +525,58 @@ async def test_discover_roles_is_safe_to_call_repeatedly(db_conn):
         await cur.execute("SELECT name, color, position FROM roles WHERE id = 111")
         row = await cur.fetchone()
     assert row == {"name": "New Name", "color": 0x00FF00, "position": 2}
+
+
+@dataclass
+class FakeGuildMember:
+    id: int
+    display_name: str = "someone"
+    avatar: object | None = None
+    bot: bool = False
+    guild: object | None = None
+    roles: list = field(default_factory=list)
+
+
+async def test_discover_member_roles_upserts_a_member_who_has_never_posted(db_conn):
+    # The exact gap this closes: handle_member_update only reacts to future
+    # GUILD_MEMBER_UPDATE events, so a member who's never posted or changed
+    # anything since the bot connected would otherwise have no users row
+    # (or a stale role_ids) at all.
+    role = FakeRole(BOTH_REQUIRED)
+    guild = FakeGuild(
+        id=1,
+        name="Test Guild",
+        default_role=role,
+        channels=[],
+        members=[FakeGuildMember(id=900, display_name="lurker", roles=[])],
+    )
+    client = FakeClient(guild)
+    await db_conn.execute("INSERT INTO guilds (id, name) VALUES (%s, %s)", (1, "Test Guild"))
+
+    count = await discover_member_roles(client, db_conn, guild_id=1)
+
+    assert count == 1
+    async with db_conn.cursor() as cur:
+        await cur.execute("SELECT display_name, role_ids FROM users WHERE id = 900")
+        row = await cur.fetchone()
+    assert row == {"display_name": "lurker", "role_ids": []}
+
+
+async def test_discover_member_roles_persists_each_members_current_roles(db_conn):
+    guild_obj = FakeGuild(
+        id=1, name="Test Guild", default_role=FakeRole(BOTH_REQUIRED), channels=[]
+    )
+    member = FakeGuildMember(
+        id=901, guild=guild_obj, roles=[FakeGuildRole(id=1), FakeGuildRole(id=500)]
+    )
+    guild_obj._members = [member]
+    client = FakeClient(guild_obj)
+    await db_conn.execute("INSERT INTO guilds (id, name) VALUES (%s, %s)", (1, "Test Guild"))
+
+    await discover_member_roles(client, db_conn, guild_id=1)
+
+    async with db_conn.cursor() as cur:
+        await cur.execute("SELECT role_ids FROM users WHERE id = 901")
+        row = await cur.fetchone()
+    # role id 1 == guild id is excluded (the synthetic @everyone role).
+    assert row["role_ids"] == [500]

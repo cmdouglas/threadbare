@@ -59,7 +59,42 @@ def role_to_row(role: RoleLike, *, guild_id: int) -> dict:
         "name": role.name,
         "color": role.color.value,
         "position": role.position,
+        "permissions": role.permissions.value,
     }
+
+
+def channel_overwrite_rows(channel_id: int, overwrites: dict) -> tuple[list[dict], list[dict]]:
+    """Splits a live channel/category's .overwrites dict ({Role|Member:
+    PermissionOverwrite}) into (role_rows, member_rows) ready for
+    repository.sync_channel_role_overwrites/sync_channel_member_overwrites.
+    Pure, no I/O -- targets are distinguished via isinstance(target,
+    discord.Role) rather than a Protocol, since the role/member split is
+    inherently a discord.py-specific concept (mirrors everyone_overwrite's
+    similar discord.py-specific extraction in sync_worker/permissions.py).
+    """
+    role_rows = []
+    member_rows = []
+    for target, overwrite in overwrites.items():
+        allow, deny = overwrite.pair()
+        if isinstance(target, discord.Role):
+            role_rows.append(
+                {
+                    "channel_id": channel_id,
+                    "role_id": target.id,
+                    "allow": allow.value,
+                    "deny": deny.value,
+                }
+            )
+        else:
+            member_rows.append(
+                {
+                    "channel_id": channel_id,
+                    "user_id": target.id,
+                    "allow": allow.value,
+                    "deny": deny.value,
+                }
+            )
+    return role_rows, member_rows
 
 
 def channel_to_row(channel: ChannelLike, *, guild_id: int) -> dict:

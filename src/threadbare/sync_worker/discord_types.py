@@ -119,6 +119,9 @@ class RoleLike(Protocol):
     # EmbedLike.color) -- .value is the int, 0 meaning "no custom color".
     color: object
     position: int
+    # discord.py's Permissions object; only .value (the raw bitfield int)
+    # is ever read, same convention as color above.
+    permissions: object
 
 
 class ChannelLike(Protocol):

@@ -5,6 +5,7 @@ import discord
 
 from threadbare.sync_worker.transform import (
     attachment_to_row,
+    channel_overwrite_rows,
     channel_to_row,
     embed_to_row,
     message_to_row,
@@ -38,6 +39,7 @@ class FakeRole:
     name: str = "a role"
     color: object = None
     position: int = 0
+    permissions: object = field(default_factory=lambda: FakeColour(value=0))
 
 
 @dataclass
@@ -437,7 +439,13 @@ def test_thread_to_row_maps_basic_fields():
 
 
 def test_role_to_row():
-    role = FakeRole(id=111, name="Moderators", color=FakeColour(value=0xFF0000), position=3)
+    role = FakeRole(
+        id=111,
+        name="Moderators",
+        color=FakeColour(value=0xFF0000),
+        position=3,
+        permissions=FakeColour(value=0x800),
+    )
 
     row = role_to_row(role, guild_id=999)
 
@@ -447,7 +455,52 @@ def test_role_to_row():
         "name": "Moderators",
         "color": 0xFF0000,
         "position": 3,
+        "permissions": 0x800,
     }
+
+
+class FakeOverwriteTargetRole(discord.Role):
+    """Subclasses the real discord.Role for isinstance purposes -- a plain
+    duck-typed fake would defeat the exact isinstance(target, discord.Role)
+    branch channel_overwrite_rows relies on to split role- vs. member-tier
+    overwrites, same reasoning as FakeForumChannel elsewhere in this
+    project.
+    """
+
+    def __init__(self, id):
+        self.id = id
+
+
+@dataclass(eq=False)
+class FakeOverwriteTargetMember:
+    id: int
+
+
+@dataclass
+class FakePermissionPair:
+    allow: FakeColour
+    deny: FakeColour
+
+    def pair(self):
+        return self.allow, self.deny
+
+
+def test_channel_overwrite_rows_splits_role_and_member_targets():
+    role = FakeOverwriteTargetRole(id=111)
+    member = FakeOverwriteTargetMember(id=222)
+    overwrites = {
+        role: FakePermissionPair(FakeColour(value=0x400), FakeColour(value=0x800)),
+        member: FakePermissionPair(FakeColour(value=0x1), FakeColour(value=0x2)),
+    }
+
+    role_rows, member_rows = channel_overwrite_rows(10, overwrites)
+
+    assert role_rows == [{"channel_id": 10, "role_id": 111, "allow": 0x400, "deny": 0x800}]
+    assert member_rows == [{"channel_id": 10, "user_id": 222, "allow": 0x1, "deny": 0x2}]
+
+
+def test_channel_overwrite_rows_returns_empty_lists_for_no_overwrites():
+    assert channel_overwrite_rows(10, {}) == ([], [])
 
 
 def test_thread_to_row_falls_back_to_snowflake_time_when_created_at_is_none():

@@ -11,6 +11,7 @@ from threadbare.sync_worker.backfill import backfill_guild
 from threadbare.sync_worker.discovery import (
     discover_active_threads,
     discover_channels,
+    discover_member_roles,
     discover_roles,
 )
 from threadbare.sync_worker.heartbeat import heartbeat_loop
@@ -34,6 +35,18 @@ def _log_if_failed(task: asyncio.Task, *, name: str) -> None:
     exc = task.exception()
     if exc is not None:
         logger.error("%s task crashed", name, exc_info=exc)
+
+
+async def _run_member_role_backfill(
+    client: discord.Client, pool: AsyncConnectionPool, *, guild_id: int
+) -> None:
+    """Thin wrapper opening its own pool connection, same shape as
+    backfill_guild/reconciliation_loop's own callers -- lets
+    discover_member_roles itself take a plain conn, matching
+    discover_channels/discover_roles's signature.
+    """
+    async with pool.connection() as conn:
+        await discover_member_roles(client, conn, guild_id=guild_id)
 
 
 async def _resolve_container(
@@ -91,25 +104,40 @@ class ThreadbareClient(discord.Client):
         self._backfill_task: asyncio.Task | None = None
         self._reconciliation_task: asyncio.Task | None = None
         self._heartbeat_task: asyncio.Task | None = None
+        self._member_role_backfill_task: asyncio.Task | None = None
 
     async def on_ready(self) -> None:
         if self.pool is None:
             return
 
         # Runs every time (including reconnects), not guarded — cheap (one
-        # fetch_channels() call plus a few upserts) and self-healing for
-        # channels created while briefly disconnected. Reconciliation's
-        # first pass needs these rows to already exist, so this is awaited
-        # directly rather than backgrounded.
+        # fetch_channels()/fetch_roles() call plus a few upserts) and
+        # self-healing for channels/roles created while briefly
+        # disconnected. Reconciliation's first pass needs these rows to
+        # already exist, so this is awaited directly rather than
+        # backgrounded. Roles run first -- since Phase 2, discover_channels
+        # also persists each channel's role-tier overwrites, which FK-
+        # reference roles.id, so those rows must exist first.
         async with self.pool.connection() as conn:
+            await discover_roles(self, conn, guild_id=self.guild_id)
             await discover_channels(self, conn, guild_id=self.guild_id)
             # Active-thread discovery needs channel rows to already exist
             # (it looks up each thread's parent's sync flags), so it runs
             # after, same connection/transaction.
             await discover_active_threads(self, conn, guild_id=self.guild_id)
-            # No ordering dependency with the above -- roles are unrelated
-            # to channels/threads.
-            await discover_roles(self, conn, guild_id=self.guild_id)
+
+        # Bulk member-role backfill is real REST pagination work for a large
+        # guild, unlike the cheap metadata calls above -- backgrounded and
+        # guarded against re-firing on reconnects, same reasoning as
+        # _backfill_task below. Individual members are kept fresh
+        # afterward by on_member_update, unchanged.
+        if self._member_role_backfill_task is None:
+            self._member_role_backfill_task = asyncio.create_task(
+                _run_member_role_backfill(self, self.pool, guild_id=self.guild_id)
+            )
+            self._member_role_backfill_task.add_done_callback(
+                partial(_log_if_failed, name="member_role_backfill")
+            )
 
         # The rest are guarded against re-firing on reconnects — these loops
         # already run forever once started.
