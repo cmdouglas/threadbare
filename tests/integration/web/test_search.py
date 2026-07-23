@@ -1,14 +1,31 @@
+from threadbare.discord_permissions import READ_MESSAGE_HISTORY, VIEW_CHANNEL
+
 from .conftest import run
 
+BOTH_REQUIRED = VIEW_CHANNEL | READ_MESSAGE_HISTORY
 
-async def _seed_guild_and_channel(conn, *, guild_id=1, channel_id=10):
+
+async def _seed_guild_and_channel(
+    conn, *, guild_id=1, channel_id=10, is_public=True, visibility_enrolled=False
+):
     await conn.execute("INSERT INTO guilds (id, name) VALUES (%s, %s)", (guild_id, "Test Guild"))
     await conn.execute(
         """
-        INSERT INTO channels (id, guild_id, type, name, is_public, indexed)
-        VALUES (%s, %s, 0, 'general', true, true)
+        INSERT INTO channels
+            (id, guild_id, type, name, is_public, indexed, visibility_enrolled)
+        VALUES (%s, %s, 0, 'general', %s, true, %s)
         """,
-        (channel_id, guild_id),
+        (channel_id, guild_id, is_public, visibility_enrolled),
+    )
+
+
+async def _seed_role(
+    conn, *, role_id, guild_id=1, name="a role", color=0, position=0, permissions=0
+):
+    await conn.execute(
+        "INSERT INTO roles (id, guild_id, name, color, position, permissions) "
+        "VALUES (%s, %s, %s, %s, %s, %s)",
+        (role_id, guild_id, name, color, position, permissions),
     )
 
 
@@ -65,6 +82,38 @@ def test_search_result_links_into_context(client, web_conn):
     resp = client.get("/search?q=pizza")
 
     assert b"/board/10/continuous/page/1#post-1" in resp.data
+
+
+def test_search_shows_results_from_an_enrolled_non_public_channel_when_visible(client, web_conn):
+    run(_seed_guild_and_channel(web_conn, is_public=False, visibility_enrolled=True))
+    run(_seed_role(web_conn, role_id=1, permissions=BOTH_REQUIRED))  # @everyone
+    run(_seed_user(web_conn, user_id=100, display_name="alice"))
+    run(
+        _seed_message(
+            web_conn, message_id=1, channel_id=10, author_id=100, content="a pizza recipe"
+        )
+    )
+
+    resp = client.get("/search?q=pizza")
+
+    assert b"1 result" in resp.data
+
+
+def test_search_hides_results_from_an_enrolled_non_public_channel_when_not_visible(
+    client, web_conn
+):
+    run(_seed_guild_and_channel(web_conn, is_public=False, visibility_enrolled=True))
+    run(_seed_role(web_conn, role_id=1))  # @everyone, no permissions
+    run(_seed_user(web_conn, user_id=100, display_name="alice"))
+    run(
+        _seed_message(
+            web_conn, message_id=1, channel_id=10, author_id=100, content="a pizza recipe"
+        )
+    )
+
+    resp = client.get("/search?q=pizza")
+
+    assert b"0 results" in resp.data
 
 
 def test_search_with_no_matches(client, web_conn):

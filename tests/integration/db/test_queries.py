@@ -497,7 +497,7 @@ async def test_search_messages_matches_full_text(db_conn):
         db_conn, message_id=2, channel_id=10, author_id=100, content="unrelated content"
     )
 
-    rows = await queries.search_messages(db_conn, query="pizza")
+    rows = await queries.search_messages(db_conn, query="pizza", visible_channel_ids=set())
 
     assert [r["id"] for r in rows] == [1]
     assert "snippet" in rows[0]
@@ -510,7 +510,9 @@ async def test_search_messages_filters_by_author(db_conn):
     await _seed_message(db_conn, message_id=1, channel_id=10, author_id=100, content="pizza time")
     await _seed_message(db_conn, message_id=2, channel_id=10, author_id=101, content="pizza too")
 
-    rows = await queries.search_messages(db_conn, query="pizza", author="ali")
+    rows = await queries.search_messages(
+        db_conn, query="pizza", author="ali", visible_channel_ids=set()
+    )
 
     assert [r["id"] for r in rows] == [1]
 
@@ -526,7 +528,9 @@ async def test_search_messages_filters_by_channel_including_child_threads(db_con
     )
     await _seed_message(db_conn, message_id=3, channel_id=11, author_id=100, content="pizza c")
 
-    rows = await queries.search_messages(db_conn, query="pizza", channel_id=10)
+    rows = await queries.search_messages(
+        db_conn, query="pizza", channel_id=10, visible_channel_ids=set()
+    )
 
     assert {r["id"] for r in rows} == {1, 2}
 
@@ -541,7 +545,9 @@ async def test_search_messages_filters_by_date_range(db_conn):
         db_conn, message_id=2, channel_id=10, author_id=100, content="pizza new", posted_at=T3
     )
 
-    rows = await queries.search_messages(db_conn, query="pizza", after=T2)
+    rows = await queries.search_messages(
+        db_conn, query="pizza", after=T2, visible_channel_ids=set()
+    )
 
     assert [r["id"] for r in rows] == [2]
 
@@ -552,7 +558,35 @@ async def test_search_messages_excludes_non_indexed_channels(db_conn):
     await _seed_user(db_conn, user_id=100, display_name="alice")
     await _seed_message(db_conn, message_id=1, channel_id=10, author_id=100, content="pizza")
 
-    assert await queries.search_messages(db_conn, query="pizza") == []
+    assert await queries.search_messages(db_conn, query="pizza", visible_channel_ids=set()) == []
+
+
+async def test_search_messages_includes_enrolled_non_public_channel_when_visible(db_conn):
+    await _seed_guild_and_channel(db_conn, channel_id=10, is_public=False)
+    await db_conn.execute("UPDATE channels SET visibility_enrolled = true WHERE id = 10")
+    await _seed_user(db_conn, user_id=100, display_name="alice")
+    await _seed_message(db_conn, message_id=1, channel_id=10, author_id=100, content="pizza")
+
+    rows = await queries.search_messages(db_conn, query="pizza", visible_channel_ids={10})
+
+    assert [r["id"] for r in rows] == [1]
+
+
+async def test_search_messages_excludes_enrolled_non_public_channel_when_not_visible(db_conn):
+    await _seed_guild_and_channel(db_conn, channel_id=10, is_public=False)
+    await db_conn.execute("UPDATE channels SET visibility_enrolled = true WHERE id = 10")
+    await _seed_user(db_conn, user_id=100, display_name="alice")
+    await _seed_message(db_conn, message_id=1, channel_id=10, author_id=100, content="pizza")
+
+    assert await queries.search_messages(db_conn, query="pizza", visible_channel_ids=set()) == []
+
+
+async def test_search_messages_ignores_visible_ids_for_a_non_enrolled_channel(db_conn):
+    await _seed_guild_and_channel(db_conn, channel_id=10, is_public=False)
+    await _seed_user(db_conn, user_id=100, display_name="alice")
+    await _seed_message(db_conn, message_id=1, channel_id=10, author_id=100, content="pizza")
+
+    assert await queries.search_messages(db_conn, query="pizza", visible_channel_ids={10}) == []
 
 
 async def test_search_messages_preceding_count_reflects_position_in_container(db_conn):
@@ -564,7 +598,7 @@ async def test_search_messages_preceding_count_reflects_position_in_container(db
         db_conn, message_id=3, channel_id=10, author_id=100, content="pizza", posted_at=T3
     )
 
-    [row] = await queries.search_messages(db_conn, query="pizza")
+    [row] = await queries.search_messages(db_conn, query="pizza", visible_channel_ids=set())
 
     assert row["preceding_count"] == 2
 
@@ -574,7 +608,12 @@ async def test_search_messages_handles_malformed_query_without_raising(db_conn):
     await _seed_user(db_conn, user_id=100, display_name="alice")
     await _seed_message(db_conn, message_id=1, channel_id=10, author_id=100, content="pizza")
 
-    assert await queries.search_messages(db_conn, query='"unterminated quote') == []
+    assert (
+        await queries.search_messages(
+            db_conn, query='"unterminated quote', visible_channel_ids=set()
+        )
+        == []
+    )
 
 
 async def test_count_search_results_matches_search_messages_count(db_conn):
@@ -583,7 +622,9 @@ async def test_count_search_results_matches_search_messages_count(db_conn):
     await _seed_message(db_conn, message_id=1, channel_id=10, author_id=100, content="pizza a")
     await _seed_message(db_conn, message_id=2, channel_id=10, author_id=100, content="pizza b")
 
-    assert await queries.count_search_results(db_conn, query="pizza") == 2
+    assert (
+        await queries.count_search_results(db_conn, query="pizza", visible_channel_ids=set()) == 2
+    )
 
 
 async def test_get_user_returns_row(db_conn):
@@ -645,7 +686,33 @@ async def test_get_post_count_for_user_counts_only_indexed_channels(db_conn):
     await _seed_message(db_conn, message_id=1, channel_id=10, author_id=100)
     await _seed_message(db_conn, message_id=2, channel_id=11, author_id=100)
 
-    assert await queries.get_post_count_for_user(db_conn, 100) == 1
+    assert await queries.get_post_count_for_user(db_conn, 100, visible_channel_ids=set()) == 1
+
+
+async def test_get_post_count_for_user_includes_enrolled_channel_when_visible(db_conn):
+    await _seed_guild_and_channel(db_conn, channel_id=10, is_public=False)
+    await db_conn.execute("UPDATE channels SET visibility_enrolled = true WHERE id = 10")
+    await _seed_user(db_conn, user_id=100, display_name="alice")
+    await _seed_message(db_conn, message_id=1, channel_id=10, author_id=100)
+
+    assert await queries.get_post_count_for_user(db_conn, 100, visible_channel_ids={10}) == 1
+
+
+async def test_get_post_count_for_user_excludes_enrolled_channel_when_not_visible(db_conn):
+    await _seed_guild_and_channel(db_conn, channel_id=10, is_public=False)
+    await db_conn.execute("UPDATE channels SET visibility_enrolled = true WHERE id = 10")
+    await _seed_user(db_conn, user_id=100, display_name="alice")
+    await _seed_message(db_conn, message_id=1, channel_id=10, author_id=100)
+
+    assert await queries.get_post_count_for_user(db_conn, 100, visible_channel_ids=set()) == 0
+
+
+async def test_get_post_count_for_user_ignores_visible_ids_for_a_non_enrolled_channel(db_conn):
+    await _seed_guild_and_channel(db_conn, channel_id=10, is_public=False)
+    await _seed_user(db_conn, user_id=100, display_name="alice")
+    await _seed_message(db_conn, message_id=1, channel_id=10, author_id=100)
+
+    assert await queries.get_post_count_for_user(db_conn, 100, visible_channel_ids={10}) == 0
 
 
 async def test_get_threads_for_board_orders_newest_first(db_conn):
@@ -737,7 +804,7 @@ async def test_get_boards_and_categories_includes_all_categories(db_conn):
         (1, 1, "a category"),
     )
 
-    rows = await queries.get_boards_and_categories(db_conn, 1)
+    rows = await queries.get_boards_and_categories(db_conn, 1, visible_channel_ids=set())
 
     assert [r["id"] for r in rows] == [1]
 
@@ -751,7 +818,7 @@ async def test_get_boards_and_categories_includes_topic(db_conn):
         """
     )
 
-    rows = await queries.get_boards_and_categories(db_conn, 1)
+    rows = await queries.get_boards_and_categories(db_conn, 1, visible_channel_ids=set())
 
     assert rows[0]["topic"] == "a channel topic"
 
@@ -767,9 +834,57 @@ async def test_get_boards_and_categories_excludes_non_public_or_non_indexed_boar
         """
     )
 
-    rows = await queries.get_boards_and_categories(db_conn, 1)
+    rows = await queries.get_boards_and_categories(db_conn, 1, visible_channel_ids=set())
 
     assert [r["id"] for r in rows] == [10]
+
+
+async def test_get_boards_and_categories_includes_enrolled_non_public_board_when_visible(db_conn):
+    await _seed_guild(db_conn, guild_id=1)
+    await db_conn.execute(
+        """
+        INSERT INTO channels (id, guild_id, type, name, is_public, indexed, visibility_enrolled)
+        VALUES (10, 1, 0, 'gated', false, true, true)
+        """
+    )
+
+    rows = await queries.get_boards_and_categories(db_conn, 1, visible_channel_ids={10})
+
+    assert [r["id"] for r in rows] == [10]
+
+
+async def test_get_boards_and_categories_excludes_enrolled_non_public_board_when_not_visible(
+    db_conn,
+):
+    await _seed_guild(db_conn, guild_id=1)
+    await db_conn.execute(
+        """
+        INSERT INTO channels (id, guild_id, type, name, is_public, indexed, visibility_enrolled)
+        VALUES (10, 1, 0, 'gated', false, true, true)
+        """
+    )
+
+    rows = await queries.get_boards_and_categories(db_conn, 1, visible_channel_ids=set())
+
+    assert rows == []
+
+
+async def test_get_boards_and_categories_ignores_visible_ids_for_a_non_enrolled_board(db_conn):
+    # Regression guard: a role grant alone must never surface a
+    # non-enrolled channel -- visibility_enrolled=false always falls back
+    # to the legacy is_public-only check, even if the id happens to be in
+    # visible_channel_ids.
+    await _seed_guild(db_conn, guild_id=1)
+    await db_conn.execute(
+        """
+        INSERT INTO channels (id, guild_id, type, name, is_public, indexed, visibility_enrolled)
+        VALUES (10, 1, 0, 'gated', false, true, false)
+        """
+    )
+
+    rows = await queries.get_boards_and_categories(db_conn, 1, visible_channel_ids={10})
+
+    assert rows == []
 
 
 async def test_get_boards_and_categories_excludes_voice_and_stage_voice_channels(db_conn):
@@ -786,7 +901,7 @@ async def test_get_boards_and_categories_excludes_voice_and_stage_voice_channels
         """
     )
 
-    rows = await queries.get_boards_and_categories(db_conn, 1)
+    rows = await queries.get_boards_and_categories(db_conn, 1, visible_channel_ids=set())
 
     assert [r["id"] for r in rows] == [10]
 
@@ -801,7 +916,7 @@ async def test_get_boards_and_categories_only_for_the_given_guild(db_conn):
         """
     )
 
-    rows = await queries.get_boards_and_categories(db_conn, 1)
+    rows = await queries.get_boards_and_categories(db_conn, 1, visible_channel_ids=set())
 
     assert [r["id"] for r in rows] == [10]
 
@@ -813,7 +928,7 @@ async def test_get_recent_posts_for_user_orders_newest_first_and_respects_limit(
     await _seed_message(db_conn, message_id=2, channel_id=10, author_id=100, posted_at=T2)
     await _seed_message(db_conn, message_id=3, channel_id=10, author_id=100, posted_at=T3)
 
-    rows = await queries.get_recent_posts_for_user(db_conn, 100, limit=2)
+    rows = await queries.get_recent_posts_for_user(db_conn, 100, visible_channel_ids=set(), limit=2)
 
     assert [r["id"] for r in rows] == [3, 2]
 

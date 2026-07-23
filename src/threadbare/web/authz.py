@@ -64,6 +64,21 @@ def mod_required(view):
     return wrapped
 
 
+def channel_passes_visibility_gate(channel: dict, visible_channel_ids: set[int]) -> bool:
+    """True if `channel` (a queries.get_channel row, including
+    visibility_enrolled) should be shown to this requester on direct
+    board/topic navigation. Non-enrolled (default) channels are always
+    True here -- the existing "no check at all" v1 gap for direct nav on
+    non-enrolled channels is intentionally unchanged. An enrolled channel
+    is gated purely by membership in the requester's visible_channel_ids;
+    is_public/indexed don't factor in here, since enrollment supersedes
+    them for this check.
+    """
+    if not channel["visibility_enrolled"]:
+        return True
+    return channel["id"] in visible_channel_ids
+
+
 async def resolve_visible_channel_ids(conn, *, guild_id: int, user_id: int) -> set[int]:
     """The per-user channel-visibility set (DESIGN.md §7 Phase 2) --
     computed fresh from Postgres on every call, no session caching, no

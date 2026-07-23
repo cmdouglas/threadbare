@@ -109,6 +109,43 @@ def test_toggle_indexed_returns_404_for_unknown_channel(client):
     assert resp.status_code == 404
 
 
+def test_toggle_visibility_enrolled_flips_the_flag_and_redirects(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10, name="general"))
+    _make_mod(client)
+
+    resp = client.post("/admin/channels/10/toggle-visibility-enrolled")
+
+    assert resp.status_code == 302
+
+    async def _fetch():
+        async with web_conn.cursor() as cur:
+            await cur.execute("SELECT visibility_enrolled FROM channels WHERE id = 10")
+            return await cur.fetchone()
+
+    row = run(_fetch())
+    assert row["visibility_enrolled"] is True
+
+
+def test_toggle_visibility_enrolled_returns_404_for_unknown_channel(client):
+    _make_mod(client)
+
+    resp = client.post("/admin/channels/999999/toggle-visibility-enrolled")
+
+    assert resp.status_code == 404
+
+
+def test_admin_index_shows_visibility_enrolled_state(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10, name="general"))
+    run(web_conn.execute("UPDATE channels SET visibility_enrolled = true WHERE id = 10"))
+    _make_mod(client)
+
+    resp = client.get("/admin/")
+
+    assert b"admin-channel-visibility-enrolled" in resp.data
+
+
 def test_admin_shows_stale_heartbeat_warning_when_heartbeat_is_old(client, web_conn):
     run(_seed_guild(web_conn))
     run(_seed_heartbeat(web_conn, updated_at=datetime.now(UTC) - timedelta(minutes=30)))
@@ -139,9 +176,9 @@ def test_admin_index_shows_app_version_and_latest_schema_migration(client, web_c
     assert threadbare.__version__ in body
     # The real test DB has every real migration applied (see
     # tests/integration/db/test_migrate.py's idempotency test) --
-    # 0010_role_permissions_and_overwrites is the current latest by filename
+    # 0011_channel_visibility_enrollment is the current latest by filename
     # ordering.
-    assert "0010_role_permissions_and_overwrites" in body
+    assert "0011_channel_visibility_enrollment" in body
 
 
 def test_admin_index_shows_auto_index_setting_enabled_by_default(client, web_conn):

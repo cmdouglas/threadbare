@@ -1,22 +1,39 @@
 from datetime import UTC, datetime, timedelta
 
+from threadbare.discord_permissions import READ_MESSAGE_HISTORY, VIEW_CHANNEL
+
 from .conftest import run
 
 T1 = datetime(2026, 1, 1, tzinfo=UTC)
+
+BOTH_REQUIRED = VIEW_CHANNEL | READ_MESSAGE_HISTORY
 
 
 async def _seed_guild(conn, *, guild_id=1):
     await conn.execute("INSERT INTO guilds (id, name) VALUES (%s, %s)", (guild_id, "Test Guild"))
 
 
-async def _seed_guild_and_channel(conn, *, guild_id=1, channel_id=10, parent_id=None):
+async def _seed_guild_and_channel(
+    conn, *, guild_id=1, channel_id=10, parent_id=None, is_public=True, visibility_enrolled=False
+):
     await _seed_guild(conn, guild_id=guild_id)
     await conn.execute(
         """
-        INSERT INTO channels (id, guild_id, parent_id, type, name, is_public)
-        VALUES (%s, %s, %s, 0, 'general', true)
+        INSERT INTO channels
+            (id, guild_id, parent_id, type, name, is_public, visibility_enrolled)
+        VALUES (%s, %s, %s, 0, 'general', %s, %s)
         """,
-        (channel_id, guild_id, parent_id),
+        (channel_id, guild_id, parent_id, is_public, visibility_enrolled),
+    )
+
+
+async def _seed_role(
+    conn, *, role_id, guild_id=1, name="a role", color=0, position=0, permissions=0
+):
+    await conn.execute(
+        "INSERT INTO roles (id, guild_id, name, color, position, permissions) "
+        "VALUES (%s, %s, %s, %s, %s, %s)",
+        (role_id, guild_id, name, color, position, permissions),
     )
 
 
@@ -65,6 +82,26 @@ def test_topic_page_returns_404_for_unknown_thread(client):
     resp = client.get("/topic/999999/page/1")
 
     assert resp.status_code == 404
+
+
+def test_topic_page_returns_404_for_an_enrolled_channel_the_requester_cannot_see(client, web_conn):
+    run(_seed_guild_and_channel(web_conn, is_public=False, visibility_enrolled=True))
+    run(_seed_role(web_conn, role_id=1))  # @everyone, no permissions
+    run(_seed_thread(web_conn, thread_id=3000, parent_channel_id=10))
+
+    resp = client.get("/topic/3000/page/1")
+
+    assert resp.status_code == 404
+
+
+def test_topic_page_succeeds_for_an_enrolled_channel_the_requester_can_see(client, web_conn):
+    run(_seed_guild_and_channel(web_conn, is_public=False, visibility_enrolled=True))
+    run(_seed_role(web_conn, role_id=1, permissions=BOTH_REQUIRED))  # @everyone
+    run(_seed_thread(web_conn, thread_id=3000, parent_channel_id=10))
+
+    resp = client.get("/topic/3000/page/1")
+
+    assert resp.status_code == 200
 
 
 def test_topic_page_renders_messages_with_permalink_anchor(client, web_conn):

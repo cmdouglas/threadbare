@@ -33,6 +33,24 @@ async def set_channel_indexed(
     await conn.execute("UPDATE channels SET indexed = %s WHERE id = %s", (indexed, channel_id))
 
 
+async def get_channel_visibility_enrolled(
+    conn: psycopg.AsyncConnection, channel_id: int
+) -> bool | None:
+    async with conn.cursor() as cur:
+        await cur.execute("SELECT visibility_enrolled FROM channels WHERE id = %s", (channel_id,))
+        row = await cur.fetchone()
+    return row["visibility_enrolled"] if row else None
+
+
+async def set_channel_visibility_enrolled(
+    conn: psycopg.AsyncConnection, channel_id: int, visibility_enrolled: bool
+) -> None:
+    await conn.execute(
+        "UPDATE channels SET visibility_enrolled = %s WHERE id = %s",
+        (visibility_enrolled, channel_id),
+    )
+
+
 async def get_channels_with_sync_state(conn: psycopg.AsyncConnection, guild_id: int) -> list[dict]:
     """Every content-bearing channel in the guild (i.e. not a category,
     voice, or stage-voice channel), with its computed visibility,
@@ -43,7 +61,7 @@ async def get_channels_with_sync_state(conn: psycopg.AsyncConnection, guild_id: 
         await cur.execute(
             """
             SELECT
-                c.id, c.name, c.type, c.is_public, c.indexed,
+                c.id, c.name, c.type, c.is_public, c.indexed, c.visibility_enrolled,
                 s.last_backfilled_message_id, s.backfill_complete, s.last_reconciled_at
             FROM channels c
             LEFT JOIN sync_state s ON s.channel_id = c.id

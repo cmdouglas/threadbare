@@ -7,6 +7,7 @@ from threadbare.db import queries
 from threadbare.pagination import DEFAULT_PAGE_SIZE, page_number_for_offset
 from threadbare.pseudotopics import week_bounds
 from threadbare.rendering.render_service import render_message_for_display
+from threadbare.web import authz
 from threadbare.web.board_tree import board_view_mode
 from threadbare.web.breadcrumbs import board_breadcrumbs
 
@@ -16,6 +17,8 @@ bp = Blueprint("board", __name__)
 async def _get_board_or_404(conn, channel_id: int) -> dict:
     channel = await queries.get_channel(conn, channel_id)
     if channel is None or channel["type"] in NON_CONTENT_TYPES:
+        abort(404)
+    if not authz.channel_passes_visibility_gate(channel, g.visible_channel_ids):
         abort(404)
     return channel
 

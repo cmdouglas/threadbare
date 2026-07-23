@@ -1,6 +1,11 @@
 from .conftest import E2E_GUILD_ID
 
 CHANNEL_ID = 900300
+GATED_CHANNEL_ID = 900301
+
+VIEW_CHANNEL = 1 << 10
+READ_MESSAGE_HISTORY = 1 << 16
+BOTH_REQUIRED = VIEW_CHANNEL | READ_MESSAGE_HISTORY
 
 
 def _seed_channel(conn):
@@ -20,6 +25,33 @@ def _seed_channel(conn):
 
 def _cleanup_channel(conn):
     conn.execute("DELETE FROM channels WHERE id = %s", (CHANNEL_ID,))
+    conn.commit()
+
+
+def _seed_gated_channel(conn, *, everyone_permissions):
+    conn.execute(
+        "INSERT INTO guilds (id, name) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+        (E2E_GUILD_ID, "E2E Guild"),
+    )
+    conn.execute(
+        "INSERT INTO roles (id, guild_id, name, color, position, permissions) "
+        "VALUES (%s, %s, '@everyone', 0, 0, %s) "
+        "ON CONFLICT (id) DO UPDATE SET permissions = EXCLUDED.permissions",
+        (E2E_GUILD_ID, E2E_GUILD_ID, everyone_permissions),
+    )
+    conn.execute(
+        """
+        INSERT INTO channels (id, guild_id, type, name, is_public, indexed, visibility_enrolled)
+        VALUES (%s, %s, 0, 'gated-test-channel', false, true, true) ON CONFLICT DO NOTHING
+        """,
+        (GATED_CHANNEL_ID, E2E_GUILD_ID),
+    )
+    conn.commit()
+
+
+def _cleanup_gated_channel(conn):
+    conn.execute("DELETE FROM channels WHERE id = %s", (GATED_CHANNEL_ID,))
+    conn.execute("DELETE FROM roles WHERE id = %s", (E2E_GUILD_ID,))
     conn.commit()
 
 
@@ -57,10 +89,46 @@ def test_logged_in_mod_can_toggle_channel_indexed_flag_end_to_end(
         row = anonymous_page.locator(".admin-channel-row", has_text="admin-test-channel")
         assert "yes" in row.locator(".admin-channel-indexed").inner_text()
 
-        row.locator("form button").click()
+        row.locator('form[action*="toggle-indexed"] button').click()
 
         with seed_conn.cursor() as cur:
             cur.execute("SELECT indexed FROM channels WHERE id = %s", (CHANNEL_ID,))
             assert cur.fetchone()["indexed"] is False
     finally:
         _cleanup_channel(seed_conn)
+
+
+def test_enrolled_channel_visible_only_once_a_role_grants_access(
+    anonymous_page, live_server, seed_conn
+):
+    # Full stack, real browser: the before_request hook -> the
+    # board.py/board_index.py gate -> the query-level visibility clause.
+    _seed_gated_channel(seed_conn, everyone_permissions=0)
+    try:
+        anonymous_page.context.add_cookies(
+            [live_server.session_cookie(user_id=1, display_name="member", is_mod=False)]
+        )
+
+        anonymous_page.goto(f"{live_server}/")
+        assert "gated-test-channel" not in anonymous_page.content()
+
+        response = anonymous_page.goto(f"{live_server}/board/{GATED_CHANNEL_ID}")
+        assert response.status == 404
+
+        with seed_conn.cursor() as cur:
+            cur.execute(
+                "UPDATE roles SET permissions = %s WHERE id = %s",
+                (BOTH_REQUIRED, E2E_GUILD_ID),
+            )
+        seed_conn.commit()
+
+        anonymous_page.goto(f"{live_server}/")
+        assert "gated-test-channel" in anonymous_page.content()
+
+        # A text channel's landing page redirects to continuous browsing --
+        # Playwright follows the redirect, so a 200 here confirms the final
+        # page rendered, not just that the redirect itself was issued.
+        response = anonymous_page.goto(f"{live_server}/board/{GATED_CHANNEL_ID}")
+        assert response.status == 200
+    finally:
+        _cleanup_gated_channel(seed_conn)

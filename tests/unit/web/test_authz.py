@@ -1,4 +1,4 @@
-from threadbare.web.authz import has_mod_permissions, requires_login
+from threadbare.web.authz import channel_passes_visibility_gate, has_mod_permissions, requires_login
 
 
 def test_has_mod_permissions_true_for_manage_guild_bit():
@@ -34,3 +34,18 @@ def test_requires_login_false_for_login_and_callback_and_static_endpoints():
 def test_requires_login_true_when_endpoint_is_none():
     # No matched route (e.g. a 404) -- err on the side of gating.
     assert requires_login(None) is True
+
+
+def test_channel_passes_visibility_gate_true_for_non_enrolled_channel_regardless_of_set():
+    channel = {"id": 10, "visibility_enrolled": False}
+    assert channel_passes_visibility_gate(channel, set()) is True
+
+
+def test_channel_passes_visibility_gate_true_for_enrolled_channel_in_visible_set():
+    channel = {"id": 10, "visibility_enrolled": True}
+    assert channel_passes_visibility_gate(channel, {10}) is True
+
+
+def test_channel_passes_visibility_gate_false_for_enrolled_channel_not_in_visible_set():
+    channel = {"id": 10, "visibility_enrolled": True}
+    assert channel_passes_visibility_gate(channel, {20}) is False

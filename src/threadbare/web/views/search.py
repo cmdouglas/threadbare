@@ -49,9 +49,16 @@ async def search():
                 before=before,
                 page=page,
                 page_size=g.posts_per_page,
+                visible_channel_ids=g.visible_channel_ids,
             )
             total = await queries.count_search_results(
-                conn, query=query, author=author, channel_id=channel_id, after=after, before=before
+                conn,
+                query=query,
+                author=author,
+                channel_id=channel_id,
+                after=after,
+                before=before,
+                visible_channel_ids=g.visible_channel_ids,
             )
         for row in results:
             row["page"] = page_number_for_offset(row["preceding_count"], page_size=g.posts_per_page)

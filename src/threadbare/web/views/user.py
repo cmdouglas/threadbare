@@ -15,8 +15,12 @@ async def user_page(user_id: int):
         if user is None:
             abort(404)
         roles = await queries.get_roles_by_ids(conn, user["role_ids"])
-        post_count = await queries.get_post_count_for_user(conn, user_id)
-        recent_rows = await queries.get_recent_posts_for_user(conn, user_id, limit=10)
+        post_count = await queries.get_post_count_for_user(
+            conn, user_id, visible_channel_ids=g.visible_channel_ids
+        )
+        recent_rows = await queries.get_recent_posts_for_user(
+            conn, user_id, visible_channel_ids=g.visible_channel_ids, limit=10
+        )
 
         posts = []
         for row in recent_rows:

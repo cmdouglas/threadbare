@@ -1,14 +1,21 @@
+from threadbare.discord_permissions import READ_MESSAGE_HISTORY, VIEW_CHANNEL
+
 from .conftest import run
 
+BOTH_REQUIRED = VIEW_CHANNEL | READ_MESSAGE_HISTORY
 
-async def _seed_guild_and_channel(conn, *, guild_id=1, channel_id=10):
+
+async def _seed_guild_and_channel(
+    conn, *, guild_id=1, channel_id=10, is_public=True, visibility_enrolled=False
+):
     await conn.execute("INSERT INTO guilds (id, name) VALUES (%s, %s)", (guild_id, "Test Guild"))
     await conn.execute(
         """
-        INSERT INTO channels (id, guild_id, type, name, is_public, indexed)
-        VALUES (%s, %s, 0, 'general', true, true)
+        INSERT INTO channels
+            (id, guild_id, type, name, is_public, indexed, visibility_enrolled)
+        VALUES (%s, %s, 0, 'general', %s, true, %s)
         """,
-        (channel_id, guild_id),
+        (channel_id, guild_id, is_public, visibility_enrolled),
     )
 
 
@@ -20,10 +27,13 @@ async def _seed_user(conn, *, user_id, display_name, is_bot=False, role_ids=None
     )
 
 
-async def _seed_role(conn, *, role_id, guild_id=1, name="a role", color=0, position=0):
+async def _seed_role(
+    conn, *, role_id, guild_id=1, name="a role", color=0, position=0, permissions=0
+):
     await conn.execute(
-        "INSERT INTO roles (id, guild_id, name, color, position) VALUES (%s, %s, %s, %s, %s)",
-        (role_id, guild_id, name, color, position),
+        "INSERT INTO roles (id, guild_id, name, color, position, permissions) "
+        "VALUES (%s, %s, %s, %s, %s, %s)",
+        (role_id, guild_id, name, color, position, permissions),
     )
 
 
@@ -54,6 +64,32 @@ def test_user_page_shows_display_name_and_post_count(client, web_conn):
     assert b"alice" in resp.data
     assert b"1 post" in resp.data
     assert b"my post" in resp.data
+
+
+def test_user_page_shows_posts_from_an_enrolled_non_public_channel_when_visible(client, web_conn):
+    run(_seed_guild_and_channel(web_conn, is_public=False, visibility_enrolled=True))
+    run(_seed_role(web_conn, role_id=1, permissions=BOTH_REQUIRED))  # @everyone
+    run(_seed_user(web_conn, user_id=100, display_name="alice"))
+    run(_seed_message(web_conn, message_id=1, channel_id=10, author_id=100, content="my post"))
+
+    resp = client.get("/user/100")
+
+    assert b"1 post" in resp.data
+    assert b"my post" in resp.data
+
+
+def test_user_page_hides_posts_from_an_enrolled_non_public_channel_when_not_visible(
+    client, web_conn
+):
+    run(_seed_guild_and_channel(web_conn, is_public=False, visibility_enrolled=True))
+    run(_seed_role(web_conn, role_id=1))  # @everyone, no permissions
+    run(_seed_user(web_conn, user_id=100, display_name="alice"))
+    run(_seed_message(web_conn, message_id=1, channel_id=10, author_id=100, content="my post"))
+
+    resp = client.get("/user/100")
+
+    assert b"0 posts" in resp.data
+    assert b"my post" not in resp.data
 
 
 def test_user_page_shows_the_profile_avatar_by_default(client, web_conn):

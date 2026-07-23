@@ -324,12 +324,36 @@ async def update_attachment_cache(
     )
 
 
+def _visibility_clause(prefix: str = "") -> str:
+    """'Legacy OR enrolled+visible': a content channel is readable if it's
+    indexed and either (a) globally public (today's unchanged behavior for
+    a non-enrolled channel) or (b) enrolled in the per-user visibility
+    system (DESIGN.md §7 Phase 2) AND present in the requester's freshly
+    computed visible_channel_ids (web/authz.py::resolve_visible_channel_ids).
+    A non-enrolled channel (the default) can only ever pass via (a) --
+    structurally identical to pre-enrollment behavior. `prefix` targets
+    either an aliased join column (search/post-history queries alias
+    channels as `c`) or the bare column name (get_boards_and_categories
+    selects directly from `channels`, no alias). Every caller must supply a
+    visible_channel_ids param -- confirmed directly against Postgres that
+    `id = ANY(%(ids)s)` with an empty list evaluates to false for every
+    row, no cast/guard needed.
+    """
+    return f"""
+        {prefix}indexed = true
+        AND (
+            {prefix}is_public = true
+            OR ({prefix}visibility_enrolled = true AND {prefix}id = ANY(%(visible_channel_ids)s))
+        )
+    """
+
+
 # Shared by search_messages/count_search_results -- explicit ::type casts
 # are needed so Postgres can type-check the "IS NULL OR ..." branch even
 # when the parameter itself is None.
-_SEARCH_WHERE_SQL = """
+_SEARCH_WHERE_SQL = f"""
     m.tsv @@ websearch_to_tsquery('english', %(q)s)
-    AND c.indexed = true
+    AND {_visibility_clause("c.")}
     AND (%(author)s::text IS NULL OR u.display_name ILIKE %(author)s)
     AND (
         %(channel_id)s::bigint IS NULL
@@ -355,6 +379,7 @@ def _search_params(
     channel_id: int | None,
     after: datetime | None,
     before: datetime | None,
+    visible_channel_ids: Iterable[int],
 ) -> dict:
     return {
         "q": query,
@@ -362,6 +387,7 @@ def _search_params(
         "channel_id": channel_id,
         "after": after,
         "before": before,
+        "visible_channel_ids": list(visible_channel_ids),
     }
 
 
@@ -375,6 +401,7 @@ async def search_messages(
     before: datetime | None = None,
     page: int = 1,
     page_size: int = DEFAULT_PAGE_SIZE,
+    visible_channel_ids: Iterable[int],
 ) -> list[dict]:
     """Full-text search via websearch_to_tsquery (Google-style syntax,
     never raises on malformed input, unlike to_tsquery). Each row's
@@ -385,7 +412,12 @@ async def search_messages(
     """
     params = {
         **_search_params(
-            query=query, author=author, channel_id=channel_id, after=after, before=before
+            query=query,
+            author=author,
+            channel_id=channel_id,
+            after=after,
+            before=before,
+            visible_channel_ids=visible_channel_ids,
         ),
         "limit": page_size,
         "offset": (page - 1) * page_size,
@@ -419,9 +451,15 @@ async def count_search_results(
     channel_id: int | None = None,
     after: datetime | None = None,
     before: datetime | None = None,
+    visible_channel_ids: Iterable[int],
 ) -> int:
     params = _search_params(
-        query=query, author=author, channel_id=channel_id, after=after, before=before
+        query=query,
+        author=author,
+        channel_id=channel_id,
+        after=after,
+        before=before,
+        visible_channel_ids=visible_channel_ids,
     )
     async with conn.cursor() as cur:
         await cur.execute(
@@ -541,33 +579,39 @@ async def get_channel_member_overwrites(
         return await cur.fetchall()
 
 
-async def get_post_count_for_user(conn: psycopg.AsyncConnection, user_id: int) -> int:
+async def get_post_count_for_user(
+    conn: psycopg.AsyncConnection, user_id: int, *, visible_channel_ids: Iterable[int]
+) -> int:
     async with conn.cursor() as cur:
         await cur.execute(
             f"""
             SELECT count(*) AS n
             {_SEARCH_FROM_SQL}
-            WHERE m.author_id = %(user_id)s AND c.indexed = true
+            WHERE m.author_id = %(user_id)s AND {_visibility_clause("c.")}
             """,
-            {"user_id": user_id},
+            {"user_id": user_id, "visible_channel_ids": list(visible_channel_ids)},
         )
         row = await cur.fetchone()
     return row["n"]
 
 
 async def get_recent_posts_for_user(
-    conn: psycopg.AsyncConnection, user_id: int, *, limit: int = 10
+    conn: psycopg.AsyncConnection,
+    user_id: int,
+    *,
+    visible_channel_ids: Iterable[int],
+    limit: int = 10,
 ) -> list[dict]:
     async with conn.cursor() as cur:
         await cur.execute(
             f"""
             SELECT {_MESSAGE_COLUMNS_SQL}
             {_SEARCH_FROM_SQL}
-            WHERE m.author_id = %(user_id)s AND c.indexed = true
+            WHERE m.author_id = %(user_id)s AND {_visibility_clause("c.")}
             ORDER BY m.posted_at DESC, m.id DESC
             LIMIT %(limit)s
             """,
-            {"user_id": user_id, "limit": limit},
+            {"user_id": user_id, "limit": limit, "visible_channel_ids": list(visible_channel_ids)},
         )
         return await cur.fetchall()
 
@@ -628,7 +672,8 @@ async def get_channel(conn: psycopg.AsyncConnection, channel_id: int) -> dict | 
     async with conn.cursor() as cur:
         await cur.execute(
             """
-            SELECT id, guild_id, parent_id, type, name, position, topic
+            SELECT id, guild_id, parent_id, type, name, position, topic,
+                   is_public, indexed, visibility_enrolled
             FROM channels WHERE id = %s
             """,
             (channel_id,),
@@ -648,31 +693,40 @@ async def get_thread(conn: psycopg.AsyncConnection, thread_id: int) -> dict | No
         return await cur.fetchone()
 
 
-async def get_boards_and_categories(conn: psycopg.AsyncConnection, guild_id: int) -> list[dict]:
+async def get_boards_and_categories(
+    conn: psycopg.AsyncConnection, guild_id: int, *, visible_channel_ids: Iterable[int]
+) -> list[dict]:
     """Categories (always -- they're grouping metadata, shown regardless of
-    what's under them) plus boards that are currently public and indexed,
-    for the board index / web.board_tree.group_channels_by_category. A
-    channel that stops being public already has its content purged at the
-    source (sync_worker); this additionally keeps its now-content-less row
-    from ever appearing as a browsable board. Voice/stage-voice channels are
+    what's under them) plus boards the requester can currently see, for the
+    board index / web.board_tree.group_channels_by_category: a board passes
+    if it's indexed and either globally public (today's unchanged behavior
+    for a non-enrolled board) or enrolled in the per-user visibility system
+    and present in visible_channel_ids (see _visibility_clause). A channel
+    that stops being public already has its content purged at the source
+    (sync_worker); this additionally keeps its now-content-less row from
+    ever appearing as a browsable board. Voice/stage-voice channels are
     excluded outright even if a stale row has them public+indexed (a stated
     non-goal, DESIGN.md §2) -- discovery no longer creates such rows, but
     this guards an already-deployed install with one from before that fix.
     """
     async with conn.cursor() as cur:
         await cur.execute(
-            """
+            f"""
             SELECT id, parent_id, type, name, position, topic
             FROM channels
             WHERE guild_id = %(guild_id)s
               AND type != ALL(%(non_boardable)s)
-              AND (type = %(category)s OR (is_public = true AND indexed = true))
+              AND (
+                type = %(category)s
+                OR ({_visibility_clause("")})
+              )
             ORDER BY position
             """,
             {
                 "guild_id": guild_id,
                 "category": CATEGORY,
                 "non_boardable": [VOICE, STAGE_VOICE],
+                "visible_channel_ids": list(visible_channel_ids),
             },
         )
         return await cur.fetchall()

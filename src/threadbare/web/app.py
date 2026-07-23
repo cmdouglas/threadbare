@@ -2,7 +2,7 @@
 Views live under web/views/ and register themselves as blueprints here.
 """
 
-from flask import Flask, g, redirect, request, url_for
+from flask import Flask, g, redirect, request, session, url_for
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from threadbare import pagination, urls
@@ -108,6 +108,22 @@ def create_app(settings: Settings, pool) -> Flask:
             return None
         if not authz.is_logged_in():
             return redirect(url_for("auth.login"))
+        return None
+
+    @app.before_request
+    async def resolve_visible_channels():
+        # require_login (above) only gates on whether login is *required*
+        # for this endpoint, not on whether the requester is logged in --
+        # an exempt route (login/oauth_callback/static) still reaches
+        # every before_request hook regardless of login state. So this
+        # hook needs its own guard despite running last, or an anonymous
+        # visit to /login would KeyError on session["user_id"].
+        if not authz.is_logged_in():
+            return None
+        async with pool.connection() as conn:
+            g.visible_channel_ids = await authz.resolve_visible_channel_ids(
+                conn, guild_id=settings.discord_guild_id, user_id=session["user_id"]
+            )
         return None
 
     @app.context_processor

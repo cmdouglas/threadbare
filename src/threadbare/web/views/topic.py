@@ -5,6 +5,7 @@ from flask import Blueprint, abort, current_app, g, redirect, render_template, r
 from threadbare.db import queries
 from threadbare.pagination import page_number_for_offset
 from threadbare.rendering.render_service import render_message_for_display
+from threadbare.web import authz
 from threadbare.web.breadcrumbs import topic_breadcrumbs
 
 bp = Blueprint("topic", __name__)
@@ -21,6 +22,11 @@ async def topic_page(thread_id: int, page: int):
     async with pool.connection() as conn:
         thread = await queries.get_thread(conn, thread_id)
         if thread is None:
+            abort(404)
+        channel = await queries.get_channel(conn, thread["parent_channel_id"])
+        if channel is None or not authz.channel_passes_visibility_gate(
+            channel, g.visible_channel_ids
+        ):
             abort(404)
         breadcrumbs = await topic_breadcrumbs(conn, thread, script_root=request.script_root)
         total = await queries.count_messages_before(conn, thread_id=thread_id)

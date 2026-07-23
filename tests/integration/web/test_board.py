@@ -1,21 +1,36 @@
 from datetime import UTC, datetime, timedelta
 
+from threadbare.discord_permissions import READ_MESSAGE_HISTORY, VIEW_CHANNEL
+
 from .conftest import run
 
 T1 = datetime(2026, 1, 1, tzinfo=UTC)
+
+BOTH_REQUIRED = VIEW_CHANNEL | READ_MESSAGE_HISTORY
 
 
 async def _seed_guild(conn, *, guild_id=1):
     await conn.execute("INSERT INTO guilds (id, name) VALUES (%s, %s)", (guild_id, "Test Guild"))
 
 
-async def _seed_board(conn, *, channel_id, guild_id=1, type=0, name="general", parent_id=None):
+async def _seed_board(
+    conn,
+    *,
+    channel_id,
+    guild_id=1,
+    type=0,
+    name="general",
+    parent_id=None,
+    is_public=True,
+    visibility_enrolled=False,
+):
     await conn.execute(
         """
-        INSERT INTO channels (id, guild_id, parent_id, type, name, is_public, indexed)
-        VALUES (%s, %s, %s, %s, %s, true, true)
+        INSERT INTO channels
+            (id, guild_id, parent_id, type, name, is_public, indexed, visibility_enrolled)
+        VALUES (%s, %s, %s, %s, %s, %s, true, %s)
         """,
-        (channel_id, guild_id, parent_id, type, name),
+        (channel_id, guild_id, parent_id, type, name, is_public, visibility_enrolled),
     )
 
 
@@ -53,10 +68,13 @@ async def _seed_message(
     )
 
 
-async def _seed_role(conn, *, role_id, guild_id=1, name="a role", color=0, position=0):
+async def _seed_role(
+    conn, *, role_id, guild_id=1, name="a role", color=0, position=0, permissions=0
+):
     await conn.execute(
-        "INSERT INTO roles (id, guild_id, name, color, position) VALUES (%s, %s, %s, %s, %s)",
-        (role_id, guild_id, name, color, position),
+        "INSERT INTO roles (id, guild_id, name, color, position, permissions) "
+        "VALUES (%s, %s, %s, %s, %s, %s)",
+        (role_id, guild_id, name, color, position, permissions),
     )
 
 
@@ -103,6 +121,41 @@ def test_board_landing_returns_404_for_a_stage_channel(client, web_conn):
     run(_seed_board(web_conn, channel_id=1, type=13, name="a stage"))
 
     resp = client.get("/board/1")
+
+    assert resp.status_code == 404
+
+
+def test_board_landing_returns_404_for_an_enrolled_channel_the_requester_cannot_see(
+    client, web_conn
+):
+    run(_seed_guild(web_conn))
+    run(_seed_role(web_conn, role_id=1))  # @everyone, no permissions
+    run(_seed_board(web_conn, channel_id=10, is_public=False, visibility_enrolled=True))
+
+    resp = client.get("/board/10")
+
+    assert resp.status_code == 404
+
+
+def test_board_landing_succeeds_for_an_enrolled_channel_the_requester_can_see(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_role(web_conn, role_id=1, permissions=BOTH_REQUIRED))  # @everyone
+    run(_seed_board(web_conn, channel_id=10, is_public=False, visibility_enrolled=True))
+
+    resp = client.get("/board/10")
+
+    assert resp.status_code == 302
+    assert resp.headers["Location"] == "/board/10/continuous/page/1"
+
+
+def test_board_continuous_page_returns_404_for_an_enrolled_channel_the_requester_cannot_see(
+    client, web_conn
+):
+    run(_seed_guild(web_conn))
+    run(_seed_role(web_conn, role_id=1))  # @everyone, no permissions
+    run(_seed_board(web_conn, channel_id=10, is_public=False, visibility_enrolled=True))
+
+    resp = client.get("/board/10/continuous/page/1")
 
     assert resp.status_code == 404
 

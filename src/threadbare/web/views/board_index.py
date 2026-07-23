@@ -12,7 +12,9 @@ async def board_index():
     settings = current_app.config["SETTINGS"]
     pool = current_app.config["POOL"]
     async with pool.connection() as conn:
-        rows = await queries.get_boards_and_categories(conn, settings.discord_guild_id)
+        rows = await queries.get_boards_and_categories(
+            conn, settings.discord_guild_id, visible_channel_ids=g.visible_channel_ids
+        )
         groups = group_channels_by_category(rows)
 
         board_ids = [row["id"] for group in groups for row in group["boards"]]

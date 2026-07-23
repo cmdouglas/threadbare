@@ -1,4 +1,18 @@
+from threadbare.discord_permissions import READ_MESSAGE_HISTORY, VIEW_CHANNEL
+
 from .conftest import run
+
+BOTH_REQUIRED = VIEW_CHANNEL | READ_MESSAGE_HISTORY
+
+
+async def _seed_role(
+    conn, *, role_id, guild_id=1, name="a role", color=0, position=0, permissions=0
+):
+    await conn.execute(
+        "INSERT INTO roles (id, guild_id, name, color, position, permissions) "
+        "VALUES (%s, %s, %s, %s, %s, %s)",
+        (role_id, guild_id, name, color, position, permissions),
+    )
 
 
 async def _seed_guild(conn, *, guild_id=1, icon=None):
@@ -24,14 +38,16 @@ async def _seed_board(
     position=0,
     is_public=True,
     topic=None,
+    visibility_enrolled=False,
 ):
     await conn.execute(
         """
         INSERT INTO channels
-            (id, guild_id, parent_id, type, name, position, is_public, indexed, topic)
-        VALUES (%s, %s, %s, 0, %s, %s, %s, true, %s)
+            (id, guild_id, parent_id, type, name, position, is_public, indexed, topic,
+             visibility_enrolled)
+        VALUES (%s, %s, %s, 0, %s, %s, %s, true, %s, %s)
         """,
-        (channel_id, guild_id, parent_id, name, position, is_public, topic),
+        (channel_id, guild_id, parent_id, name, position, is_public, topic, visibility_enrolled),
     )
 
 
@@ -239,6 +255,50 @@ def test_board_index_excludes_non_public_boards(client, web_conn):
     resp = client.get("/")
 
     assert b"secret" not in resp.data
+
+
+def test_board_index_shows_an_enrolled_non_public_board_when_visible(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_role(web_conn, role_id=1, permissions=BOTH_REQUIRED))  # @everyone
+    run(
+        _seed_board(
+            web_conn, channel_id=10, name="gated", is_public=False, visibility_enrolled=True
+        )
+    )
+
+    resp = client.get("/")
+
+    assert b"gated" in resp.data
+
+
+def test_board_index_hides_an_enrolled_non_public_board_when_not_visible(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_role(web_conn, role_id=1))  # @everyone, no permissions
+    run(
+        _seed_board(
+            web_conn, channel_id=10, name="gated", is_public=False, visibility_enrolled=True
+        )
+    )
+
+    resp = client.get("/")
+
+    assert b"gated" not in resp.data
+
+
+def test_board_index_ignores_visible_ids_for_a_non_enrolled_board(client, web_conn):
+    # Regression guard: a role grant alone must never surface a
+    # non-enrolled board.
+    run(_seed_guild(web_conn))
+    run(_seed_role(web_conn, role_id=1, permissions=BOTH_REQUIRED))  # @everyone
+    run(
+        _seed_board(
+            web_conn, channel_id=10, name="gated", is_public=False, visibility_enrolled=False
+        )
+    )
+
+    resp = client.get("/")
+
+    assert b"gated" not in resp.data
 
 
 def test_board_index_omits_a_category_section_with_no_boards(client, web_conn):

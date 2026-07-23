@@ -49,7 +49,9 @@
       <th>Channel</th>
       <th>Public</th>
       <th>Indexed</th>
+      <th>Visibility-enrolled</th>
       <th>Backfill</th>
+      <th></th>
       <th></th>
     </tr>
     {% for channel in channels %}
@@ -57,6 +59,7 @@
       <td class="admin-channel-name">{{ channel.name }}</td>
       <td class="admin-channel-public">{{ "yes" if channel.is_public else "no" }}</td>
       <td class="admin-channel-indexed">{{ "yes" if channel.indexed else "no" }}</td>
+      <td class="admin-channel-visibility-enrolled">{{ "yes" if channel.visibility_enrolled else "no" }}</td>
       <td class="admin-channel-backfill">
         {% if channel.backfill_complete %}complete
         {% elif channel.last_backfilled_message_id %}in progress
@@ -66,6 +69,11 @@
       <td>
         <form method="post" action="{{ url_for('admin.toggle_indexed', channel_id=channel.id) }}">
           <button type="submit">{{ "Disable" if channel.indexed else "Enable" }}</button>
+        </form>
+      </td>
+      <td>
+        <form method="post" action="{{ url_for('admin.toggle_visibility_enrolled', channel_id=channel.id) }}">
+          <button type="submit">{{ "Disable" if channel.visibility_enrolled else "Enable" }}</button>
         </form>
       </td>
     </tr>

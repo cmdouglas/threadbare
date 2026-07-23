@@ -52,6 +52,19 @@ async def toggle_indexed(channel_id: int):
     return redirect(url_for("admin.index"))
 
 
+@bp.route("/channels/<int:channel_id>/toggle-visibility-enrolled", methods=["POST"])
+@mod_required
+async def toggle_visibility_enrolled(channel_id: int):
+    pool = current_app.config["POOL"]
+    async with pool.connection() as conn:
+        current = await admin_queries.get_channel_visibility_enrolled(conn, channel_id)
+        if current is None:
+            abort(404)
+        await admin_queries.set_channel_visibility_enrolled(conn, channel_id, not current)
+
+    return redirect(url_for("admin.index"))
+
+
 @bp.route("/settings/toggle-auto-index", methods=["POST"])
 @mod_required
 async def toggle_auto_index():
