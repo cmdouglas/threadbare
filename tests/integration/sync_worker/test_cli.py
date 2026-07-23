@@ -99,7 +99,8 @@ async def test_run_reset_resets_a_single_channel_and_its_threads(test_database_u
             (9010, 9001),
         )
         await conn.execute(
-            "INSERT INTO threads (id, parent_channel_id, name, created_at) VALUES (%s, %s, %s, now())",
+            "INSERT INTO threads (id, parent_channel_id, name, created_at) "
+            "VALUES (%s, %s, %s, now())",
             (9020, 9010, "a thread"),
         )
         await repository.set_backfill_checkpoint(conn, 9010, last_message_id=500, complete=True)

@@ -51,7 +51,8 @@ def _seed(conn):
     )
     conn.execute(
         """
-        INSERT INTO attachments (id, message_id, filename, content_type, size, cached_url, url_expires_at)
+        INSERT INTO attachments
+            (id, message_id, filename, content_type, size, cached_url, url_expires_at)
         VALUES (%s, %s, %s, %s, %s, %s, %s)
         """,
         (
@@ -226,9 +227,7 @@ def test_avatar_toggle_round_trip(page, live_server, seeded):
 def test_css_custom_property_contract_is_present(page, live_server, seeded):
     page.goto(f"{live_server}/")
 
-    color_bg = page.evaluate(
-        "getComputedStyle(document.body).getPropertyValue('--color-bg')"
-    )
+    color_bg = page.evaluate("getComputedStyle(document.body).getPropertyValue('--color-bg')")
     assert color_bg.strip() != ""
 
 

@@ -23,7 +23,8 @@ async def _seed_guild(conn, *, guild_id):
 
 async def _seed_user(conn, *, user_id, display_name, avatar_hash=None):
     await conn.execute(
-        "INSERT INTO users (id, display_name, avatar_hash) VALUES (%s, %s, %s) ON CONFLICT DO NOTHING",
+        "INSERT INTO users (id, display_name, avatar_hash) "
+        "VALUES (%s, %s, %s) ON CONFLICT DO NOTHING",
         (user_id, display_name, avatar_hash),
     )
 
