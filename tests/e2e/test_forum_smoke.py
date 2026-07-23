@@ -143,6 +143,19 @@ def test_topic_pagination_and_permalink_round_trip(page, live_server, seeded):
     assert page.locator("#post-900125").is_visible()
 
 
+def test_topic_list_shows_per_topic_pagination_control(page, live_server, seeded):
+    page.goto(f"{live_server}/board/{CHANNEL_ID}/topics")
+
+    pagination = page.locator("tr.topic-pagination-row .pagination")
+    assert pagination.count() == 1
+    assert "Page 1 of 2" in pagination.inner_text()
+
+    pagination.locator(".pagination-last").click()
+
+    assert page.url.endswith(f"/topic/{THREAD_ID}/page/2")
+    assert "topic message 25" in page.content()
+
+
 def test_search_click_through_lands_on_the_right_post(page, live_server, seeded):
     page.goto(f"{live_server}/search?q=pizza")
     assert "1 result" in page.content()

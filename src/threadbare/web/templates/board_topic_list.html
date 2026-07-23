@@ -8,6 +8,7 @@
 <table class="board-topic-list">
 {% for thread in threads %}
   {% set agg = aggregates.get(thread.id, {"post_count": 0, "last_message_id": None, "last_posted_at": None, "last_author_id": None}) %}
+  {% set topic_total_pages = pagination.page_number_for_offset(agg.post_count - 1) if agg.post_count > 0 else 1 %}
   <tr class="topic-row">
     <td class="topic-name"><a href="{{ request.script_root }}{{ urls.topic_url(thread.id) }}">{{ thread.name }}</a></td>
     <td class="topic-post-count">{{ agg.post_count }}</td>
@@ -18,6 +19,17 @@
       {% endif %}
     </td>
   </tr>
+  {% if topic_total_pages > 1 %}
+  <tr class="topic-row topic-pagination-row">
+    <td colspan="3">
+      <nav class="pagination">
+        <span class="pagination-current">Page 1 of {{ topic_total_pages }}</span>
+        <a class="pagination-next" href="{{ request.script_root }}{{ urls.topic_url(thread.id, page=2) }}">Next &rsaquo;</a>
+        <a class="pagination-last" href="{{ request.script_root }}{{ urls.topic_url(thread.id, page=topic_total_pages) }}">Last &raquo;</a>
+      </nav>
+    </td>
+  </tr>
+  {% endif %}
 {% else %}
   <tr><td colspan="3" class="board-empty">No topics yet.</td></tr>
 {% endfor %}

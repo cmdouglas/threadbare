@@ -5,7 +5,7 @@ Views live under web/views/ and register themselves as blueprints here.
 from flask import Flask, g, redirect, request, url_for
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-from threadbare import urls
+from threadbare import pagination, urls
 from threadbare.config import Settings
 from threadbare.db import queries
 from threadbare.pagination import DEFAULT_PAGE_SIZE
@@ -56,6 +56,7 @@ def create_app(settings: Settings, pool) -> Flask:
 
     app.jinja_env.globals["urls"] = urls
     app.jinja_env.globals["avatars"] = avatars
+    app.jinja_env.globals["pagination"] = pagination
     app.jinja_env.globals["guild_id"] = settings.discord_guild_id
     app.jinja_env.globals["default_page_size"] = DEFAULT_PAGE_SIZE
 

@@ -107,6 +107,33 @@ def test_board_topics_shows_topics_for_a_forum_channel(client, web_conn):
     assert b"alice" in resp.data
 
 
+def test_board_topics_shows_no_pagination_control_for_a_single_page_topic(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10, type=15, name="a forum"))
+    run(_seed_thread(web_conn, thread_id=3000, parent_channel_id=10, name="my topic"))
+    run(_seed_thread_message(web_conn, message_id=1, thread_id=3000, content="hello"))
+
+    resp = client.get("/board/10/topics")
+
+    assert resp.status_code == 200
+    assert b"topic-pagination-row" not in resp.data
+
+
+def test_board_topics_shows_a_pagination_control_for_a_multi_page_topic(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10, type=15, name="a forum"))
+    run(_seed_thread(web_conn, thread_id=3000, parent_channel_id=10, name="my topic"))
+    for i in range(26):
+        run(_seed_thread_message(web_conn, message_id=i + 1, thread_id=3000, content=f"msg {i}"))
+
+    resp = client.get("/board/10/topics")
+
+    assert resp.status_code == 200
+    assert b"topic-pagination-row" in resp.data
+    assert b"Page 1 of 2" in resp.data
+    assert b"/topic/3000/page/2" in resp.data
+
+
 def test_board_topics_shows_freeform_controls_for_a_text_channel(client, web_conn):
     run(_seed_guild(web_conn))
     run(_seed_board(web_conn, channel_id=10, type=0, name="general"))
