@@ -164,6 +164,26 @@ a:visited {
   border-radius: var(--radius) var(--radius) 0 0;
 }
 
+.board-name a {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.channel-icon {
+  flex-shrink: 0;
+  color: var(--color-fg-muted);
+}
+
+.channel-icon-text {
+  font-weight: bold;
+}
+
+.channel-icon-forum {
+  width: 14px;
+  height: 14px;
+}
+
 .board-topic {
   max-width: 480px;
   overflow: hidden;

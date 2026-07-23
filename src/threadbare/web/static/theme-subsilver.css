@@ -161,7 +161,24 @@ a:visited {
 }
 
 td.board-name a {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
   font-size: 1rem;
+}
+
+.channel-icon {
+  flex-shrink: 0;
+  color: var(--color-fg-muted);
+}
+
+.channel-icon-text {
+  font-weight: bold;
+}
+
+.channel-icon-forum {
+  width: 14px;
+  height: 14px;
 }
 
 .board-topic {

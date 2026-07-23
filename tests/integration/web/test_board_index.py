@@ -125,6 +125,26 @@ def test_board_index_omits_topic_element_when_board_has_none(client, web_conn):
     assert b'class="board-topic"' not in resp.data
 
 
+def test_board_index_shows_a_hash_icon_for_a_text_channel(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10, name="general"))
+
+    resp = client.get("/")
+
+    assert b'class="channel-icon channel-icon-text"' in resp.data
+    assert b'class="channel-icon channel-icon-forum"' not in resp.data
+
+
+def test_board_index_shows_a_forum_icon_for_a_forum_board(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_forum_board(web_conn, channel_id=10, name="a forum"))
+
+    resp = client.get("/")
+
+    assert b'class="channel-icon channel-icon-forum"' in resp.data
+    assert b'class="channel-icon channel-icon-text"' not in resp.data
+
+
 def test_board_index_shows_no_pagination_control_for_a_single_page_board(client, web_conn):
     run(_seed_guild(web_conn))
     run(_seed_board(web_conn, channel_id=10, name="general"))
