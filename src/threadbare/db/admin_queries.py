@@ -53,15 +53,19 @@ async def set_channel_visibility_enrolled(
 
 async def get_channels_with_sync_state(conn: psycopg.AsyncConnection, guild_id: int) -> list[dict]:
     """Every content-bearing channel in the guild (i.e. not a category,
-    voice, or stage-voice channel), with its computed visibility,
-    mod-controlled indexing flag, and backfill checkpoint (if any -- a
-    channel with no sync_state row yet hasn't been backfilled).
+    voice, or stage-voice channel), with its computed visibility, whether
+    the bot's own Discord account can currently read it (bot_can_read --
+    kept fresh by the sync worker's refresh_channel_bot_access, informational
+    only, never gates should_sync itself), mod-controlled indexing flag, and
+    backfill checkpoint (if any -- a channel with no sync_state row yet
+    hasn't been backfilled).
     """
     async with conn.cursor() as cur:
         await cur.execute(
             """
             SELECT
                 c.id, c.name, c.type, c.is_public, c.indexed, c.visibility_enrolled,
+                c.bot_can_read,
                 s.last_backfilled_message_id, s.backfill_complete, s.last_reconciled_at
             FROM channels c
             LEFT JOIN sync_state s ON s.channel_id = c.id

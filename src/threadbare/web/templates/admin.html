@@ -44,22 +44,35 @@
 
 <section class="admin-channels">
   <h2>Channels</h2>
+  {% if channels | selectattr("bot_can_read", "equalto", False) | list %}
+  <p class="admin-channel-bot-access-warning">
+    The bot itself can't read one or more channels below (marked "blocked" under
+    "Bot access") — this is separate from whether a member can see a channel, and it
+    means that channel's content can never be mirrored, indexed or not, enrolled or
+    not, until fixed. In Discord, open the channel's settings → Permissions, and grant
+    the bot's account (or a role it holds) <strong>View Channel</strong> and
+    <strong>Read Message History</strong>. The next backfill or reconciliation pass
+    picks it up automatically once granted — no restart needed here.
+  </p>
+  {% endif %}
   <table class="admin-channel-list">
     <tr>
       <th>Channel</th>
       <th>Public</th>
       <th>Indexed</th>
       <th>Visibility-enrolled</th>
+      <th>Bot access</th>
       <th>Backfill</th>
       <th></th>
       <th></th>
     </tr>
     {% for channel in channels %}
-    <tr class="admin-channel-row">
+    <tr class="admin-channel-row{{ ' admin-channel-row-bot-blocked' if not channel.bot_can_read else '' }}">
       <td class="admin-channel-name">{{ channel.name }}</td>
       <td class="admin-channel-public">{{ "yes" if channel.is_public else "no" }}</td>
       <td class="admin-channel-indexed">{{ "yes" if channel.indexed else "no" }}</td>
       <td class="admin-channel-visibility-enrolled">{{ "yes" if channel.visibility_enrolled else "no" }}</td>
+      <td class="admin-channel-bot-can-read">{{ "ok" if channel.bot_can_read else "blocked" }}</td>
       <td class="admin-channel-backfill">
         {% if channel.backfill_complete %}complete
         {% elif channel.last_backfilled_message_id %}in progress

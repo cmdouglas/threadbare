@@ -23,6 +23,7 @@ __all__ = [
     "REQUIRED_PERMISSIONS",
     "compute_is_public",
     "refresh_channel_public_status",
+    "refresh_channel_bot_access",
     "everyone_overwrite",
     "should_sync",
 ]
@@ -55,6 +56,33 @@ async def refresh_channel_public_status(
 
     await repository.set_channel_is_public(conn, channel_id, is_public)
     return is_public
+
+
+async def refresh_channel_bot_access(
+    conn: psycopg.AsyncConnection, *, channel_id: int, bot_permissions: int
+) -> bool:
+    """Recompute whether the bot's own Discord account can currently read
+    a channel -- separate from is_public (@everyone's access) and
+    visibility_enrolled (a mod's opt-in to per-member filtering at read
+    time). should_sync deciding a channel *should* sync is necessary but
+    not sufficient: Discord's own REST API rejects the bot's history calls
+    outright (403 Forbidden) if the bot itself lacks View Channel/Read
+    Message History there, independent of what should_sync's three inputs
+    say. Purely informational -- doesn't gate should_sync itself, since a
+    channel regaining bot access should resume syncing automatically on
+    the very next backfill/reconciliation pass with no separate toggle.
+    admin.html surfaces this with instructions for a mod to act on.
+
+    bot_permissions is the caller's job to resolve (discord.py's own
+    `channel.permissions_for(channel.guild.me)` already does full
+    resolution -- category/channel overwrites, role grants, admin/owner
+    bypass -- so there's no need to duplicate discord_permissions.py's
+    hand-rolled resolution for this identity). Returns the newly computed
+    value.
+    """
+    bot_can_read = (bot_permissions & REQUIRED_PERMISSIONS) == REQUIRED_PERMISSIONS
+    await repository.set_channel_bot_can_read(conn, channel_id, bot_can_read)
+    return bot_can_read
 
 
 @dataclass(frozen=True)

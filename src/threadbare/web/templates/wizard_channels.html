@@ -4,6 +4,10 @@
 <h1>Choose channels</h1>
 <p>Check the channels you want mirrored. Public/private and the bot's own access are
 computed below — message counts appear on the admin page once backfill completes.</p>
+<p>A channel marked "no" under Public can still be checked here to mirror its content,
+but members will only actually see it if you also enable that channel's
+"Visibility-enrolled" toggle on the admin page afterward — this wizard only controls
+whether content is mirrored, not per-role visibility.</p>
 {% if intent_status is not none %}
   {% if intent_status %}
   <p class="wizard-intent-ok">Message Content intent: enabled.</p>
@@ -35,9 +39,12 @@ seen in a readable channel).</p>
         {% if channel.bot_ok %}
           ok
         {% elif channel.overwrite_denied %}
-          denied by a channel/category overwrite
+          denied by a channel/category overwrite — in Discord, open this channel's
+          Permissions and grant the bot (or a role it holds) View Channel and Read
+          Message History
         {% else %}
-          denied
+          denied — the bot's server-wide role lacks View Channel/Read Message History;
+          grant it in Discord's Roles settings, or add a channel-specific overwrite
         {% endif %}
       </td>
     </tr>

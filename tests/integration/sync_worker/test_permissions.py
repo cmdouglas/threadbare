@@ -4,6 +4,7 @@ from threadbare.sync_worker import repository
 from threadbare.sync_worker.permissions import (
     READ_MESSAGE_HISTORY,
     VIEW_CHANNEL,
+    refresh_channel_bot_access,
     refresh_channel_public_status,
 )
 
@@ -120,6 +121,49 @@ async def test_refresh_does_not_purge_a_visibility_enrolled_channel_losing_publi
 
     assert result is False
     assert await repository.get_channel_is_public(db_conn, 10) is False
+    async with db_conn.cursor() as cur:
+        await cur.execute("SELECT count(*) AS n FROM messages WHERE channel_id = 10")
+        assert (await cur.fetchone())["n"] == 1
+
+
+async def test_refresh_channel_bot_access_sets_true_when_bot_has_required_permissions(db_conn):
+    await _seed_guild_and_channel(db_conn)
+
+    result = await refresh_channel_bot_access(db_conn, channel_id=10, bot_permissions=BOTH_REQUIRED)
+
+    assert result is True
+    assert await repository.get_channel_bot_can_read(db_conn, 10) is True
+
+
+async def test_refresh_channel_bot_access_sets_false_when_bot_lacks_view_channel(db_conn):
+    await _seed_guild_and_channel(db_conn)
+
+    result = await refresh_channel_bot_access(
+        db_conn, channel_id=10, bot_permissions=READ_MESSAGE_HISTORY
+    )
+
+    assert result is False
+    assert await repository.get_channel_bot_can_read(db_conn, 10) is False
+
+
+async def test_refresh_channel_bot_access_does_not_touch_is_public_or_content(db_conn):
+    # bot_can_read is purely informational -- must never gate/purge synced
+    # content the way refresh_channel_public_status's is_public transition
+    # does, since a role-gated channel losing/regaining bot access has
+    # nothing to do with whether members can see it.
+    await _seed_guild_and_channel(db_conn, is_public=True, visibility_enrolled=True)
+    await db_conn.execute("INSERT INTO users (id, display_name) VALUES (%s, %s)", (100, "someone"))
+    await db_conn.execute(
+        """
+        INSERT INTO messages (id, channel_id, author_id, content, posted_at)
+        VALUES (%s, %s, %s, %s, now())
+        """,
+        (1000, 10, 100, "hello"),
+    )
+
+    await refresh_channel_bot_access(db_conn, channel_id=10, bot_permissions=0)
+
+    assert await repository.get_channel_is_public(db_conn, 10) is True
     async with db_conn.cursor() as cur:
         await cur.execute("SELECT count(*) AS n FROM messages WHERE channel_id = 10")
         assert (await cur.fetchone())["n"] == 1

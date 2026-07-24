@@ -13,14 +13,21 @@ async def _seed_guild(conn, *, guild_id=1):
 
 
 async def _seed_board(
-    conn, *, channel_id, guild_id=1, name="general", is_public=True, indexed=True
+    conn,
+    *,
+    channel_id,
+    guild_id=1,
+    name="general",
+    is_public=True,
+    indexed=True,
+    bot_can_read=True,
 ):
     await conn.execute(
         """
-        INSERT INTO channels (id, guild_id, type, name, is_public, indexed)
-        VALUES (%s, %s, 0, %s, %s, %s)
+        INSERT INTO channels (id, guild_id, type, name, is_public, indexed, bot_can_read)
+        VALUES (%s, %s, 0, %s, %s, %s, %s)
         """,
-        (channel_id, guild_id, name, is_public, indexed),
+        (channel_id, guild_id, name, is_public, indexed, bot_can_read),
     )
 
 
@@ -146,6 +153,43 @@ def test_admin_index_shows_visibility_enrolled_state(client, web_conn):
     assert b"admin-channel-visibility-enrolled" in resp.data
 
 
+def test_admin_index_shows_ok_bot_access_by_default(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10, name="general"))
+    _make_mod(client)
+
+    resp = client.get("/admin/")
+
+    body = resp.data.decode()
+    assert 'admin-channel-bot-can-read">ok' in body
+    assert "admin-channel-bot-access-warning" not in body
+
+
+def test_admin_index_flags_a_channel_the_bot_cannot_read(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10, name="general", is_public=False, bot_can_read=False))
+    _make_mod(client)
+
+    resp = client.get("/admin/")
+
+    body = resp.data.decode()
+    assert 'admin-channel-bot-can-read">blocked' in body
+    assert "admin-channel-bot-access-warning" in body
+    assert "View Channel" in body
+    assert "Read Message History" in body
+
+
+def test_admin_index_omits_bot_access_warning_when_every_channel_is_readable(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10, name="general", bot_can_read=True))
+    run(_seed_board(web_conn, channel_id=11, name="also-general", bot_can_read=True))
+    _make_mod(client)
+
+    resp = client.get("/admin/")
+
+    assert "admin-channel-bot-access-warning" not in resp.data.decode()
+
+
 def test_admin_shows_stale_heartbeat_warning_when_heartbeat_is_old(client, web_conn):
     run(_seed_guild(web_conn))
     run(_seed_heartbeat(web_conn, updated_at=datetime.now(UTC) - timedelta(minutes=30)))
@@ -176,9 +220,8 @@ def test_admin_index_shows_app_version_and_latest_schema_migration(client, web_c
     assert threadbare.__version__ in body
     # The real test DB has every real migration applied (see
     # tests/integration/db/test_migrate.py's idempotency test) --
-    # 0011_channel_visibility_enrollment is the current latest by filename
-    # ordering.
-    assert "0011_channel_visibility_enrollment" in body
+    # 0012_channel_bot_can_read is the current latest by filename ordering.
+    assert "0012_channel_bot_can_read" in body
 
 
 def test_admin_index_shows_auto_index_setting_enabled_by_default(client, web_conn):

@@ -14,6 +14,7 @@ from threadbare.sync_worker.channel_overwrites import sync_channel_overwrites
 from threadbare.sync_worker.discord_types import MessageLike, RoleLike, ThreadLike, UserLike
 from threadbare.sync_worker.permissions import (
     everyone_overwrite,
+    refresh_channel_bot_access,
     refresh_channel_public_status,
     should_sync,
 )
@@ -194,8 +195,10 @@ async def handle_channel_permissions_changed(conn, channel: discord.abc.GuildCha
     """Fired on CHANNEL_UPDATE (via handle_channel_upsert's caller) and
     CHANNEL_CREATE (handle_channel_create below) -- exactly the two live
     events where a channel's permission overwrites can change. Recomputes
-    is_public (the @everyone-only case) and, since Phase 2, also re-syncs
-    the full stored role/member overwrite tables to match Discord exactly.
+    is_public (the @everyone-only case) and bot_can_read (the bot's own
+    access, informational-only for admin.html) and, since Phase 2, also
+    re-syncs the full stored role/member overwrite tables to match Discord
+    exactly.
     """
     category_overwrite = everyone_overwrite(channel.category) if channel.category else None
     await refresh_channel_public_status(
@@ -205,14 +208,21 @@ async def handle_channel_permissions_changed(conn, channel: discord.abc.GuildCha
         category_overwrite=category_overwrite,
         channel_overwrite=everyone_overwrite(channel),
     )
+    await refresh_channel_bot_access(
+        conn,
+        channel_id=channel.id,
+        bot_permissions=channel.permissions_for(channel.guild.me).value,
+    )
     await sync_channel_overwrites(conn, channel)
 
 
 async def handle_role_permissions_changed(conn, guild: discord.Guild) -> None:
     """A role edit/delete doesn't say which channels it affects, so recompute
-    every non-category channel in the guild. Cheap at v1's single-guild,
-    tens-of-channels scale (DESIGN.md §7's Phase 2 note on why this doesn't
-    scale to multi-guild, and why that's fine for now).
+    every non-category channel in the guild -- including bot_can_read, since
+    the edited/deleted role could just as easily be one the bot itself
+    holds. Cheap at v1's single-guild, tens-of-channels scale (DESIGN.md
+    §7's Phase 2 note on why this doesn't scale to multi-guild, and why
+    that's fine for now).
     """
     default_role_permissions = guild.default_role.permissions.value
     for channel in guild.channels:
@@ -225,4 +235,9 @@ async def handle_role_permissions_changed(conn, guild: discord.Guild) -> None:
             default_role_permissions=default_role_permissions,
             category_overwrite=category_overwrite,
             channel_overwrite=everyone_overwrite(channel),
+        )
+        await refresh_channel_bot_access(
+            conn,
+            channel_id=channel.id,
+            bot_permissions=channel.permissions_for(guild.me).value,
         )

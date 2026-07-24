@@ -122,6 +122,21 @@ async def set_channel_is_public(
     await conn.execute("UPDATE channels SET is_public = %s WHERE id = %s", (is_public, channel_id))
 
 
+async def get_channel_bot_can_read(conn: psycopg.AsyncConnection, channel_id: int) -> bool | None:
+    async with conn.cursor() as cur:
+        await cur.execute("SELECT bot_can_read FROM channels WHERE id = %s", (channel_id,))
+        row = await cur.fetchone()
+    return row["bot_can_read"] if row else None
+
+
+async def set_channel_bot_can_read(
+    conn: psycopg.AsyncConnection, channel_id: int, bot_can_read: bool
+) -> None:
+    await conn.execute(
+        "UPDATE channels SET bot_can_read = %s WHERE id = %s", (bot_can_read, channel_id)
+    )
+
+
 async def upsert_user(conn: psycopg.AsyncConnection, row: dict) -> None:
     await conn.execute(
         """

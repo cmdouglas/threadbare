@@ -435,6 +435,7 @@ class FakeGuildChannelForOverwrites:
         deny=0,
         type=discord.ChannelType.text,
         overwrites=None,
+        bot_permissions_value=None,
     ):
         self.id = id
         self.guild = guild
@@ -450,9 +451,15 @@ class FakeGuildChannelForOverwrites:
         self._allow = allow
         self._deny = deny
         self.overwrites = overwrites if overwrites is not None else {}
+        self._bot_permissions_value = (
+            bot_permissions_value if bot_permissions_value is not None else BOTH_REQUIRED
+        )
 
     def overwrites_for(self, role):
         return FakePermissionPair(self._allow, self._deny)
+
+    def permissions_for(self, member):
+        return type("P", (), {"value": self._bot_permissions_value})()
 
 
 class FakeRole:
@@ -472,9 +479,10 @@ class FakeOverwriteTargetRole(discord.Role):
 
 
 class FakeGuild:
-    def __init__(self, *, default_role, channels):
+    def __init__(self, *, default_role, channels, me=None):
         self.default_role = default_role
         self.channels = channels
+        self.me = me if me is not None else object()
 
 
 async def test_handle_channel_permissions_changed_sets_is_public(db_conn):
@@ -485,6 +493,16 @@ async def test_handle_channel_permissions_changed_sets_is_public(db_conn):
     await events.handle_channel_permissions_changed(db_conn, channel)
 
     assert await repository.get_channel_is_public(db_conn, 10) is True
+
+
+async def test_handle_channel_permissions_changed_sets_bot_can_read(db_conn):
+    await _seed_guild_and_channel(db_conn, is_public=False)
+    guild = FakeGuild(default_role=FakeRole(BOTH_REQUIRED), channels=[])
+    channel = FakeGuildChannelForOverwrites(id=10, guild=guild, bot_permissions_value=0)
+
+    await events.handle_channel_permissions_changed(db_conn, channel)
+
+    assert await repository.get_channel_bot_can_read(db_conn, 10) is False
 
 
 async def test_handle_channel_permissions_changed_purges_on_revoke(db_conn):
@@ -736,6 +754,27 @@ async def test_handle_role_permissions_changed_recomputes_every_channel(db_conn)
     assert await repository.get_channel_is_public(db_conn, 10) is False
     assert await repository.get_channel_is_public(db_conn, 11) is False
     # the category itself was skipped, not blown up on (it has no row to update)
+
+
+async def test_handle_role_permissions_changed_recomputes_bot_can_read_too(db_conn):
+    # The edited/deleted role could be one the bot itself holds -- this
+    # loop must recompute bot_can_read alongside is_public, not just the
+    # latter.
+    await db_conn.execute("INSERT INTO guilds (id, name) VALUES (%s, %s)", (1, "Test Guild"))
+    await db_conn.execute(
+        "INSERT INTO channels (id, guild_id, type, name, is_public, bot_can_read) "
+        "VALUES (%s, 1, 0, %s, true, true)",
+        (10, "general"),
+    )
+
+    role = FakeRole(0)
+    guild = FakeGuild(default_role=role, channels=[])
+    channel = FakeGuildChannelForOverwrites(id=10, guild=guild, bot_permissions_value=0)
+    guild.channels = [channel]
+
+    await events.handle_role_permissions_changed(db_conn, guild)
+
+    assert await repository.get_channel_bot_can_read(db_conn, 10) is False
 
 
 async def test_handle_role_permissions_changed_does_not_touch_overwrite_tables(db_conn):

@@ -41,6 +41,7 @@ class FakeChannel:
         allow=0,
         deny=0,
         overwrites=None,
+        bot_permissions_value=BOTH_REQUIRED,
     ):
         self.id = id
         self.name = name
@@ -53,9 +54,13 @@ class FakeChannel:
         self._allow = allow
         self._deny = deny
         self.overwrites = overwrites if overwrites is not None else {}
+        self._bot_permissions_value = bot_permissions_value
 
     def overwrites_for(self, role):
         return FakePermissionPair(self._allow, self._deny)
+
+    def permissions_for(self, member):
+        return type("P", (), {"value": self._bot_permissions_value})()
 
 
 class FakeRole:
@@ -65,7 +70,17 @@ class FakeRole:
 
 class FakeGuild:
     def __init__(
-        self, *, id, name, default_role, channels, icon=None, threads=(), roles=(), members=()
+        self,
+        *,
+        id,
+        name,
+        default_role,
+        channels,
+        icon=None,
+        threads=(),
+        roles=(),
+        members=(),
+        me=None,
     ):
         self.id = id
         self.name = name
@@ -75,6 +90,7 @@ class FakeGuild:
         self._threads = list(threads)
         self._roles = list(roles)
         self._members = list(members)
+        self.me = me if me is not None else object()
 
     async def fetch_channels(self):
         return self._channels
@@ -217,6 +233,22 @@ async def test_discover_channels_computes_is_public_per_channel(db_conn):
 
     assert await repository.get_channel_is_public(db_conn, 10) is True
     assert await repository.get_channel_is_public(db_conn, 11) is False
+
+
+async def test_discover_channels_computes_bot_can_read_per_channel(db_conn):
+    role = FakeRole(BOTH_REQUIRED)
+    guild = FakeGuild(id=1, name="Test Guild", default_role=role, channels=[])
+    readable = FakeChannel(id=10, name="general", guild=guild, bot_permissions_value=BOTH_REQUIRED)
+    unreadable = FakeChannel(
+        id=11, name="mod-only", guild=guild, deny=VIEW_CHANNEL, bot_permissions_value=0
+    )
+    guild._channels = [readable, unreadable]
+    client = FakeClient(guild)
+
+    await discover_channels(client, db_conn, guild_id=1)
+
+    assert await repository.get_channel_bot_can_read(db_conn, 10) is True
+    assert await repository.get_channel_bot_can_read(db_conn, 11) is False
 
 
 async def test_discover_channels_computes_is_public_for_forum_channels_like_any_other_channel(

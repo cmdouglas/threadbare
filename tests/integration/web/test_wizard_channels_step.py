@@ -96,6 +96,30 @@ def test_channels_get_shows_denied_when_bot_lacks_permission(wizard_client, web_
     assert b"denied" in resp.data
 
 
+def test_channels_get_shows_actionable_instructions_when_bot_lacks_permission(
+    wizard_client, web_conn, monkeypatch
+):
+    _seed_invite_step(wizard_client, web_conn)
+    _stub_discord(monkeypatch, everyone_perms=0)
+
+    resp = wizard_client.get("/channels")
+
+    body = resp.data.decode()
+    assert "View Channel" in body
+    assert "Read Message History" in body
+
+
+def test_channels_get_explains_the_visibility_enrolled_admin_step(
+    wizard_client, web_conn, monkeypatch
+):
+    _seed_invite_step(wizard_client, web_conn)
+    _stub_discord(monkeypatch)
+
+    resp = wizard_client.get("/channels")
+
+    assert b"Visibility-enrolled" in resp.data
+
+
 def test_channels_post_confirms_selection_and_advances(wizard_client, web_conn, monkeypatch):
     _seed_invite_step(wizard_client, web_conn)
     _stub_discord(monkeypatch)

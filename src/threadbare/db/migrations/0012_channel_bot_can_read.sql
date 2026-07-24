@@ -1,0 +1,13 @@
+-- Whether the bot's own Discord account can currently read this channel --
+-- distinct from is_public (@everyone's access) and visibility_enrolled (a
+-- mod's opt-in to per-member filtering). A channel a mod enrolls but the
+-- bot itself lacks View Channel/Read Message History on can never actually
+-- be backfilled (Discord's REST API rejects the bot's own history calls
+-- with 403 Forbidden, regardless of what any given member can see) --
+-- previously only visible as an ERROR line in the sync worker's own logs.
+-- Defaults true (optimistic) rather than unknown/false so upgrading never
+-- shows an alarming false-positive warning for a channel the bot has
+-- always been able to read; discover_channels recomputes the real value
+-- for every channel within moments of the next reconnect, same bootstrap
+-- timing as is_public.
+ALTER TABLE channels ADD COLUMN bot_can_read boolean NOT NULL DEFAULT true;

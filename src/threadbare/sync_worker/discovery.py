@@ -14,6 +14,7 @@ from threadbare.sync_worker import repository, transform
 from threadbare.sync_worker.channel_overwrites import sync_channel_overwrites
 from threadbare.sync_worker.permissions import (
     everyone_overwrite,
+    refresh_channel_bot_access,
     refresh_channel_public_status,
     should_sync,
 )
@@ -23,10 +24,11 @@ async def discover_channels(client: discord.Client, conn, *, guild_id: int) -> l
     """Upserts the guild row and every channel's row (including categories —
     channels.parent_id is a self-referencing FK, so a category needs its own
     row for its children to point at, even though it has no content of its
-    own), computing is_public for non-category channels via the same
-    refresh_channel_public_status used by live CHANNEL_UPDATE/role events —
-    so there's exactly one function in the codebase that ever computes
-    is_public. Voice/stage-voice channels get no row at all — a stated
+    own), computing is_public and bot_can_read for non-category channels via
+    the same refresh_channel_public_status/refresh_channel_bot_access used
+    by live CHANNEL_UPDATE/role events — so there's exactly one place in the
+    codebase that ever computes each. Voice/stage-voice channels get no row
+    at all — a stated
     non-goal (DESIGN.md §2), and unlike categories, nothing parents off
     them. Safe to call repeatedly (e.g. on every gateway reconnect):
     metadata updates, is_public/indexed never do for a channel already
@@ -82,6 +84,11 @@ async def discover_channels(client: discord.Client, conn, *, guild_id: int) -> l
             default_role_permissions=default_role_permissions,
             category_overwrite=category_overwrite,
             channel_overwrite=everyone_overwrite(channel),
+        )
+        await refresh_channel_bot_access(
+            conn,
+            channel_id=channel.id,
+            bot_permissions=channel.permissions_for(guild.me).value,
         )
         discovered_ids.append(channel.id)
 
