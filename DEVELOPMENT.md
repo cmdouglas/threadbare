@@ -78,6 +78,7 @@ Setup (one-time, manual — this lives outside the repo):
 11. Create one persistent forum channel (Server Settings → Channels → Create Channel → Forum) and copy its ID into `.env` as `DISCORD_TEST_FORUM_CHANNEL_ID`. Needed by `tests/live_discord/test_forum_channel.py`. Unlike the plain-text thread above, a webhook posting into this channel *can* auto-create a new forum post per test run via `thread_name=` — only the parent forum channel itself needs to be pre-created and persistent.
 12. Create a second webhook, this one bound to the forum channel (Server Settings → Integrations → Webhooks → New Webhook, select the forum channel), and copy its URL into `.env` as `DISCORD_TEST_FORUM_WEBHOOK_URL`. Webhooks can't post cross-channel, so the existing `#general` webhook can't be reused here.
 13. Optional, once the sync worker exists: a small script to post a batch of synthetic messages into the test server, for exercising pagination/backfill/search at volume.
+14. Optional, only needed to regenerate `tests/fixtures/permission_golden.json` (Phase 2's golden permission tests, `ROADMAP.md`): a second custom role, `threadbare_testing_2` (no permissions, assigned to the bot alongside its existing `threadbare_testing` role), plus a small purpose-built category/channel layout that isolates category-vs-channel precedence, multi-role combination, and the Administrator short-circuit. Full click-by-click setup and regeneration instructions live in `scripts/export_permission_golden.py`'s own docstring — most contributors will never need to touch this.
 
 ## Configuration
 

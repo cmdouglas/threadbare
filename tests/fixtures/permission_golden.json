@@ -1,0 +1,100 @@
+{
+  "_meta": {
+    "description": "Real role permission bitfields and channel/category overwrites exported from the live DISCORD_TEST_GUILD_ID test server (DESIGN.md \u00a77's 'golden tests against permission fixtures exported from a real server'), not hand-invented numbers. Captured via scripts/export_permission_golden.py against a purpose-built server layout, each channel isolating one Discord permission-resolution edge case. Regenerate by re-running that script after recreating the same role/channel/overwrite layout documented in its docstring.",
+    "guild_id": 1524883720350466048,
+    "captured_at": "2026-07-24"
+  },
+  "everyone_role": {
+    "id": 1524883720350466048,
+    "name": "@everyone",
+    "permissions": 2248473465835073
+  },
+  "roles": {
+    "threadbare_testing": {
+      "id": 1524888226211565641,
+      "permissions": 66560
+    },
+    "threadbare_testing_2": {
+      "id": 1530293455933407333,
+      "permissions": 0
+    }
+  },
+  "categories": {
+    "Permission Fixtures": {
+      "id": 1530293735126991018,
+      "overwrites": [
+        {
+          "role": "@everyone",
+          "allow": 0,
+          "deny": 0
+        },
+        {
+          "role": "threadbare_testing",
+          "allow": 0,
+          "deny": 1024
+        }
+      ]
+    }
+  },
+  "channels": {
+    "golden-category-precedence": {
+      "id": 1530294174518083654,
+      "parent_category": "Permission Fixtures",
+      "overwrites": [
+        {
+          "role": "@everyone",
+          "allow": 0,
+          "deny": 0
+        },
+        {
+          "role": "threadbare_testing",
+          "allow": 1024,
+          "deny": 0
+        }
+      ]
+    },
+    "golden-deny-allow": {
+      "id": 1530294677570322735,
+      "parent_category": null,
+      "overwrites": [
+        {
+          "role": "@everyone",
+          "allow": 0,
+          "deny": 1024
+        },
+        {
+          "role": "threadbare_testing",
+          "allow": 1024,
+          "deny": 0
+        }
+      ]
+    },
+    "golden-multi-role": {
+      "id": 1530296711833190572,
+      "parent_category": null,
+      "overwrites": [
+        {
+          "role": "threadbare_testing_2",
+          "allow": 1024,
+          "deny": 0
+        },
+        {
+          "role": "threadbare_testing",
+          "allow": 0,
+          "deny": 1024
+        }
+      ]
+    },
+    "golden-admin": {
+      "id": 1530298706891378951,
+      "parent_category": null,
+      "overwrites": [
+        {
+          "role": "@everyone",
+          "allow": 0,
+          "deny": 66560
+        }
+      ]
+    }
+  }
+}
