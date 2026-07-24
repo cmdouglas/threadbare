@@ -88,17 +88,19 @@ async def _cleanup(conn):
     await conn.commit()
 
 
-async def _seed_channel(conn, *, guild_id, channel_id, is_public, type=0):
+async def _seed_channel(
+    conn, *, guild_id, channel_id, is_public, type=0, visibility_enrolled=False
+):
     await conn.execute(
         "INSERT INTO guilds (id, name) VALUES (%s, %s) ON CONFLICT DO NOTHING",
         (guild_id, "Test Guild"),
     )
     await conn.execute(
         """
-        INSERT INTO channels (id, guild_id, type, name, is_public)
-        VALUES (%s, %s, %s, %s, %s)
+        INSERT INTO channels (id, guild_id, type, name, is_public, visibility_enrolled)
+        VALUES (%s, %s, %s, %s, %s, %s)
         """,
-        (channel_id, guild_id, type, f"chan-{channel_id}", is_public),
+        (channel_id, guild_id, type, f"chan-{channel_id}", is_public, visibility_enrolled),
     )
 
 
@@ -131,5 +133,32 @@ async def test_reconcile_guild_never_reconciles_a_public_forum_channels_top_leve
 
     assert 10 in fetcher.calls
     assert 20 not in fetcher.calls
+
+    await _cleanup(db_conn)
+
+
+async def test_reconcile_guild_reconciles_a_visibility_enrolled_non_public_channel(
+    db_conn, test_database_url
+):
+    await _seed_channel(db_conn, guild_id=1, channel_id=10, is_public=False)
+    await _seed_channel(
+        db_conn, guild_id=1, channel_id=11, is_public=False, visibility_enrolled=True
+    )
+    await db_conn.commit()
+
+    author = FakeAuthor(id=1)
+    fetcher = ChannelKeyedFetcher({11: [FakeMessage(id=101, author=author)]})
+    guild = FakeGuild([FakeChannel(10), FakeChannel(11)])
+    client = FakeClient(guild)
+
+    pool = create_pool(test_database_url)
+    await pool.open()
+    try:
+        await reconcile_guild(client, pool, guild_id=1, fetcher=fetcher)
+    finally:
+        await pool.close()
+
+    assert 10 not in fetcher.calls
+    assert 11 in fetcher.calls
 
     await _cleanup(db_conn)

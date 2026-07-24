@@ -61,14 +61,16 @@ class FakeEmbed:
     fields: list = field(default_factory=list)
 
 
-async def _seed_guild_and_channel(conn, *, guild_id=1, channel_id=10, is_public=False):
+async def _seed_guild_and_channel(
+    conn, *, guild_id=1, channel_id=10, is_public=False, visibility_enrolled=False
+):
     await conn.execute("INSERT INTO guilds (id, name) VALUES (%s, %s)", (guild_id, "Test Guild"))
     await conn.execute(
         """
-        INSERT INTO channels (id, guild_id, type, name, is_public)
-        VALUES (%s, %s, 0, 'general', %s)
+        INSERT INTO channels (id, guild_id, type, name, is_public, visibility_enrolled)
+        VALUES (%s, %s, 0, 'general', %s, %s)
         """,
-        (channel_id, guild_id, is_public),
+        (channel_id, guild_id, is_public, visibility_enrolled),
     )
 
 
@@ -154,6 +156,20 @@ async def test_handle_thread_upsert_is_a_no_op_for_a_non_public_parent(db_conn):
     async with db_conn.cursor() as cur:
         await cur.execute("SELECT count(*) AS n FROM threads WHERE id = 3000")
         assert (await cur.fetchone())["n"] == 0
+
+
+async def test_handle_thread_upsert_inserts_a_row_for_a_visibility_enrolled_non_public_parent(
+    db_conn,
+):
+    await _seed_guild_and_channel(db_conn, channel_id=10, is_public=False, visibility_enrolled=True)
+    thread = FakeThread(id=3000, parent_id=10, name="a thread")
+
+    await events.handle_thread_upsert(db_conn, thread)
+
+    async with db_conn.cursor() as cur:
+        await cur.execute("SELECT parent_channel_id, name FROM threads WHERE id = 3000")
+        row = await cur.fetchone()
+    assert row == {"parent_channel_id": 10, "name": "a thread"}
 
 
 async def test_handle_thread_upsert_is_a_no_op_for_an_unknown_parent(db_conn):

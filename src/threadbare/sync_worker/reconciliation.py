@@ -216,10 +216,10 @@ async def reconcile_guild(
     """Reconcile every in-scope channel in a guild. Skips categories and
     forum channels (neither has top-level messages of its own — forum
     content lives entirely in child threads, reconciled separately via
-    reconcile_guild_threads below) and any channel that isn't currently
-    public+indexed — reconciling a gated channel would mean actively
-    re-adding content we're supposed to be keeping out, the opposite of what
-    reconciliation is for.
+    reconcile_guild_threads below) and any channel should_sync excludes
+    (not indexed, or neither public nor visibility_enrolled) — reconciling
+    an out-of-scope channel would mean actively re-adding content we're
+    supposed to be keeping out, the opposite of what reconciliation is for.
 
     `fetcher` is injectable (matching backfill_guild()'s own convention) so
     this can be integration-tested without a live gateway connection;
@@ -236,7 +236,9 @@ async def reconcile_guild(
             continue
         async with pool.connection() as conn:
             flags = await repository.get_channel_sync_flags(conn, channel.id)
-            if flags is None or not should_sync(is_public=flags[0], indexed=flags[1]):
+            if flags is None or not should_sync(
+                is_public=flags[0], indexed=flags[1], visibility_enrolled=flags[2]
+            ):
                 continue
             sink = RepositoryReconciliationSink(conn)
             await reconcile_channel(fetcher, sink, channel_id=channel.id, after=after)

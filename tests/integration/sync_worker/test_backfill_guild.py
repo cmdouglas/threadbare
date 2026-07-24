@@ -116,17 +116,19 @@ async def _cleanup(conn):
     await conn.commit()
 
 
-async def _seed_channel(conn, *, guild_id, channel_id, is_public, indexed=True):
+async def _seed_channel(
+    conn, *, guild_id, channel_id, is_public, indexed=True, visibility_enrolled=False
+):
     await conn.execute(
         "INSERT INTO guilds (id, name) VALUES (%s, %s) ON CONFLICT DO NOTHING",
         (guild_id, "Test Guild"),
     )
     await conn.execute(
         """
-        INSERT INTO channels (id, guild_id, type, name, is_public, indexed)
-        VALUES (%s, %s, 0, %s, %s, %s)
+        INSERT INTO channels (id, guild_id, type, name, is_public, indexed, visibility_enrolled)
+        VALUES (%s, %s, 0, %s, %s, %s, %s)
         """,
-        (channel_id, guild_id, f"chan-{channel_id}", is_public, indexed),
+        (channel_id, guild_id, f"chan-{channel_id}", is_public, indexed, visibility_enrolled),
     )
 
 
@@ -158,6 +160,45 @@ async def test_backfill_guild_backfills_only_in_scope_channels(db_conn, test_dat
         await cur.execute("SELECT id FROM messages ORDER BY id")
         remaining = {row["id"] for row in await cur.fetchall()}
     assert remaining == {100}
+
+    await _cleanup(db_conn)
+
+
+async def test_backfill_guild_backfills_a_visibility_enrolled_non_public_channel(
+    db_conn, test_database_url
+):
+    # The Phase 2 regression case: a role-gated channel a mod has enrolled
+    # must actually get its content mirrored, or per-user visibility
+    # filtering at read time has nothing to show even a permitted member.
+    await _seed_channel(db_conn, guild_id=1, channel_id=10, is_public=True)
+    await _seed_channel(
+        db_conn, guild_id=1, channel_id=11, is_public=False, visibility_enrolled=True
+    )
+    await _seed_channel(db_conn, guild_id=1, channel_id=12, is_public=False)
+    await db_conn.commit()
+
+    author = FakeAuthor(id=1)
+    fetcher = ChannelKeyedFetcher(
+        {
+            10: [FakeMessage(id=100, author=author)],
+            11: [FakeMessage(id=101, author=author)],
+            12: [FakeMessage(id=102, author=author)],
+        }
+    )
+    guild = FakeGuild([FakeChannel(10), FakeChannel(11), FakeChannel(12)])
+    client = FakeClient(guild)
+
+    pool = create_pool(test_database_url)
+    await pool.open()
+    try:
+        await backfill_guild(client, pool, guild_id=1, fetcher=fetcher)
+    finally:
+        await pool.close()
+
+    async with db_conn.cursor() as cur:
+        await cur.execute("SELECT id FROM messages ORDER BY id")
+        remaining = {row["id"] for row in await cur.fetchall()}
+    assert remaining == {100, 101}
 
     await _cleanup(db_conn)
 

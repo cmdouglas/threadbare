@@ -417,6 +417,28 @@ async def test_discover_active_threads_skips_a_thread_of_a_non_public_channel(db
         assert (await cur.fetchone())["n"] == 0
 
 
+async def test_discover_active_threads_discovers_a_thread_of_an_enrolled_non_public_channel(
+    db_conn,
+):
+    role = FakeRole(BOTH_REQUIRED)
+    guild = FakeGuild(id=1, name="Test Guild", default_role=role, channels=[])
+    channel = FakeChannel(id=10, name="mod-only", guild=guild, deny=VIEW_CHANNEL)
+    thread = FakeThread(id=3000, parent_id=10, name="a thread")
+    guild._channels = [channel]
+    guild._threads = [thread]
+    client = FakeClient(guild)
+    await discover_channels(client, db_conn, guild_id=1)
+    await db_conn.execute("UPDATE channels SET visibility_enrolled = true WHERE id = 10")
+
+    discovered = await discover_active_threads(client, db_conn, guild_id=1)
+
+    assert discovered == [3000]
+    async with db_conn.cursor() as cur:
+        await cur.execute("SELECT parent_channel_id, name FROM threads WHERE id = 3000")
+        row = await cur.fetchone()
+    assert row == {"parent_channel_id": 10, "name": "a thread"}
+
+
 async def test_discover_active_threads_skips_a_thread_of_a_non_indexed_channel(db_conn):
     role = FakeRole(BOTH_REQUIRED)
     guild = FakeGuild(id=1, name="Test Guild", default_role=role, channels=[])

@@ -344,8 +344,8 @@ async def backfill_guild(
     one batch), bounded by max_channel_concurrency — a different resource
     than the Discord-call concurrency BoundedHistoryFetcher caps, which is
     why both exist. Skips categories and forum channels (no top-level
-    history; ROADMAP-flagged, not handled here) and anything not currently
-    is_public+indexed.
+    history; ROADMAP-flagged, not handled here) and anything should_sync
+    excludes (indexed, and either public or visibility_enrolled).
 
     `fetcher` defaults to the real hardened chain
     (Retrying(Bounded(Discord))) built once and shared across all channels,
@@ -361,7 +361,9 @@ async def backfill_guild(
     async def _backfill_one(channel_id: int) -> None:
         async with semaphore, pool.connection() as conn:
             flags = await repository.get_channel_sync_flags(conn, channel_id)
-            if flags is None or not should_sync(is_public=flags[0], indexed=flags[1]):
+            if flags is None or not should_sync(
+                is_public=flags[0], indexed=flags[1], visibility_enrolled=flags[2]
+            ):
                 return
             sink = RepositoryBackfillSink(conn)
             try:
@@ -415,7 +417,9 @@ async def discover_archived_threads(pool, *, channels: list) -> set[int]:
             return
         async with pool.connection() as conn:
             flags = await repository.get_channel_sync_flags(conn, channel.id)
-        if flags is None or not should_sync(is_public=flags[0], indexed=flags[1]):
+        if flags is None or not should_sync(
+            is_public=flags[0], indexed=flags[1], visibility_enrolled=flags[2]
+        ):
             return
         # ForumChannel.archived_threads() has no private= kwarg at all (forum
         # threads can never be private) — TextChannel.archived_threads()

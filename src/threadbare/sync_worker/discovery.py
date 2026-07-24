@@ -135,8 +135,10 @@ async def discover_member_roles(client: discord.Client, conn, *, guild_id: int) 
 
 async def discover_active_threads(client: discord.Client, conn, *, guild_id: int) -> list[int]:
     """Upserts a threads row for every active thread whose parent channel is
-    public+indexed — including forum-parented threads, gated the same way as
-    any other channel's threads (a forum "post" is just a discord.Thread).
+    in-scope for sync (should_sync: indexed, and either public or
+    visibility_enrolled) — including forum-parented threads, gated the same
+    way as any other channel's threads (a forum "post" is just a
+    discord.Thread).
     One non-paginated REST call (Guild.active_threads()) covers every active
     thread the bot's connection can see, public and private, in one shot.
     Run on every on_ready, same as discover_channels: cheap, and — absent
@@ -150,7 +152,9 @@ async def discover_active_threads(client: discord.Client, conn, *, guild_id: int
     discovered_ids = []
     for thread in threads:
         flags = await repository.get_channel_sync_flags(conn, thread.parent_id)
-        if flags is None or not should_sync(is_public=flags[0], indexed=flags[1]):
+        if flags is None or not should_sync(
+            is_public=flags[0], indexed=flags[1], visibility_enrolled=flags[2]
+        ):
             continue
         await repository.upsert_thread(conn, transform.thread_to_row(thread))
         discovered_ids.append(thread.id)

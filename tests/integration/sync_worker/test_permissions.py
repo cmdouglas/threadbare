@@ -16,14 +16,16 @@ class Overwrite:
     deny: int = 0
 
 
-async def _seed_guild_and_channel(conn, *, guild_id=1, channel_id=10, is_public=False):
+async def _seed_guild_and_channel(
+    conn, *, guild_id=1, channel_id=10, is_public=False, visibility_enrolled=False
+):
     await conn.execute("INSERT INTO guilds (id, name) VALUES (%s, %s)", (guild_id, "Test Guild"))
     await conn.execute(
         """
-        INSERT INTO channels (id, guild_id, type, name, is_public)
-        VALUES (%s, %s, 0, 'general', %s)
+        INSERT INTO channels (id, guild_id, type, name, is_public, visibility_enrolled)
+        VALUES (%s, %s, 0, 'general', %s, %s)
         """,
-        (channel_id, guild_id, is_public),
+        (channel_id, guild_id, is_public, visibility_enrolled),
     )
 
 
@@ -88,6 +90,36 @@ async def test_refresh_does_not_purge_when_staying_public(db_conn):
     )
 
     assert result is True
+    async with db_conn.cursor() as cur:
+        await cur.execute("SELECT count(*) AS n FROM messages WHERE channel_id = 10")
+        assert (await cur.fetchone())["n"] == 1
+
+
+async def test_refresh_does_not_purge_a_visibility_enrolled_channel_losing_public_access(db_conn):
+    # A role-gated channel a mod has already enrolled is still meant to be
+    # synced and filtered per-user at read time (should_sync) -- purging it
+    # here just because @everyone lost access would silently undo that
+    # enrollment and re-break the exact bug this predicate exists to fix.
+    await _seed_guild_and_channel(db_conn, is_public=True, visibility_enrolled=True)
+    await db_conn.execute("INSERT INTO users (id, display_name) VALUES (%s, %s)", (100, "someone"))
+    await db_conn.execute(
+        """
+        INSERT INTO messages (id, channel_id, author_id, content, posted_at)
+        VALUES (%s, %s, %s, %s, now())
+        """,
+        (1000, 10, 100, "hello"),
+    )
+
+    result = await refresh_channel_public_status(
+        db_conn,
+        channel_id=10,
+        default_role_permissions=BOTH_REQUIRED,
+        category_overwrite=None,
+        channel_overwrite=Overwrite(deny=VIEW_CHANNEL),
+    )
+
+    assert result is False
+    assert await repository.get_channel_is_public(db_conn, 10) is False
     async with db_conn.cursor() as cur:
         await cur.execute("SELECT count(*) AS n FROM messages WHERE channel_id = 10")
         assert (await cur.fetchone())["n"] == 1

@@ -3,17 +3,19 @@ from datetime import UTC, datetime
 from threadbare.sync_worker import repository
 
 
-async def _seed_guild_and_channel(conn, *, guild_id=1, channel_id=10, is_public=False):
+async def _seed_guild_and_channel(
+    conn, *, guild_id=1, channel_id=10, is_public=False, visibility_enrolled=False
+):
     await conn.execute(
         "INSERT INTO guilds (id, name) VALUES (%s, %s)",
         (guild_id, "Test Guild"),
     )
     await conn.execute(
         """
-        INSERT INTO channels (id, guild_id, type, name, is_public)
-        VALUES (%s, %s, 0, 'general', %s)
+        INSERT INTO channels (id, guild_id, type, name, is_public, visibility_enrolled)
+        VALUES (%s, %s, 0, 'general', %s, %s)
         """,
-        (channel_id, guild_id, is_public),
+        (channel_id, guild_id, is_public, visibility_enrolled),
     )
 
 
@@ -224,10 +226,16 @@ async def test_get_channel_sync_flags_returns_none_for_unknown_channel(db_conn):
     assert await repository.get_channel_sync_flags(db_conn, 999) is None
 
 
-async def test_get_channel_sync_flags_returns_is_public_and_indexed(db_conn):
+async def test_get_channel_sync_flags_returns_is_public_indexed_and_enrolled(db_conn):
     await _seed_guild_and_channel(db_conn, is_public=True)
 
-    assert await repository.get_channel_sync_flags(db_conn, 10) == (True, True)
+    assert await repository.get_channel_sync_flags(db_conn, 10) == (True, True, False)
+
+
+async def test_get_channel_sync_flags_reflects_visibility_enrolled(db_conn):
+    await _seed_guild_and_channel(db_conn, is_public=False, visibility_enrolled=True)
+
+    assert await repository.get_channel_sync_flags(db_conn, 10) == (False, True, True)
 
 
 async def test_get_channel_is_public_returns_none_for_unknown_channel(db_conn):

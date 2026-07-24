@@ -266,16 +266,21 @@ async def sync_message_embeds(
 
 async def get_channel_sync_flags(
     conn: psycopg.AsyncConnection, channel_id: int
-) -> tuple[bool, bool] | None:
-    """(is_public, indexed) for a known channel, or None if we've never seen
-    it (e.g. backfill hasn't run for it yet) — nothing to reconcile then.
+) -> tuple[bool, bool, bool] | None:
+    """(is_public, indexed, visibility_enrolled) for a known channel, or None
+    if we've never seen it (e.g. backfill hasn't run for it yet) — nothing to
+    reconcile then. Feeds directly into permissions.should_sync's three
+    kwargs.
     """
     async with conn.cursor() as cur:
-        await cur.execute("SELECT is_public, indexed FROM channels WHERE id = %s", (channel_id,))
+        await cur.execute(
+            "SELECT is_public, indexed, visibility_enrolled FROM channels WHERE id = %s",
+            (channel_id,),
+        )
         row = await cur.fetchone()
     if row is None:
         return None
-    return row["is_public"], row["indexed"]
+    return row["is_public"], row["indexed"], row["visibility_enrolled"]
 
 
 async def get_backfill_checkpoint(conn: psycopg.AsyncConnection, channel_id: int) -> int | None:

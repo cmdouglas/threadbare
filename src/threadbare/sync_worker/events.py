@@ -102,7 +102,9 @@ async def handle_thread_upsert(conn, thread: ThreadLike) -> None:
     whose parent isn't supposed to be mirrored.
     """
     flags = await repository.get_channel_sync_flags(conn, thread.parent_id)
-    if flags is None or not should_sync(is_public=flags[0], indexed=flags[1]):
+    if flags is None or not should_sync(
+        is_public=flags[0], indexed=flags[1], visibility_enrolled=flags[2]
+    ):
         return
     await repository.upsert_thread(conn, transform.thread_to_row(thread))
 
