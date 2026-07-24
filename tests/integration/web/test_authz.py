@@ -1,3 +1,5 @@
+import logging
+
 from threadbare.discord_permissions import ADMINISTRATOR, READ_MESSAGE_HISTORY, VIEW_CHANNEL
 from threadbare.web import authz
 
@@ -157,3 +159,35 @@ def test_user_with_no_row_yet_falls_back_to_no_roles(web_conn):
     visible = run(authz.resolve_visible_channel_ids(web_conn, guild_id=GUILD_ID, user_id=999999))
 
     assert visible == {70}
+
+
+def test_user_with_no_row_yet_logs_a_warning_naming_the_likely_cause(web_conn, caplog):
+    async def seed():
+        await _seed_guild(web_conn)
+        await _seed_role(web_conn, role_id=GUILD_ID, permissions=BOTH_REQUIRED)
+
+    run(seed())
+
+    with caplog.at_level(logging.WARNING):
+        run(authz.resolve_visible_channel_ids(web_conn, guild_id=GUILD_ID, user_id=999999))
+
+    assert "no users row" in caplog.text
+    assert "999999" in caplog.text
+    assert "backfill" in caplog.text
+
+
+def test_resolve_visible_channel_ids_logs_role_ids_and_base_permissions(web_conn, caplog):
+    async def seed():
+        await _seed_guild(web_conn)
+        await _seed_role(web_conn, role_id=GUILD_ID)
+        await _seed_role(web_conn, role_id=HELD_ROLE_ID, permissions=BOTH_REQUIRED)
+        await _seed_user(web_conn, role_ids=[HELD_ROLE_ID])
+        await _seed_channel(web_conn, channel_id=80)
+
+    run(seed())
+
+    with caplog.at_level(logging.DEBUG):
+        run(authz.resolve_visible_channel_ids(web_conn, guild_id=GUILD_ID, user_id=USER_ID))
+
+    assert f"user_id={USER_ID}" in caplog.text
+    assert str(HELD_ROLE_ID) in caplog.text

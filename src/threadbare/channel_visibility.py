@@ -11,6 +11,7 @@ instead of the two separate channel_role_overwrites/channel_member_overwrites
 tables this module reads from.
 """
 
+import logging
 from dataclasses import dataclass
 
 from threadbare.discord_permissions import (
@@ -18,6 +19,8 @@ from threadbare.discord_permissions import (
     OverwriteTier,
     compute_effective_permissions,
 )
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -38,19 +41,39 @@ def _tier_for(
     role_overwrites_by_channel: dict[int, list[dict]],
     member_overwrites_by_channel: dict[int, dict],
     everyone_role_id: int,
+    tier_name: str,
+    channel_id: int,
 ) -> OverwriteTier:
     """tier_channel_id is a category's id (for the category tier) or a
     content channel's own id (for the channel tier); None (no category --
     channels.parent_id IS NULL) returns the empty tier, same as a
-    category/channel with no overwrite rows at all.
+    category/channel with no overwrite rows at all. tier_name/channel_id
+    are for logging only (DEBUG -- set LOG_LEVEL=DEBUG to see per-channel
+    visibility troubleshooting detail), identifying which tier of which
+    content channel's computation this call belongs to.
     """
     if tier_channel_id is None:
+        logger.debug(
+            "channel %s: %s tier has no id (no category) -- treating as empty",
+            channel_id,
+            tier_name,
+        )
         return OverwriteTier()
 
     rows = role_overwrites_by_channel.get(tier_channel_id, [])
     everyone_row = next((r for r in rows if r["role_id"] == everyone_role_id), None)
     role_rows = tuple(r for r in rows if r["role_id"] != everyone_role_id)
     member_row = member_overwrites_by_channel.get(tier_channel_id)
+
+    logger.debug(
+        "channel %s: %s tier (id=%s) everyone=%s role_overwrites=%s member=%s",
+        channel_id,
+        tier_name,
+        tier_channel_id,
+        {"allow": everyone_row["allow"], "deny": everyone_row["deny"]} if everyone_row else None,
+        [{"role_id": r["role_id"], "allow": r["allow"], "deny": r["deny"]} for r in role_rows],
+        {"allow": member_row["allow"], "deny": member_row["deny"]} if member_row else None,
+    )
 
     return OverwriteTier(
         everyone_overwrite=_Overwrite(everyone_row["allow"], everyone_row["deny"])
@@ -93,17 +116,30 @@ def compute_visible_channel_ids(
             role_overwrites_by_channel=role_by_channel,
             member_overwrites_by_channel=member_by_channel,
             everyone_role_id=everyone_role_id,
+            tier_name="category",
+            channel_id=channel["id"],
         )
         channel_tier = _tier_for(
             channel["id"],
             role_overwrites_by_channel=role_by_channel,
             member_overwrites_by_channel=member_by_channel,
             everyone_role_id=everyone_role_id,
+            tier_name="channel",
+            channel_id=channel["id"],
         )
         effective = compute_effective_permissions(
             base_permissions, category=category, channel=channel_tier
         )
-        if (effective & REQUIRED_PERMISSIONS) == REQUIRED_PERMISSIONS:
+        is_visible = (effective & REQUIRED_PERMISSIONS) == REQUIRED_PERMISSIONS
+        logger.debug(
+            "channel %s: base_permissions=%#x effective_permissions=%#x required=%#x visible=%s",
+            channel["id"],
+            base_permissions,
+            effective,
+            REQUIRED_PERMISSIONS,
+            is_visible,
+        )
+        if is_visible:
             visible.add(channel["id"])
 
     return visible

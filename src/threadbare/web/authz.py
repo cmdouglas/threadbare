@@ -11,17 +11,21 @@ this module's binary is-a-guild-member gate for channels enrolled in
 role-gating. Lives here rather than db/queries.py because it's
 orchestration (several queries plus channel_visibility's pure resolution),
 not a single query -- and here rather than a new module because this
-module's own binary gate is literally what it's meant to replace. Not
-called from anywhere yet; a later step wires it into board.py/search.py/
-topic.py/user.py's actual authorization checks.
+module's own binary gate is literally what it's meant to replace. Wired in
+via web/app.py's resolve_visible_channels before_request hook, which stashes
+the result on g.visible_channel_ids for board.py/search.py/topic.py/user.py
+to consult through channel_passes_visibility_gate.
 """
 
+import logging
 from functools import wraps
 
 from flask import abort, session
 
 from threadbare import channel_visibility
 from threadbare.db import queries
+
+logger = logging.getLogger(__name__)
 
 # Discord permission bit flags (Discord API docs, PERMISSIONS bitwise
 # flags), matching sync_worker/permissions.py's naming convention.
@@ -84,15 +88,37 @@ async def resolve_visible_channel_ids(conn, *, guild_id: int, user_id: int) -> s
     computed fresh from Postgres on every call, no session caching, no
     invalidation logic since nothing is cached (mirrors web/app.py's
     resolve_site_title reasoning: a permission change should show up
-    immediately, not on some refresh timer). Not yet called from any view --
-    a later step wires this into board.py/search.py/topic.py/user.py's
-    actual authorization checks.
+    immediately, not on some refresh timer). Called once per request by
+    web/app.py's before_request hook for every logged-in visit.
     """
     user = await queries.get_user(conn, user_id)
-    role_ids = user["role_ids"] if user is not None else []
+    if user is None:
+        # A likely symptom of a role-import gap: the bulk member-role
+        # backfill (sync_worker/discovery.discover_member_roles) either
+        # hasn't run yet or never picked up this member, so there's no
+        # users row to read role_ids off at all -- not merely "role_ids is
+        # empty", but no row whatsoever. Falls back to no roles held, same
+        # as an unrecognized/departed member would.
+        logger.warning(
+            "resolve_visible_channel_ids: no users row for user_id=%s (guild=%s) -- "
+            "falling back to no roles held; check whether the member-role "
+            "backfill has run",
+            user_id,
+            guild_id,
+        )
+        role_ids = []
+    else:
+        role_ids = user["role_ids"]
 
     base_permissions = await queries.get_base_permissions(
         conn, guild_id=guild_id, role_ids=role_ids
+    )
+    logger.debug(
+        "resolve_visible_channel_ids: user_id=%s guild_id=%s role_ids=%s base_permissions=%#x",
+        user_id,
+        guild_id,
+        role_ids,
+        base_permissions,
     )
     channels = await queries.get_visibility_channels(conn, guild_id=guild_id)
 

@@ -1,3 +1,5 @@
+import logging
+
 from threadbare.channel_visibility import compute_visible_channel_ids
 from threadbare.discord_permissions import ADMINISTRATOR, READ_MESSAGE_HISTORY, VIEW_CHANNEL
 
@@ -136,3 +138,44 @@ def test_row_dicts_are_not_passed_through_as_overwritelike_directly():
     )
 
     assert visible == {800}
+
+
+def test_debug_logging_names_the_channel_and_final_visibility_decision(caplog):
+    channels = [{"id": 900, "parent_id": None}]
+    role_overwrites = [
+        {"channel_id": 900, "role_id": HELD_ROLE_ID, "allow": 0, "deny": VIEW_CHANNEL},
+    ]
+
+    with caplog.at_level(logging.DEBUG):
+        visible = compute_visible_channel_ids(
+            base_permissions=BOTH_REQUIRED,
+            everyone_role_id=EVERYONE_ROLE_ID,
+            channels=channels,
+            role_overwrites=role_overwrites,
+            member_overwrites=[],
+        )
+
+    assert visible == set()
+    assert "channel 900" in caplog.text
+    assert "visible=False" in caplog.text
+    # The held role's deny overwrite shows up in the channel-tier detail
+    # line, not just the final effective-permissions summary -- this is
+    # the line that answers "which overwrite is/isn't taking effect".
+    assert str(HELD_ROLE_ID) in caplog.text
+
+
+def test_debug_logging_reports_visible_true_when_channel_passes(caplog):
+    channels = [{"id": 950, "parent_id": None}]
+
+    with caplog.at_level(logging.DEBUG):
+        visible = compute_visible_channel_ids(
+            base_permissions=BOTH_REQUIRED,
+            everyone_role_id=EVERYONE_ROLE_ID,
+            channels=channels,
+            role_overwrites=[],
+            member_overwrites=[],
+        )
+
+    assert visible == {950}
+    assert "channel 950" in caplog.text
+    assert "visible=True" in caplog.text
