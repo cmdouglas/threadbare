@@ -45,12 +45,13 @@ build-backend = "uv_build"
 # other's event-loop state when collected into the same session (a real
 # upstream friction point, not a project bug) — run it separately via
 # `uv run pytest tests/e2e`, as DEVELOPMENT.md documents.
-testpaths = ["tests/unit", "tests/integration", "tests/live_discord"]
+testpaths = ["tests/unit", "tests/integration", "tests/live_discord", "tests/performance"]
 asyncio_mode = "auto"
 markers = [
     "live_discord: requires a real Discord bot token + test guild (opt-in, see DEVELOPMENT.md)",
+    "performance: seeds/backfills at real scale (millions of rows), slow -- opt-in, see DEVELOPMENT.md",
 ]
-addopts = "-m 'not live_discord'"
+addopts = "-m 'not live_discord and not performance'"
 
 [tool.ruff]
 line-length = 100

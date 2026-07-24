@@ -154,9 +154,26 @@ async def get_board_post_aggregates(
 ) -> dict[int, dict]:
     """Post count + last-post (message id/time/author) per board, combining
     a board's own direct messages with every message inside its threads --
-    one query for the whole batch of boards via window functions, not a
-    per-board round trip. Boards with zero messages are absent from the
-    query result and left-filled here with a zero-valued aggregate.
+    one query for the whole batch of boards, not a per-board round trip.
+    Boards with zero messages are absent from the query result and
+    left-filled here with a zero-valued aggregate.
+
+    The "last post" half is deliberately LATERAL-joined per board rather
+    than a window function over every matching row (a real gap found and
+    fixed against a genuinely million-row board: a row_number() OVER
+    (PARTITION BY board_id ORDER BY posted_at DESC, id DESC) forces Postgres
+    to sort the *entire* combined direct+thread row set before it can take
+    each board's top row, even though only one row per board is ever kept --
+    EXPLAIN ANALYZE showed a 1,000,000-row external merge sort dominating
+    the query's cost). A LATERAL subquery per board instead asks "what's
+    this board's single latest direct message" and "what's this board's
+    single latest thread message" directly off messages_channel_id_
+    posted_at_idx / messages_thread_id_posted_at_idx in ORDER BY ... DESC
+    LIMIT 1 form -- an index scan bounded by the number of *threads* a board
+    has (cheap) rather than a sort bounded by its total *message* count. The
+    exact-count half still has to touch every matching row (no index avoids
+    that), so it stays a GROUP BY, just no longer forced into the same sort
+    the ranking used to need.
     """
     channel_ids = list(channel_ids)
     if not channel_ids:
@@ -164,28 +181,42 @@ async def get_board_post_aggregates(
     async with conn.cursor() as cur:
         await cur.execute(
             """
-            WITH board_messages AS (
-                SELECT channel_id AS board_id, id, posted_at, author_id
-                FROM messages
-                WHERE channel_id = ANY(%(channel_ids)s)
-                UNION ALL
-                SELECT t.parent_channel_id AS board_id, m.id, m.posted_at, m.author_id
-                FROM messages m
-                JOIN threads t ON t.id = m.thread_id
-                WHERE t.parent_channel_id = ANY(%(channel_ids)s)
-            ),
-            ranked AS (
-                SELECT *,
-                    row_number() OVER (
-                        PARTITION BY board_id ORDER BY posted_at DESC, id DESC
-                    ) AS rn,
-                    count(*) OVER (PARTITION BY board_id) AS post_count
-                FROM board_messages
-            )
-            SELECT board_id, post_count, id AS last_message_id,
-                   posted_at AS last_posted_at, author_id AS last_author_id
-            FROM ranked
-            WHERE rn = 1
+            SELECT b.board_id,
+                   coalesce(c.post_count, 0) AS post_count,
+                   top.id AS last_message_id,
+                   top.posted_at AS last_posted_at,
+                   top.author_id AS last_author_id
+            FROM unnest(%(channel_ids)s::bigint[]) AS b(board_id)
+            LEFT JOIN (
+                SELECT board_id, count(*) AS post_count FROM (
+                    SELECT channel_id AS board_id FROM messages
+                    WHERE channel_id = ANY(%(channel_ids)s)
+                    UNION ALL
+                    SELECT t.parent_channel_id AS board_id
+                    FROM messages m JOIN threads t ON t.id = m.thread_id
+                    WHERE t.parent_channel_id = ANY(%(channel_ids)s)
+                ) counted
+                GROUP BY board_id
+            ) c ON c.board_id = b.board_id
+            LEFT JOIN LATERAL (
+                SELECT id, posted_at, author_id FROM (
+                    (SELECT id, posted_at, author_id FROM messages
+                     WHERE channel_id = b.board_id
+                     ORDER BY posted_at DESC, id DESC LIMIT 1)
+                    UNION ALL
+                    (SELECT m.id, m.posted_at, m.author_id
+                     FROM threads t
+                     JOIN LATERAL (
+                         SELECT id, posted_at, author_id FROM messages
+                         WHERE thread_id = t.id
+                         ORDER BY posted_at DESC, id DESC LIMIT 1
+                     ) m ON true
+                     WHERE t.parent_channel_id = b.board_id
+                     ORDER BY m.posted_at DESC, m.id DESC LIMIT 1)
+                ) candidates
+                ORDER BY posted_at DESC, id DESC
+                LIMIT 1
+            ) top ON true
             """,
             {"channel_ids": channel_ids},
         )

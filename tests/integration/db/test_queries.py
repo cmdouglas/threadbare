@@ -333,6 +333,45 @@ async def test_get_board_post_aggregates_combines_direct_and_thread_messages(db_
     assert result[10]["last_author_id"] == 101
 
 
+async def test_get_board_post_aggregates_prefers_a_more_recent_direct_message_over_a_thread(
+    db_conn,
+):
+    # The inverse of the "combines" case above -- proves the LATERAL
+    # last-post lookup's direct-vs-thread comparison isn't hardcoded to
+    # favor one side.
+    await _seed_guild_and_channel(db_conn, channel_id=10)
+    await _seed_thread(db_conn, thread_id=3000, parent_channel_id=10)
+    await _seed_user(db_conn, user_id=100, display_name="alice")
+    await _seed_user(db_conn, user_id=101, display_name="bob")
+    await _seed_thread_message(db_conn, message_id=1, thread_id=3000, author_id=101, posted_at=T1)
+    await _seed_message(db_conn, message_id=2, channel_id=10, author_id=100, posted_at=T2)
+
+    result = await queries.get_board_post_aggregates(db_conn, [10])
+
+    assert result[10]["post_count"] == 2
+    assert result[10]["last_message_id"] == 2
+    assert result[10]["last_posted_at"] == T2
+    assert result[10]["last_author_id"] == 100
+
+
+async def test_get_board_post_aggregates_picks_the_latest_across_several_threads(db_conn):
+    # Exercises the nested LATERAL's per-thread top-1 candidates being
+    # compared against each other, not just against the direct-message side.
+    await _seed_guild_and_channel(db_conn, channel_id=10)
+    await _seed_thread(db_conn, thread_id=3000, parent_channel_id=10)
+    await _seed_thread(db_conn, thread_id=3001, parent_channel_id=10)
+    await _seed_user(db_conn, user_id=100, display_name="alice")
+    await _seed_thread_message(db_conn, message_id=1, thread_id=3000, author_id=100, posted_at=T1)
+    await _seed_thread_message(db_conn, message_id=2, thread_id=3001, author_id=100, posted_at=T3)
+    await _seed_thread_message(db_conn, message_id=3, thread_id=3000, author_id=100, posted_at=T2)
+
+    result = await queries.get_board_post_aggregates(db_conn, [10])
+
+    assert result[10]["post_count"] == 3
+    assert result[10]["last_message_id"] == 2
+    assert result[10]["last_posted_at"] == T3
+
+
 async def test_get_board_post_aggregates_left_fills_boards_with_no_messages(db_conn):
     await _seed_guild_and_channel(db_conn, channel_id=10)
 
