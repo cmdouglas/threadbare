@@ -327,6 +327,21 @@ def test_board_topics_shows_jump_to_unread_link_once_a_topic_is_partially_read(c
     assert b'class="jump-to-unread" href="/topic/3000/jump_to_unread"' in resp.data
 
 
+def test_board_topics_hides_jump_to_unread_link_once_a_topic_is_fully_read(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10, type=15, name="a forum"))
+    run(_seed_thread(web_conn, thread_id=3000, parent_channel_id=10, name="my topic"))
+    for i in range(26):
+        run(_seed_thread_message(web_conn, message_id=i + 1, thread_id=3000, content=f"msg {i}"))
+    client.get("/topic/3000/page/1")
+    client.get("/topic/3000/page/2")
+
+    resp = client.get("/board/10/topics")
+
+    assert resp.status_code == 200
+    assert b'class="jump-to-unread"' not in resp.data
+
+
 def test_board_topics_shows_freeform_controls_for_a_text_channel(client, web_conn):
     run(_seed_guild(web_conn))
     run(_seed_board(web_conn, channel_id=10, type=0, name="general"))
@@ -443,6 +458,67 @@ def test_board_continuous_page_marks_the_channel_read_up_to_the_last_message_sho
     assert resp.status_code == 200
     marker = run(queries.get_read_marker(web_conn, user_id=1, channel_id=10))
     assert marker == {"last_read_message_id": 2, "last_read_posted_at": T1 + timedelta(1)}
+
+
+def test_board_continuous_page_hides_jump_to_unread_link_when_fully_read(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10))
+    run(_seed_user(web_conn))
+    run(_seed_message(web_conn, message_id=1, channel_id=10, content="hi", posted_at=T1))
+
+    resp = client.get("/board/10/continuous/page/1")
+
+    assert b'class="jump-to-unread"' not in resp.data
+
+
+def test_board_continuous_page_shows_jump_to_unread_link_when_more_pages_remain_unread(
+    client, web_conn
+):
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10))
+    run(_seed_user(web_conn))
+    for i in range(30):
+        run(
+            _seed_message(
+                web_conn,
+                message_id=i + 1,
+                channel_id=10,
+                content=f"message {i}",
+                posted_at=T1 + timedelta(days=i),
+            )
+        )
+
+    resp = client.get("/board/10/continuous/page/1")
+
+    assert b'class="jump-to-unread"' in resp.data
+
+
+def test_board_continuous_page_hides_jump_to_unread_link_once_caught_up_via_a_later_page(
+    client, web_conn
+):
+    # The bug this guards against: a naive "are there more pages after this
+    # one" check would say yes here (page 1 of 2), even though the reader
+    # already caught all the way up via page 2 first -- the real signal has
+    # to be the read marker's own position, not which page happens to be
+    # open right now.
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10))
+    run(_seed_user(web_conn))
+    for i in range(30):
+        run(
+            _seed_message(
+                web_conn,
+                message_id=i + 1,
+                channel_id=10,
+                content=f"message {i}",
+                posted_at=T1 + timedelta(days=i),
+            )
+        )
+    client.get("/board/10/continuous/page/2")
+
+    resp = client.get("/board/10/continuous/page/1")
+
+    assert b'class="jump-to-unread"' not in resp.data
 
 
 def test_board_continuous_page_shows_bot_badge_for_a_bot_author(client, web_conn):
@@ -703,6 +779,53 @@ def test_board_week_page_marks_the_channel_read_up_to_the_last_message_shown(cli
     assert resp.status_code == 200
     marker = run(queries.get_read_marker(web_conn, user_id=1, channel_id=10))
     assert marker == {"last_read_message_id": 1, "last_read_posted_at": monday_week_28}
+
+
+def test_board_week_page_hides_jump_to_unread_link_when_the_whole_channel_is_read(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10))
+    run(_seed_user(web_conn))
+    monday_week_28 = datetime(2026, 7, 6, tzinfo=UTC)
+    run(
+        _seed_message(
+            web_conn, message_id=1, channel_id=10, content="in week 28", posted_at=monday_week_28
+        )
+    )
+
+    resp = client.get("/board/10/week/2026-W28/page/1")
+
+    assert b'class="jump-to-unread"' not in resp.data
+
+
+def test_board_week_page_shows_jump_to_unread_link_for_unread_content_in_a_later_week(
+    client, web_conn
+):
+    # This week's own page is "fully read" in isolation, but the channel as
+    # a whole (where the marker actually lives) still has unread content in
+    # a later week -- the channel-wide check has to catch that, not just
+    # whether this week's own page happens to be the last one.
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10))
+    run(_seed_user(web_conn))
+    monday_week_28 = datetime(2026, 7, 6, tzinfo=UTC)
+    run(
+        _seed_message(
+            web_conn, message_id=1, channel_id=10, content="in week 28", posted_at=monday_week_28
+        )
+    )
+    run(
+        _seed_message(
+            web_conn,
+            message_id=2,
+            channel_id=10,
+            content="in week 29",
+            posted_at=monday_week_28 + timedelta(days=7),
+        )
+    )
+
+    resp = client.get("/board/10/week/2026-W28/page/1")
+
+    assert b'class="jump-to-unread"' in resp.data
 
 
 def test_board_week_jump_to_page_redirects_to_the_requested_page(client, web_conn):

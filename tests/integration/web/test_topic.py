@@ -143,6 +143,38 @@ def test_topic_page_marks_the_thread_read_up_to_the_last_message_shown(client, w
     assert marker == {"last_read_message_id": 2, "last_read_posted_at": T1 + timedelta(1)}
 
 
+def test_topic_page_hides_jump_to_unread_link_when_fully_read(client, web_conn):
+    run(_seed_guild_and_channel(web_conn))
+    run(_seed_thread(web_conn, thread_id=3000, parent_channel_id=10))
+    run(_seed_user(web_conn))
+    run(_seed_thread_message(web_conn, message_id=1, thread_id=3000, content="hi", posted_at=T1))
+
+    resp = client.get("/topic/3000/page/1")
+
+    assert b'class="jump-to-unread"' not in resp.data
+
+
+def test_topic_page_hides_jump_to_unread_link_once_caught_up_via_a_later_page(client, web_conn):
+    run(_seed_guild_and_channel(web_conn))
+    run(_seed_thread(web_conn, thread_id=3000, parent_channel_id=10))
+    run(_seed_user(web_conn))
+    for i in range(30):
+        run(
+            _seed_thread_message(
+                web_conn,
+                message_id=i + 1,
+                thread_id=3000,
+                content=f"message {i}",
+                posted_at=T1 + timedelta(days=i),
+            )
+        )
+    client.get("/topic/3000/page/2")
+
+    resp = client.get("/topic/3000/page/1")
+
+    assert b'class="jump-to-unread"' not in resp.data
+
+
 def test_topic_page_shows_breadcrumb_to_home_and_channel(client, web_conn):
     run(_seed_guild_and_channel(web_conn))
     run(_seed_thread(web_conn, thread_id=3000, parent_channel_id=10, name="my thread"))

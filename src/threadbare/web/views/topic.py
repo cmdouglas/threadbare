@@ -61,6 +61,9 @@ async def topic_page(thread_id: int, page: int):
                 message_id=last["id"],
                 posted_at=last["posted_at"],
             )
+        show_jump_to_unread = await queries.has_unread(
+            conn, user_id=session["user_id"], thread_id=thread_id, total=total
+        )
 
     total_pages = page_number_for_offset(total - 1, page_size=g.posts_per_page) if total > 0 else 1
 
@@ -75,6 +78,7 @@ async def topic_page(thread_id: int, page: int):
         page=page,
         total_pages=total_pages,
         page_url=page_url,
+        show_jump_to_unread=show_jump_to_unread,
         jump_action=url_for("topic.topic_jump_to_page", thread_id=thread_id),
     )
 

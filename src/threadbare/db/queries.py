@@ -1017,3 +1017,39 @@ async def get_read_markers(
         }
         for row in rows
     }
+
+
+async def has_unread(
+    conn: psycopg.AsyncConnection,
+    *,
+    user_id: int,
+    channel_id: int | None = None,
+    thread_id: int | None = None,
+    total: int,
+) -> bool:
+    """Whether anything in this container is unread for user_id, given the
+    container's own already-known total message count -- every caller
+    already has this on hand (get_messages_page's own total kwarg, or a
+    dedicated count_messages_before call), so this never runs a second
+    full COUNT(*). No marker at all means nothing's ever been read, so
+    it's unread iff the container actually has messages. Otherwise reuses
+    count_messages_before's (posted_at, id)-tuple comparison (already built
+    for permalinks/jump-to-date) to count how many messages are already
+    read -- the same "how many precede this point" primitive
+    board.board_continuous_jump_to_unread/topic.topic_jump_to_unread use to
+    find the first unread post, just compared against total instead of
+    turned into a page number.
+    """
+    assert (channel_id is None) != (thread_id is None)
+    marker = await get_read_marker(
+        conn, user_id=user_id, channel_id=channel_id, thread_id=thread_id
+    )
+    if marker is None:
+        return total > 0
+    preceding = await count_messages_before(
+        conn,
+        channel_id=channel_id,
+        thread_id=thread_id,
+        before=(marker["last_read_posted_at"], marker["last_read_message_id"]),
+    )
+    return preceding + 1 < total

@@ -1259,3 +1259,67 @@ async def test_get_read_markers_batches_channels_and_threads(db_conn):
 
 async def test_get_read_markers_returns_empty_for_empty_input(db_conn):
     assert await queries.get_read_markers(db_conn, user_id=1, channel_ids=[], thread_ids=[]) == {}
+
+
+async def test_has_unread_is_true_with_no_marker_and_a_nonempty_container(db_conn):
+    assert await queries.has_unread(db_conn, user_id=1, channel_id=10, total=5) is True
+
+
+async def test_has_unread_is_false_with_no_marker_and_an_empty_container(db_conn):
+    assert await queries.has_unread(db_conn, user_id=1, channel_id=10, total=0) is False
+
+
+async def test_has_unread_is_false_when_marker_is_at_the_last_message(db_conn):
+    await _seed_guild_and_channel(db_conn)
+    await _seed_user(db_conn, user_id=100, display_name="alice")
+    for i in range(1, 6):
+        await _seed_message(
+            db_conn,
+            message_id=i,
+            channel_id=10,
+            author_id=100,
+            posted_at=datetime(2024, 1, i, tzinfo=UTC),
+        )
+    await queries.mark_read(
+        db_conn, user_id=1, channel_id=10, message_id=5, posted_at=datetime(2024, 1, 5, tzinfo=UTC)
+    )
+
+    assert await queries.has_unread(db_conn, user_id=1, channel_id=10, total=5) is False
+
+
+async def test_has_unread_is_true_when_marker_is_behind_the_container_total(db_conn):
+    await _seed_guild_and_channel(db_conn)
+    await _seed_user(db_conn, user_id=100, display_name="alice")
+    for i in range(1, 6):
+        await _seed_message(
+            db_conn,
+            message_id=i,
+            channel_id=10,
+            author_id=100,
+            posted_at=datetime(2024, 1, i, tzinfo=UTC),
+        )
+    await queries.mark_read(
+        db_conn, user_id=1, channel_id=10, message_id=3, posted_at=datetime(2024, 1, 3, tzinfo=UTC)
+    )
+
+    assert await queries.has_unread(db_conn, user_id=1, channel_id=10, total=5) is True
+
+
+async def test_has_unread_works_for_a_thread(db_conn):
+    await _seed_guild_and_channel(db_conn)
+    await _seed_thread(db_conn, thread_id=20, parent_channel_id=10)
+    await _seed_user(db_conn, user_id=100, display_name="alice")
+    for i in range(1, 6):
+        await _seed_thread_message(
+            db_conn,
+            message_id=i,
+            thread_id=20,
+            author_id=100,
+            posted_at=datetime(2024, 1, i, tzinfo=UTC),
+        )
+    await queries.mark_read(
+        db_conn, user_id=1, thread_id=20, message_id=5, posted_at=datetime(2024, 1, 5, tzinfo=UTC)
+    )
+
+    assert await queries.has_unread(db_conn, user_id=1, thread_id=20, total=5) is False
+    assert await queries.has_unread(db_conn, user_id=1, thread_id=20, total=6) is True

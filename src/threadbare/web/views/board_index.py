@@ -70,17 +70,15 @@ async def board_index():
             board_id: is_unread(aggregates.get(board_id), markers.get(board_id))
             for board_id in freeform_board_ids
         }
-        # A marker's presence (regardless of is_unread) means the board
-        # isn't entirely unread -- some prefix of it has been read, so
-        # "jump to first unread" is meaningfully different from just
-        # opening the board at page 1. No marker at all means nothing's
-        # ever been read, where the two would land on the same place, so
-        # the link stays hidden rather than being a no-op next to the
-        # board name link.
+        # Shown only for a board that's genuinely partially read: no marker
+        # at all means nothing's ever been read, where "jump to first
+        # unread" and "open at page 1" land on the same place (a no-op
+        # duplicate of the board name link); a marker with nothing unread
+        # beyond it means there's nowhere left to jump to.
         board_jump_to_unread_action = {
             board_id: url_for("board.board_continuous_jump_to_unread", channel_id=board_id)
             for board_id in freeform_board_ids
-            if board_id in markers
+            if board_id in markers and unread_boards.get(board_id)
         }
 
     return render_template(

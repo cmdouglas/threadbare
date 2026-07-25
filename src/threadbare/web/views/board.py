@@ -77,14 +77,12 @@ async def board_topics(channel_id: int):
             thread["id"]: is_unread(aggregates.get(thread["id"]), markers.get(thread["id"]))
             for thread in threads
         }
-        # Same "marker present means not entirely unread" reasoning as
-        # board_index -- a thread with no marker at all has "first unread"
-        # and "start reading" land on the same page 1, so the link is
-        # hidden rather than a redundant duplicate of the thread-name link.
+        # Same "partially read, not never-read or fully-read" reasoning as
+        # board_index -- see that view's board_jump_to_unread_action.
         thread_jump_to_unread_action = {
             thread["id"]: url_for("topic.topic_jump_to_unread", thread_id=thread["id"])
             for thread in threads
-            if thread["id"] in markers
+            if thread["id"] in markers and unread_threads.get(thread["id"])
         }
 
     total_pages = page_number_for_offset(total_topics - 1) if total_topics > 0 else 1
@@ -142,6 +140,9 @@ async def board_continuous_page(channel_id: int, page: int):
                 message_id=last["id"],
                 posted_at=last["posted_at"],
             )
+        show_jump_to_unread = await queries.has_unread(
+            conn, user_id=session["user_id"], channel_id=channel_id, total=total
+        )
 
     total_pages = page_number_for_offset(total - 1, page_size=g.posts_per_page) if total > 0 else 1
 
@@ -157,6 +158,7 @@ async def board_continuous_page(channel_id: int, page: int):
         page=page,
         total_pages=total_pages,
         page_url=page_url,
+        show_jump_to_unread=show_jump_to_unread,
         jump_action=url_for("board.board_continuous_jump_to_page", channel_id=channel_id),
     )
 
@@ -268,6 +270,14 @@ async def board_week_page(channel_id: int, week_id: str, page: int):
                 message_id=last["id"],
                 posted_at=last["posted_at"],
             )
+        # has_unread needs the channel's real, unscoped total -- the `total`
+        # above is this week's count only, and reading progress is tracked
+        # per-channel, not per-week, so "last page of this week" doesn't
+        # mean "channel fully read" the way it does on the continuous view.
+        channel_total = await queries.count_messages_before(conn, channel_id=channel_id)
+        show_jump_to_unread = await queries.has_unread(
+            conn, user_id=session["user_id"], channel_id=channel_id, total=channel_total
+        )
 
     total_pages = page_number_for_offset(total - 1, page_size=g.posts_per_page) if total > 0 else 1
 
@@ -283,6 +293,7 @@ async def board_week_page(channel_id: int, week_id: str, page: int):
         page=page,
         total_pages=total_pages,
         page_url=page_url,
+        show_jump_to_unread=show_jump_to_unread,
         jump_action=url_for(
             "board.board_week_jump_to_page", channel_id=channel_id, week_id=week_id
         ),
