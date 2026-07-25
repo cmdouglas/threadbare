@@ -77,6 +77,49 @@ async def get_reactions_for_message(
     return [(row["emoji"], row["count"]) for row in rows]
 
 
+async def get_reactions_present_in_container(
+    conn: psycopg.AsyncConnection,
+    *,
+    thread_id: int | None = None,
+    channel_id: int | None = None,
+    since: datetime | None = None,
+    until: datetime | None = None,
+) -> list[dict]:
+    """The reaction-filter picker's option list: every distinct emoji
+    actually present on a message in this container, most-used first --
+    never Discord's full emoji list, which would mostly be dead options.
+    since/until optionally windows this to a weekly pseudo-topic, matching
+    count_messages_before/get_messages_page's own since/until scoping, so
+    board_week_page's picker only offers reactions actually present in that
+    week rather than the whole channel's history.
+    """
+    assert (thread_id is None) != (channel_id is None)
+    conditions = [
+        "m.thread_id = %(thread_id)s" if thread_id is not None else "m.channel_id = %(channel_id)s"
+    ]
+    params: dict = {"thread_id": thread_id, "channel_id": channel_id}
+    if since is not None:
+        conditions.append("m.posted_at >= %(since)s")
+        params["since"] = since
+    if until is not None:
+        conditions.append("m.posted_at < %(until)s")
+        params["until"] = until
+
+    async with conn.cursor() as cur:
+        await cur.execute(
+            f"""
+            SELECT r.emoji, sum(r.count) AS total
+            FROM reactions r
+            JOIN messages m ON m.id = r.message_id
+            WHERE {" AND ".join(conditions)}
+            GROUP BY r.emoji
+            ORDER BY total DESC, r.emoji
+            """,
+            params,
+        )
+        return await cur.fetchall()
+
+
 async def resolve_users(conn: psycopg.AsyncConnection, ids: Iterable[int]) -> dict[int, str]:
     ids = list(ids)
     if not ids:
@@ -105,6 +148,7 @@ async def count_messages_before(
     before: tuple[datetime, int] | datetime | None = None,
     since: datetime | None = None,
     until: datetime | None = None,
+    reaction: str | None = None,
 ) -> int:
     """The shared "how many messages precede this point" primitive behind
     permalinks (before=(posted_at, id) of a specific message), jump-to-date
@@ -132,6 +176,12 @@ async def count_messages_before(
     if until is not None:
         conditions.append("posted_at < %(until)s")
         params["until"] = until
+    if reaction is not None:
+        conditions.append(
+            "EXISTS (SELECT 1 FROM reactions r WHERE r.message_id = messages.id "
+            "AND r.emoji = %(reaction)s)"
+        )
+        params["reaction"] = reaction
 
     async with conn.cursor() as cur:
         await cur.execute(
@@ -292,6 +342,7 @@ async def get_messages_page(
     total: int,
     since: datetime | None = None,
     until: datetime | None = None,
+    reaction: str | None = None,
 ) -> list[dict]:
     """One page of a topic/board's messages, in the same column shape as
     get_message_for_render so a page's rows drop straight into
@@ -324,6 +375,12 @@ async def get_messages_page(
     if until is not None:
         conditions.append("m.posted_at < %(until)s")
         params["until"] = until
+    if reaction is not None:
+        conditions.append(
+            "EXISTS (SELECT 1 FROM reactions r "
+            "WHERE r.message_id = m.id AND r.emoji = %(reaction)s)"
+        )
+        params["reaction"] = reaction
 
     start = (page - 1) * page_size
     end = min(page * page_size, total)
@@ -421,6 +478,10 @@ _SEARCH_WHERE_SQL = f"""
     )
     AND (%(after)s::timestamptz IS NULL OR m.posted_at >= %(after)s)
     AND (%(before)s::timestamptz IS NULL OR m.posted_at < %(before)s)
+    AND (
+        %(reaction)s::text IS NULL
+        OR EXISTS (SELECT 1 FROM reactions r WHERE r.message_id = m.id AND r.emoji = %(reaction)s)
+    )
 """
 
 _SEARCH_FROM_SQL = """
@@ -439,6 +500,7 @@ def _search_params(
     channel_id: int | None,
     after: datetime | None,
     before: datetime | None,
+    reaction: str | None,
     visible_channel_ids: Iterable[int],
 ) -> dict:
     return {
@@ -448,6 +510,7 @@ def _search_params(
         "channel_id": channel_id,
         "after": after,
         "before": before,
+        "reaction": reaction,
         "visible_channel_ids": list(visible_channel_ids),
     }
 
@@ -461,6 +524,7 @@ async def search_messages(
     channel_id: int | None = None,
     after: datetime | None = None,
     before: datetime | None = None,
+    reaction: str | None = None,
     page: int = 1,
     page_size: int = DEFAULT_PAGE_SIZE,
     visible_channel_ids: Iterable[int],
@@ -525,6 +589,7 @@ async def search_messages(
             channel_id=channel_id,
             after=after,
             before=before,
+            reaction=reaction,
             visible_channel_ids=visible_channel_ids,
         ),
         "limit": page_size,
@@ -632,6 +697,7 @@ async def count_search_results(
     channel_id: int | None = None,
     after: datetime | None = None,
     before: datetime | None = None,
+    reaction: str | None = None,
     visible_channel_ids: Iterable[int],
 ) -> int:
     params = _search_params(
@@ -641,6 +707,7 @@ async def count_search_results(
         channel_id=channel_id,
         after=after,
         before=before,
+        reaction=reaction,
         visible_channel_ids=visible_channel_ids,
     )
     async with conn.cursor() as cur:

@@ -121,13 +121,19 @@ async def board_continuous_index(channel_id: int):
 
 @bp.route("/board/<int:channel_id>/continuous/page/<int:page>")
 async def board_continuous_page(channel_id: int, page: int):
+    reaction = request.args.get("reaction") or None
     pool = current_app.config["POOL"]
     async with pool.connection() as conn:
         channel = await _get_board_or_404(conn, channel_id)
         breadcrumbs = await board_breadcrumbs(conn, channel, script_root=request.script_root)
-        total = await queries.count_messages_before(conn, channel_id=channel_id)
+        total = await queries.count_messages_before(conn, channel_id=channel_id, reaction=reaction)
         rows = await queries.get_messages_page(
-            conn, channel_id=channel_id, page=page, page_size=g.posts_per_page, total=total
+            conn,
+            channel_id=channel_id,
+            page=page,
+            page_size=g.posts_per_page,
+            total=total,
+            reaction=reaction,
         )
         posts = [
             (
@@ -138,7 +144,12 @@ async def board_continuous_page(channel_id: int, page: int):
             )
             for row in rows
         ]
-        if rows:
+        # A reaction-filtered page's rows[-1] is not the channel's true
+        # last-shown message -- marking read to it would silently
+        # fast-forward the marker past unfiltered messages the requester
+        # never actually saw, so mark_read is skipped entirely while a
+        # filter is active.
+        if rows and reaction is None:
             last = rows[-1]
             await queries.mark_read(
                 conn,
@@ -147,14 +158,27 @@ async def board_continuous_page(channel_id: int, page: int):
                 message_id=last["id"],
                 posted_at=last["posted_at"],
             )
+        unread_total = (
+            total
+            if reaction is None
+            else await queries.count_messages_before(conn, channel_id=channel_id)
+        )
         show_jump_to_unread = await queries.has_unread(
-            conn, user_id=session["user_id"], channel_id=channel_id, total=total
+            conn, user_id=session["user_id"], channel_id=channel_id, total=unread_total
+        )
+        available_reactions = await queries.get_reactions_present_in_container(
+            conn, channel_id=channel_id
         )
 
     total_pages = page_number_for_offset(total - 1, page_size=g.posts_per_page) if total > 0 else 1
 
     def page_url(n: int) -> str:
-        return url_for("board.board_continuous_page", channel_id=channel_id, page=n)
+        return url_for(
+            "board.board_continuous_page", channel_id=channel_id, page=n, reaction=reaction
+        )
+
+    def reaction_filter_url(r: str | None) -> str:
+        return url_for("board.board_continuous_page", channel_id=channel_id, page=1, reaction=r)
 
     return render_template(
         "board_continuous.html",
@@ -167,6 +191,9 @@ async def board_continuous_page(channel_id: int, page: int):
         page_url=page_url,
         show_jump_to_unread=show_jump_to_unread,
         jump_action=url_for("board.board_continuous_jump_to_page", channel_id=channel_id),
+        reaction=reaction,
+        available_reactions=available_reactions,
+        reaction_filter_url=reaction_filter_url,
     )
 
 
@@ -191,7 +218,10 @@ async def board_continuous_jump(channel_id: int):
 @bp.route("/board/<int:channel_id>/continuous/jump_to_page")
 async def board_continuous_jump_to_page(channel_id: int):
     page = max(request.args.get("page", type=int) or 1, 1)
-    return redirect(url_for("board.board_continuous_page", channel_id=channel_id, page=page))
+    reaction = request.args.get("reaction") or None
+    return redirect(
+        url_for("board.board_continuous_page", channel_id=channel_id, page=page, reaction=reaction)
+    )
 
 
 @bp.route("/board/<int:channel_id>/continuous/jump_to_unread")
@@ -243,12 +273,13 @@ async def board_weeks_index(channel_id: int):
 @bp.route("/board/<int:channel_id>/week/<week_id>/page/<int:page>")
 async def board_week_page(channel_id: int, week_id: str, page: int):
     since, until = week_bounds(week_id)
+    reaction = request.args.get("reaction") or None
     pool = current_app.config["POOL"]
     async with pool.connection() as conn:
         channel = await _get_board_or_404(conn, channel_id)
         breadcrumbs = await board_breadcrumbs(conn, channel, script_root=request.script_root)
         total = await queries.count_messages_before(
-            conn, channel_id=channel_id, since=since, until=until
+            conn, channel_id=channel_id, since=since, until=until, reaction=reaction
         )
         rows = await queries.get_messages_page(
             conn,
@@ -258,6 +289,7 @@ async def board_week_page(channel_id: int, week_id: str, page: int):
             total=total,
             since=since,
             until=until,
+            reaction=reaction,
         )
         posts = [
             (
@@ -268,7 +300,10 @@ async def board_week_page(channel_id: int, week_id: str, page: int):
             )
             for row in rows
         ]
-        if rows:
+        # Same reasoning as board_continuous_page: a filtered page's
+        # rows[-1] doesn't represent everything up to that point, so
+        # mark_read is skipped while a reaction filter is active.
+        if rows and reaction is None:
             last = rows[-1]
             await queries.mark_read(
                 conn,
@@ -281,15 +316,30 @@ async def board_week_page(channel_id: int, week_id: str, page: int):
         # above is this week's count only, and reading progress is tracked
         # per-channel, not per-week, so "last page of this week" doesn't
         # mean "channel fully read" the way it does on the continuous view.
+        # Deliberately unfiltered by reaction too, for the same reason.
         channel_total = await queries.count_messages_before(conn, channel_id=channel_id)
         show_jump_to_unread = await queries.has_unread(
             conn, user_id=session["user_id"], channel_id=channel_id, total=channel_total
+        )
+        available_reactions = await queries.get_reactions_present_in_container(
+            conn, channel_id=channel_id, since=since, until=until
         )
 
     total_pages = page_number_for_offset(total - 1, page_size=g.posts_per_page) if total > 0 else 1
 
     def page_url(n: int) -> str:
-        return url_for("board.board_week_page", channel_id=channel_id, week_id=week_id, page=n)
+        return url_for(
+            "board.board_week_page",
+            channel_id=channel_id,
+            week_id=week_id,
+            page=n,
+            reaction=reaction,
+        )
+
+    def reaction_filter_url(r: str | None) -> str:
+        return url_for(
+            "board.board_week_page", channel_id=channel_id, week_id=week_id, page=1, reaction=r
+        )
 
     return render_template(
         "board_continuous.html",
@@ -304,12 +354,22 @@ async def board_week_page(channel_id: int, week_id: str, page: int):
         jump_action=url_for(
             "board.board_week_jump_to_page", channel_id=channel_id, week_id=week_id
         ),
+        reaction=reaction,
+        available_reactions=available_reactions,
+        reaction_filter_url=reaction_filter_url,
     )
 
 
 @bp.route("/board/<int:channel_id>/week/<week_id>/jump_to_page")
 async def board_week_jump_to_page(channel_id: int, week_id: str):
     page = max(request.args.get("page", type=int) or 1, 1)
+    reaction = request.args.get("reaction") or None
     return redirect(
-        url_for("board.board_week_page", channel_id=channel_id, week_id=week_id, page=page)
+        url_for(
+            "board.board_week_page",
+            channel_id=channel_id,
+            week_id=week_id,
+            page=page,
+            reaction=reaction,
+        )
     )

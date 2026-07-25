@@ -173,6 +173,32 @@ def test_search_jump_to_page_form_preserves_author_id(client, web_conn):
     assert b'<input type="hidden" name="author_id" value="100">' in resp.data
 
 
+def test_search_filters_by_reaction(client, web_conn):
+    run(_seed_guild_and_channel(web_conn))
+    run(_seed_user(web_conn, user_id=100, display_name="alice"))
+    run(_seed_message(web_conn, message_id=1, channel_id=10, author_id=100, content="pizza a"))
+    run(_seed_message(web_conn, message_id=2, channel_id=10, author_id=100, content="pizza b"))
+    run(
+        web_conn.execute(
+            "INSERT INTO reactions (message_id, emoji, count) VALUES (%s, %s, %s)", (1, "🔥", 2)
+        )
+    )
+
+    resp = client.get("/search?q=pizza&reaction=%F0%9F%94%A5")
+
+    assert resp.status_code == 200
+    assert b"1 result" in resp.data
+
+
+def test_search_reaction_field_is_prefilled_from_the_query_string(client, web_conn):
+    run(_seed_guild_and_channel(web_conn))
+
+    resp = client.get("/search?reaction=%F0%9F%94%A5")
+
+    assert resp.status_code == 200
+    assert b'name="reaction" value="\xf0\x9f\x94\xa5"' in resp.data
+
+
 def test_search_jump_to_page_form_preserves_the_current_filters(client, web_conn):
     run(_seed_guild_and_channel(web_conn))
     run(_seed_user(web_conn, user_id=100, display_name="alice"))

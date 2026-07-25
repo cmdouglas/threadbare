@@ -127,6 +127,95 @@ def test_topic_page_renders_messages_with_permalink_anchor(client, web_conn):
     assert b'class="jump-to-page" action="/topic/3000/jump_to_page"' in resp.data
 
 
+def test_topic_page_filters_by_reaction(client, web_conn):
+    run(_seed_guild_and_channel(web_conn))
+    run(_seed_thread(web_conn, thread_id=3000, parent_channel_id=10))
+    run(_seed_user(web_conn))
+    run(
+        _seed_thread_message(
+            web_conn, message_id=1, thread_id=3000, content="no reaction", posted_at=T1
+        )
+    )
+    run(
+        _seed_thread_message(
+            web_conn,
+            message_id=2,
+            thread_id=3000,
+            content="has reaction",
+            posted_at=T1 + timedelta(1),
+        )
+    )
+    run(
+        web_conn.execute(
+            "INSERT INTO reactions (message_id, emoji, count) VALUES (%s, %s, %s)", (2, "🔥", 1)
+        )
+    )
+
+    resp = client.get("/topic/3000/page/1?reaction=%F0%9F%94%A5")
+
+    assert resp.status_code == 200
+    assert b"has reaction" in resp.data
+    assert b"no reaction" not in resp.data
+
+
+def test_topic_page_does_not_mark_read_when_a_reaction_filter_is_active(client, web_conn):
+    run(_seed_guild_and_channel(web_conn))
+    run(_seed_thread(web_conn, thread_id=3000, parent_channel_id=10))
+    run(_seed_user(web_conn))
+    run(
+        _seed_thread_message(
+            web_conn, message_id=1, thread_id=3000, content="no reaction", posted_at=T1
+        )
+    )
+    run(
+        _seed_thread_message(
+            web_conn,
+            message_id=2,
+            thread_id=3000,
+            content="has reaction",
+            posted_at=T1 + timedelta(1),
+        )
+    )
+    run(
+        web_conn.execute(
+            "INSERT INTO reactions (message_id, emoji, count) VALUES (%s, %s, %s)", (2, "🔥", 1)
+        )
+    )
+
+    resp = client.get("/topic/3000/page/1?reaction=%F0%9F%94%A5")
+
+    assert resp.status_code == 200
+    assert run(queries.get_read_marker(web_conn, user_id=1, thread_id=3000)) is None
+
+
+def test_topic_jump_to_page_preserves_the_reaction_filter(client, web_conn):
+    run(_seed_guild_and_channel(web_conn))
+    run(_seed_thread(web_conn, thread_id=3000, parent_channel_id=10))
+
+    resp = client.get("/topic/3000/jump_to_page?page=2&reaction=%F0%9F%94%A5")
+
+    assert resp.status_code == 302
+    assert resp.headers["Location"] == "/topic/3000/page/2?reaction=%F0%9F%94%A5"
+
+
+def test_topic_page_shows_reaction_filter_picker(client, web_conn):
+    run(_seed_guild_and_channel(web_conn))
+    run(_seed_thread(web_conn, thread_id=3000, parent_channel_id=10))
+    run(_seed_user(web_conn))
+    run(_seed_thread_message(web_conn, message_id=1, thread_id=3000, content="hi", posted_at=T1))
+    run(
+        web_conn.execute(
+            "INSERT INTO reactions (message_id, emoji, count) VALUES (%s, %s, %s)", (1, "🔥", 2)
+        )
+    )
+
+    resp = client.get("/topic/3000/page/1")
+
+    assert resp.status_code == 200
+    assert b'class="reaction-filter-option"' in resp.data
+    assert b"reaction=%F0%9F%94%A5" in resp.data
+
+
 def test_topic_page_marks_the_thread_read_up_to_the_last_message_shown(client, web_conn):
     run(_seed_guild_and_channel(web_conn))
     run(_seed_thread(web_conn, thread_id=3000, parent_channel_id=10))

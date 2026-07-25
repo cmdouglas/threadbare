@@ -476,6 +476,122 @@ def test_board_continuous_page_renders_messages(client, web_conn):
     assert b"hello there" in resp.data
 
 
+def test_board_continuous_page_filters_by_reaction(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10))
+    run(_seed_user(web_conn))
+    run(_seed_message(web_conn, message_id=1, channel_id=10, content="no reaction", posted_at=T1))
+    run(
+        _seed_message(
+            web_conn,
+            message_id=2,
+            channel_id=10,
+            content="has reaction",
+            posted_at=T1 + timedelta(1),
+        )
+    )
+    run(
+        web_conn.execute(
+            "INSERT INTO reactions (message_id, emoji, count) VALUES (%s, %s, %s)", (2, "🔥", 1)
+        )
+    )
+
+    resp = client.get("/board/10/continuous/page/1?reaction=%F0%9F%94%A5")
+
+    assert resp.status_code == 200
+    assert b"has reaction" in resp.data
+    assert b"no reaction" not in resp.data
+
+
+def test_board_continuous_page_does_not_mark_read_when_a_reaction_filter_is_active(
+    client, web_conn
+):
+    # A filtered page's rows[-1] is not the container's true last-shown
+    # message -- marking read to it would silently fast-forward the marker
+    # past unfiltered messages the requester never actually saw.
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10))
+    run(_seed_user(web_conn))
+    run(_seed_message(web_conn, message_id=1, channel_id=10, content="no reaction", posted_at=T1))
+    run(
+        _seed_message(
+            web_conn,
+            message_id=2,
+            channel_id=10,
+            content="has reaction",
+            posted_at=T1 + timedelta(1),
+        )
+    )
+    run(
+        web_conn.execute(
+            "INSERT INTO reactions (message_id, emoji, count) VALUES (%s, %s, %s)", (2, "🔥", 1)
+        )
+    )
+
+    resp = client.get("/board/10/continuous/page/1?reaction=%F0%9F%94%A5")
+
+    assert resp.status_code == 200
+    assert run(queries.get_read_marker(web_conn, user_id=1, channel_id=10)) is None
+
+
+def test_board_continuous_jump_to_page_preserves_the_reaction_filter(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10))
+
+    resp = client.get("/board/10/continuous/jump_to_page?page=2&reaction=%F0%9F%94%A5")
+
+    assert resp.status_code == 302
+    assert resp.headers["Location"] == "/board/10/continuous/page/2?reaction=%F0%9F%94%A5"
+
+
+def test_board_continuous_page_shows_reaction_filter_picker(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10))
+    run(_seed_user(web_conn))
+    run(_seed_message(web_conn, message_id=1, channel_id=10, content="hi", posted_at=T1))
+    run(
+        web_conn.execute(
+            "INSERT INTO reactions (message_id, emoji, count) VALUES (%s, %s, %s)", (1, "🔥", 2)
+        )
+    )
+
+    resp = client.get("/board/10/continuous/page/1")
+
+    assert resp.status_code == 200
+    assert b'class="reaction-filter-option"' in resp.data
+    assert b"reaction=%F0%9F%94%A5" in resp.data
+
+
+def test_board_continuous_page_hides_reaction_filter_when_no_reactions_present(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10))
+    run(_seed_user(web_conn))
+    run(_seed_message(web_conn, message_id=1, channel_id=10, content="hi", posted_at=T1))
+
+    resp = client.get("/board/10/continuous/page/1")
+
+    assert b'class="reaction-filter"' not in resp.data
+
+
+def test_board_continuous_page_shows_a_clear_link_when_a_reaction_filter_is_active(
+    client, web_conn
+):
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10))
+    run(_seed_user(web_conn))
+    run(_seed_message(web_conn, message_id=1, channel_id=10, content="hi", posted_at=T1))
+    run(
+        web_conn.execute(
+            "INSERT INTO reactions (message_id, emoji, count) VALUES (%s, %s, %s)", (1, "🔥", 2)
+        )
+    )
+
+    resp = client.get("/board/10/continuous/page/1?reaction=%F0%9F%94%A5")
+
+    assert resp.status_code == 200
+    assert b'class="reaction-filter-clear"' in resp.data
+
+
 def test_board_continuous_page_marks_the_channel_read_up_to_the_last_message_shown(
     client, web_conn
 ):
@@ -797,6 +913,48 @@ def test_board_week_page_shows_only_messages_in_that_week(client, web_conn):
     assert resp.status_code == 200
     assert b"in week 28" in resp.data
     assert b"in week 29" not in resp.data
+
+
+def test_board_week_page_filters_by_reaction(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10))
+    run(_seed_user(web_conn))
+    monday_week_28 = datetime(2026, 7, 6, tzinfo=UTC)
+    run(
+        _seed_message(
+            web_conn, message_id=1, channel_id=10, content="no reaction", posted_at=monday_week_28
+        )
+    )
+    run(
+        _seed_message(
+            web_conn,
+            message_id=2,
+            channel_id=10,
+            content="has reaction",
+            posted_at=monday_week_28 + timedelta(hours=1),
+        )
+    )
+    run(
+        web_conn.execute(
+            "INSERT INTO reactions (message_id, emoji, count) VALUES (%s, %s, %s)", (2, "🔥", 1)
+        )
+    )
+
+    resp = client.get("/board/10/week/2026-W28/page/1?reaction=%F0%9F%94%A5")
+
+    assert resp.status_code == 200
+    assert b"has reaction" in resp.data
+    assert b"no reaction" not in resp.data
+
+
+def test_board_week_jump_to_page_preserves_the_reaction_filter(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10))
+
+    resp = client.get("/board/10/week/2026-W28/jump_to_page?page=2&reaction=%F0%9F%94%A5")
+
+    assert resp.status_code == 302
+    assert resp.headers["Location"] == "/board/10/week/2026-W28/page/2?reaction=%F0%9F%94%A5"
 
 
 def test_board_week_page_marks_the_channel_read_up_to_the_last_message_shown(client, web_conn):

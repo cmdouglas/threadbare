@@ -1,0 +1,19 @@
+{# Expects: available_reactions (list of {"emoji", "total"}), reaction
+   (currently selected emoji token or None), reaction_filter_url (callable
+   emoji-token-or-None -> url) #}
+{% if available_reactions %}
+<nav class="reaction-filter">
+  <span class="reaction-filter-label">Filter by reaction:</span>
+  {% for r in available_reactions %}
+    {% if r.emoji == reaction %}
+    <strong class="reaction-filter-option preference-current">{{ emoji.render_emoji_token_html(r.emoji) | safe }} <span class="reaction-count">{{ r.total }}</span></strong>
+    {% else %}
+    <a class="reaction-filter-option" href="{{ reaction_filter_url(r.emoji) }}">{{ emoji.render_emoji_token_html(r.emoji) | safe }} <span class="reaction-count">{{ r.total }}</span></a>
+    {% endif %}
+  {% endfor %}
+  {% if reaction %}
+  &middot;
+  <a class="reaction-filter-clear" href="{{ reaction_filter_url(none) }}">Clear</a>
+  {% endif %}
+</nav>
+{% endif %}

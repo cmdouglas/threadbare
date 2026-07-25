@@ -29,6 +29,7 @@ async def topic_index(thread_id: int):
 
 @bp.route("/topic/<int:thread_id>/page/<int:page>")
 async def topic_page(thread_id: int, page: int):
+    reaction = request.args.get("reaction") or None
     pool = current_app.config["POOL"]
     async with pool.connection() as conn:
         thread = await queries.get_thread(conn, thread_id)
@@ -40,9 +41,14 @@ async def topic_page(thread_id: int, page: int):
         ):
             abort(404)
         breadcrumbs = await topic_breadcrumbs(conn, thread, script_root=request.script_root)
-        total = await queries.count_messages_before(conn, thread_id=thread_id)
+        total = await queries.count_messages_before(conn, thread_id=thread_id, reaction=reaction)
         rows = await queries.get_messages_page(
-            conn, thread_id=thread_id, page=page, page_size=g.posts_per_page, total=total
+            conn,
+            thread_id=thread_id,
+            page=page,
+            page_size=g.posts_per_page,
+            total=total,
+            reaction=reaction,
         )
         posts = [
             (
@@ -53,7 +59,10 @@ async def topic_page(thread_id: int, page: int):
             )
             for row in rows
         ]
-        if rows:
+        # Same reasoning as board_continuous_page: a reaction-filtered
+        # page's rows[-1] isn't the thread's true last-shown message, so
+        # mark_read is skipped while a filter is active.
+        if rows and reaction is None:
             last = rows[-1]
             await queries.mark_read(
                 conn,
@@ -62,14 +71,25 @@ async def topic_page(thread_id: int, page: int):
                 message_id=last["id"],
                 posted_at=last["posted_at"],
             )
+        unread_total = (
+            total
+            if reaction is None
+            else await queries.count_messages_before(conn, thread_id=thread_id)
+        )
         show_jump_to_unread = await queries.has_unread(
-            conn, user_id=session["user_id"], thread_id=thread_id, total=total
+            conn, user_id=session["user_id"], thread_id=thread_id, total=unread_total
+        )
+        available_reactions = await queries.get_reactions_present_in_container(
+            conn, thread_id=thread_id
         )
 
     total_pages = page_number_for_offset(total - 1, page_size=g.posts_per_page) if total > 0 else 1
 
     def page_url(n: int) -> str:
-        return url_for("topic.topic_page", thread_id=thread_id, page=n)
+        return url_for("topic.topic_page", thread_id=thread_id, page=n, reaction=reaction)
+
+    def reaction_filter_url(r: str | None) -> str:
+        return url_for("topic.topic_page", thread_id=thread_id, page=1, reaction=r)
 
     return render_template(
         "topic.html",
@@ -81,6 +101,9 @@ async def topic_page(thread_id: int, page: int):
         page_url=page_url,
         show_jump_to_unread=show_jump_to_unread,
         jump_action=url_for("topic.topic_jump_to_page", thread_id=thread_id),
+        reaction=reaction,
+        available_reactions=available_reactions,
+        reaction_filter_url=reaction_filter_url,
     )
 
 
@@ -167,7 +190,8 @@ async def topic_jump(thread_id: int):
 @bp.route("/topic/<int:thread_id>/jump_to_page")
 async def topic_jump_to_page(thread_id: int):
     page = max(request.args.get("page", type=int) or 1, 1)
-    return redirect(url_for("topic.topic_page", thread_id=thread_id, page=page))
+    reaction = request.args.get("reaction") or None
+    return redirect(url_for("topic.topic_page", thread_id=thread_id, page=page, reaction=reaction))
 
 
 @bp.route("/topic/<int:thread_id>/jump_to_unread")

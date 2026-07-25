@@ -39,6 +39,7 @@ async def search():
     channel_id = request.args.get("channel", type=int)
     after = _parse_date(request.args.get("after"))
     before = _parse_date(request.args.get("before"))
+    reaction = request.args.get("reaction") or None
     page = max(request.args.get("page", default=1, type=int) or 1, 1)
 
     results: list[dict] = []
@@ -61,6 +62,7 @@ async def search():
                 channel_id=channel_id,
                 after=after,
                 before=before,
+                reaction=reaction,
                 page=page,
                 page_size=g.posts_per_page,
                 visible_channel_ids=g.visible_channel_ids,
@@ -73,6 +75,7 @@ async def search():
                 channel_id=channel_id,
                 after=after,
                 before=before,
+                reaction=reaction,
                 visible_channel_ids=g.visible_channel_ids,
             )
         for row in results:

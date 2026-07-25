@@ -7,6 +7,7 @@
   <input type="number" name="channel" value="{{ request.args.get('channel', '') }}" placeholder="Channel ID">
   <label>After <input type="date" name="after" value="{{ request.args.get('after', '') }}"></label>
   <label>Before <input type="date" name="before" value="{{ request.args.get('before', '') }}"></label>
+  <input type="text" name="reaction" value="{{ request.args.get('reaction', '') }}" placeholder="Reaction">
   {% if author_id %}<input type="hidden" name="author_id" value="{{ author_id }}">{% endif %}
   <button type="submit">Search</button>
 </form>

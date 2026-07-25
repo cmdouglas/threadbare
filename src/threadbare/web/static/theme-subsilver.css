@@ -331,6 +331,15 @@ td.topic-name a {
   margin-top: var(--space-xs);
 }
 
+.reaction-filter {
+  margin: var(--space-sm) 0;
+}
+
+.reaction-filter-option {
+  display: inline-block;
+  margin-right: var(--space-sm);
+}
+
 .reaction-badge {
   display: inline-block;
   border: var(--border-width) solid var(--color-border);

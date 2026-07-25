@@ -222,6 +222,61 @@ async def test_get_reactions_for_message_returns_emoji_count_pairs(db_conn):
     assert await queries.get_reactions_for_message(db_conn, 1000) == [("👍", 3)]
 
 
+async def test_get_reactions_present_in_container_aggregates_across_messages(db_conn):
+    await _seed_guild_and_channel(db_conn)
+    await _seed_user(db_conn, user_id=100, display_name="alice")
+    await _seed_message(db_conn, message_id=1, channel_id=10, author_id=100)
+    await _seed_message(db_conn, message_id=2, channel_id=10, author_id=100)
+    await db_conn.execute(
+        "INSERT INTO reactions (message_id, emoji, count) VALUES (%s, %s, %s)", (1, "🔥", 2)
+    )
+    await db_conn.execute(
+        "INSERT INTO reactions (message_id, emoji, count) VALUES (%s, %s, %s)", (2, "🔥", 3)
+    )
+    await db_conn.execute(
+        "INSERT INTO reactions (message_id, emoji, count) VALUES (%s, %s, %s)", (2, "👍", 1)
+    )
+
+    rows = await queries.get_reactions_present_in_container(db_conn, channel_id=10)
+
+    assert rows == [{"emoji": "🔥", "total": 5}, {"emoji": "👍", "total": 1}]
+
+
+async def test_get_reactions_present_in_container_scopes_to_a_thread(db_conn):
+    await _seed_guild_and_channel(db_conn)
+    await _seed_thread(db_conn, thread_id=3000, parent_channel_id=10)
+    await _seed_user(db_conn, user_id=100, display_name="alice")
+    await _seed_message(db_conn, message_id=1, channel_id=10, author_id=100)
+    await _seed_thread_message(db_conn, message_id=2, thread_id=3000, author_id=100)
+    await db_conn.execute(
+        "INSERT INTO reactions (message_id, emoji, count) VALUES (%s, %s, %s)", (1, "🔥", 2)
+    )
+    await db_conn.execute(
+        "INSERT INTO reactions (message_id, emoji, count) VALUES (%s, %s, %s)", (2, "👍", 1)
+    )
+
+    rows = await queries.get_reactions_present_in_container(db_conn, thread_id=3000)
+
+    assert rows == [{"emoji": "👍", "total": 1}]
+
+
+async def test_get_reactions_present_in_container_windowed_by_since_and_until(db_conn):
+    await _seed_guild_and_channel(db_conn)
+    await _seed_user(db_conn, user_id=100, display_name="alice")
+    await _seed_message(db_conn, message_id=1, channel_id=10, author_id=100, posted_at=T1)
+    await _seed_message(db_conn, message_id=2, channel_id=10, author_id=100, posted_at=T2)
+    await db_conn.execute(
+        "INSERT INTO reactions (message_id, emoji, count) VALUES (%s, %s, %s)", (1, "🔥", 2)
+    )
+    await db_conn.execute(
+        "INSERT INTO reactions (message_id, emoji, count) VALUES (%s, %s, %s)", (2, "👍", 1)
+    )
+
+    rows = await queries.get_reactions_present_in_container(db_conn, channel_id=10, since=T2)
+
+    assert rows == [{"emoji": "👍", "total": 1}]
+
+
 async def test_resolve_users_returns_display_names_for_known_ids(db_conn):
     await _seed_user(db_conn, user_id=100, display_name="alice")
     await _seed_user(db_conn, user_id=101, display_name="bob")
@@ -313,6 +368,20 @@ async def test_count_messages_before_windowed_by_since_and_until(db_conn):
     await _seed_message(db_conn, message_id=3, channel_id=10, author_id=100, posted_at=T3)
 
     n = await queries.count_messages_before(db_conn, channel_id=10, since=T2, until=T3)
+
+    assert n == 1
+
+
+async def test_count_messages_before_filters_by_reaction(db_conn):
+    await _seed_guild_and_channel(db_conn)
+    await _seed_user(db_conn, user_id=100, display_name="alice")
+    await _seed_message(db_conn, message_id=1, channel_id=10, author_id=100, posted_at=T1)
+    await _seed_message(db_conn, message_id=2, channel_id=10, author_id=100, posted_at=T2)
+    await db_conn.execute(
+        "INSERT INTO reactions (message_id, emoji, count) VALUES (%s, %s, %s)", (1, "🔥", 2)
+    )
+
+    n = await queries.count_messages_before(db_conn, channel_id=10, reaction="🔥")
 
     assert n == 1
 
@@ -467,6 +536,22 @@ async def test_get_messages_page_windowed_by_since_and_until(db_conn):
     assert [r["id"] for r in rows] == [2]
 
 
+async def test_get_messages_page_filters_by_reaction(db_conn):
+    await _seed_guild_and_channel(db_conn)
+    await _seed_user(db_conn, user_id=100, display_name="alice")
+    await _seed_message(db_conn, message_id=1, channel_id=10, author_id=100, posted_at=T1)
+    await _seed_message(db_conn, message_id=2, channel_id=10, author_id=100, posted_at=T2)
+    await db_conn.execute(
+        "INSERT INTO reactions (message_id, emoji, count) VALUES (%s, %s, %s)", (2, "🔥", 1)
+    )
+
+    rows = await queries.get_messages_page(
+        db_conn, channel_id=10, page=1, page_size=25, total=1, reaction="🔥"
+    )
+
+    assert [r["id"] for r in rows] == [2]
+
+
 async def test_get_messages_page_for_a_thread(db_conn):
     await _seed_guild_and_channel(db_conn)
     await _seed_thread(db_conn, thread_id=3000, parent_channel_id=10)
@@ -608,6 +693,22 @@ async def test_search_messages_filters_by_author_id(db_conn):
 
     rows = await queries.search_messages(
         db_conn, query="pizza", author_id=100, visible_channel_ids=set()
+    )
+
+    assert [r["id"] for r in rows] == [1]
+
+
+async def test_search_messages_filters_by_reaction(db_conn):
+    await _seed_guild_and_channel(db_conn)
+    await _seed_user(db_conn, user_id=100, display_name="alice")
+    await _seed_message(db_conn, message_id=1, channel_id=10, author_id=100, content="pizza a")
+    await _seed_message(db_conn, message_id=2, channel_id=10, author_id=100, content="pizza b")
+    await db_conn.execute(
+        "INSERT INTO reactions (message_id, emoji, count) VALUES (%s, %s, %s)", (1, "🔥", 2)
+    )
+
+    rows = await queries.search_messages(
+        db_conn, query="pizza", reaction="🔥", visible_channel_ids=set()
     )
 
     assert [r["id"] for r in rows] == [1]

@@ -84,6 +84,15 @@ def test_unread_count_rule_exists(stylesheet):
 
 
 @pytest.mark.parametrize("stylesheet", sorted(AVAILABLE_THEMES.values()))
+def test_reaction_filter_rule_exists(stylesheet):
+    css = (STATIC_DIR / stylesheet).read_text()
+
+    assert re.search(r"\.reaction-filter\s*\{", css) is not None, (
+        f"{stylesheet} has no .reaction-filter rule"
+    )
+
+
+@pytest.mark.parametrize("stylesheet", sorted(AVAILABLE_THEMES.values()))
 def test_thread_children_rule_is_indented(stylesheet):
     css = (STATIC_DIR / stylesheet).read_text()
 

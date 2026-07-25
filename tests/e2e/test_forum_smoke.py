@@ -417,6 +417,23 @@ def test_search_this_users_posts_form_scopes_results_to_that_author(page, live_s
     assert page.locator(".search-result", has_text="a-moderator").count() == 0
 
 
+def test_reaction_filter_picker_narrows_the_board_to_matching_posts(page, live_server, seeded):
+    page.goto(f"{live_server}/board/{CHANNEL_ID}/continuous/page/1")
+    assert "pizza recipe" in page.content()
+    assert "hello from a bot" in page.content()
+
+    page.locator(".reaction-filter-option").first.click()
+
+    assert "reaction=" in page.url
+    assert "pizza recipe" in page.content()
+    assert "hello from a bot" not in page.content()
+
+    page.locator(".reaction-filter-clear").click()
+
+    assert "reaction=" not in page.url
+    assert "hello from a bot" in page.content()
+
+
 def test_attachment_image_is_capped_to_the_viewport_height(page, live_server, seeded):
     page.goto(f"{live_server}/board/{CHANNEL_ID}/continuous/page/1")
 
