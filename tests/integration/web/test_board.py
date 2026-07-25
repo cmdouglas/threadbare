@@ -299,6 +299,34 @@ def test_board_topics_shows_a_pagination_control_for_a_multi_page_topic(client, 
     assert b'class="pagination-page" href="/topic/3000/page/2">2</a>' in resp.data
 
 
+def test_board_topics_hides_jump_to_unread_link_for_a_topic_never_visited(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10, type=15, name="a forum"))
+    run(_seed_thread(web_conn, thread_id=3000, parent_channel_id=10, name="my topic"))
+    for i in range(26):
+        run(_seed_thread_message(web_conn, message_id=i + 1, thread_id=3000, content=f"msg {i}"))
+
+    resp = client.get("/board/10/topics")
+
+    assert resp.status_code == 200
+    assert b"topic-pagination-row" in resp.data
+    assert b'class="jump-to-unread"' not in resp.data
+
+
+def test_board_topics_shows_jump_to_unread_link_once_a_topic_is_partially_read(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10, type=15, name="a forum"))
+    run(_seed_thread(web_conn, thread_id=3000, parent_channel_id=10, name="my topic"))
+    for i in range(26):
+        run(_seed_thread_message(web_conn, message_id=i + 1, thread_id=3000, content=f"msg {i}"))
+    client.get("/topic/3000/page/1")
+
+    resp = client.get("/board/10/topics")
+
+    assert resp.status_code == 200
+    assert b'class="jump-to-unread" href="/topic/3000/jump_to_unread"' in resp.data
+
+
 def test_board_topics_shows_freeform_controls_for_a_text_channel(client, web_conn):
     run(_seed_guild(web_conn))
     run(_seed_board(web_conn, channel_id=10, type=0, name="general"))

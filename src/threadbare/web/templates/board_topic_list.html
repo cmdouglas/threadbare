@@ -53,6 +53,9 @@
           <label>Jump to page <input type="number" name="page" min="1" max="{{ topic_total_pages }}" value="1"></label>
           <button type="submit">Go</button>
         </form>
+        {% if thread.id in thread_jump_to_unread_action %}
+        <a class="jump-to-unread" href="{{ thread_jump_to_unread_action[thread.id] }}">Jump to first unread</a>
+        {% endif %}
       </div>
     </td>
   </tr>

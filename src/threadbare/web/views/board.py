@@ -77,6 +77,15 @@ async def board_topics(channel_id: int):
             thread["id"]: is_unread(aggregates.get(thread["id"]), markers.get(thread["id"]))
             for thread in threads
         }
+        # Same "marker present means not entirely unread" reasoning as
+        # board_index -- a thread with no marker at all has "first unread"
+        # and "start reading" land on the same page 1, so the link is
+        # hidden rather than a redundant duplicate of the thread-name link.
+        thread_jump_to_unread_action = {
+            thread["id"]: url_for("topic.topic_jump_to_unread", thread_id=thread["id"])
+            for thread in threads
+            if thread["id"] in markers
+        }
 
     total_pages = page_number_for_offset(total_topics - 1) if total_topics > 0 else 1
 
@@ -92,6 +101,7 @@ async def board_topics(channel_id: int):
         aggregates=aggregates,
         authors=authors,
         unread_threads=unread_threads,
+        thread_jump_to_unread_action=thread_jump_to_unread_action,
         page=page,
         total_pages=total_pages,
         page_url=page_url,

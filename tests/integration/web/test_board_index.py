@@ -238,6 +238,32 @@ def test_board_index_shows_a_pagination_control_for_a_multi_page_freeform_board(
     assert b'class="pagination-page" href="/board/10/continuous/page/2">2</a>' in resp.data
 
 
+def test_board_index_hides_jump_to_unread_link_for_a_board_never_visited(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10, name="general"))
+    for i in range(26):
+        run(_seed_message(web_conn, message_id=1000 + i, channel_id=10, content=f"msg {i}"))
+
+    resp = client.get("/")
+
+    assert resp.status_code == 200
+    assert b"board-pagination-row" in resp.data
+    assert b'class="jump-to-unread"' not in resp.data
+
+
+def test_board_index_shows_jump_to_unread_link_once_a_board_is_partially_read(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10, name="general"))
+    for i in range(26):
+        run(_seed_message(web_conn, message_id=1000 + i, channel_id=10, content=f"msg {i}"))
+    client.get("/board/10/continuous/page/1")
+
+    resp = client.get("/")
+
+    assert resp.status_code == 200
+    assert b'class="jump-to-unread" href="/board/10/continuous/jump_to_unread"' in resp.data
+
+
 def test_board_index_shows_a_pagination_control_for_a_multi_page_forum_board(client, web_conn):
     run(_seed_guild(web_conn))
     run(_seed_forum_board(web_conn, channel_id=10, name="a forum"))

@@ -273,6 +273,23 @@ def test_jump_to_first_unread_link_lands_on_the_first_unread_page(page, live_ser
     assert "topic message 25" in page.content()
 
 
+def test_topic_list_pagination_row_jump_to_unread_link_appears_once_partially_read(
+    page, live_server, seeded
+):
+    page.goto(f"{live_server}/board/{CHANNEL_ID}/topics")
+    pagination_row = page.locator("tr.topic-pagination-row")
+    assert pagination_row.locator(".jump-to-unread").count() == 0
+
+    page.goto(f"{live_server}/topic/{THREAD_ID}/page/1")  # marks messages 0-24 as read
+    page.goto(f"{live_server}/board/{CHANNEL_ID}/topics")
+
+    pagination_row = page.locator("tr.topic-pagination-row")
+    pagination_row.locator(".jump-to-unread").click()
+
+    assert page.url.endswith(f"/topic/{THREAD_ID}/page/2")
+    assert "topic message 25" in page.content()
+
+
 FORUM_CHANNEL_ID = 900600
 
 
