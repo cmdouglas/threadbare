@@ -19,7 +19,7 @@ export interface WebStackProps extends cdk.StackProps {
    * other). */
   readonly databaseSecretArn: string;
   /** Operator-provided secret with DISCORD_BOT_TOKEN, DISCORD_CLIENT_ID,
-   * DISCORD_CLIENT_SECRET, DISCORD_OAUTH_REDIRECT_URI, DISCORD_TEST_GUILD_ID,
+   * DISCORD_CLIENT_SECRET, DISCORD_OAUTH_REDIRECT_URI, DISCORD_GUILD_ID,
    * FLASK_SECRET_KEY JSON keys -- the same values the setup wizard would
    * otherwise collect and write to .env. The wizard itself doesn't apply
    * here (see deploy/cdk/README.md's documented deviations): there's no
@@ -99,9 +99,9 @@ export class WebStack extends cdk.Stack {
             appConfigSecret,
             "DISCORD_OAUTH_REDIRECT_URI"
           ),
-          DISCORD_TEST_GUILD_ID: ecs.Secret.fromSecretsManager(
+          DISCORD_GUILD_ID: ecs.Secret.fromSecretsManager(
             appConfigSecret,
-            "DISCORD_TEST_GUILD_ID"
+            "DISCORD_GUILD_ID"
           ),
           FLASK_SECRET_KEY: ecs.Secret.fromSecretsManager(appConfigSecret, "FLASK_SECRET_KEY"),
         },

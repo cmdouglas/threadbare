@@ -76,7 +76,7 @@ def test_finish_post_writes_env_file_and_calls_on_complete(
         content = env_path.read_text()
         assert "DISCORD_BOT_TOKEN=real-bot-token" in content
         assert "DISCORD_CLIENT_SECRET=real-client-secret" in content
-        assert "DISCORD_TEST_GUILD_ID=999" in content
+        assert "DISCORD_GUILD_ID=999" in content
 
         assert "settings" in completed_with
         assert completed_with["settings"].discord_bot_token == "real-bot-token"

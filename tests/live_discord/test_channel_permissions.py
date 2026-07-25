@@ -2,14 +2,15 @@ import os
 
 import pytest
 
+from threadbare.discord_permissions import compute_is_public
 from threadbare.sync_worker.bot import ThreadbareClient
-from threadbare.sync_worker.permissions import compute_is_public, everyone_overwrite
+from threadbare.sync_worker.permissions import everyone_overwrite
 
 pytestmark = pytest.mark.live_discord
 
 
 async def test_real_general_channel_overwrites_resolve_to_public():
-    guild_id = int(os.environ["DISCORD_TEST_GUILD_ID"])
+    guild_id = int(os.environ["DISCORD_GUILD_ID"])
     token = os.environ["DISCORD_BOT_TOKEN"]
 
     client = ThreadbareClient(guild_id=guild_id)

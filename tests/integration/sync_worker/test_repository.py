@@ -72,7 +72,6 @@ def _message_row(**overrides):
         "reply_to_id": None,
         "posted_at": datetime(2026, 1, 1, tzinfo=UTC),
         "edited_at": None,
-        "flags": 0,
         "type": 0,
     }
     row.update(overrides)

@@ -177,7 +177,6 @@ def test_message_to_row_maps_basic_fields_for_a_channel_message():
         "reply_to_id": None,
         "posted_at": NOW,
         "edited_at": None,
-        "flags": 0,
         "type": 0,
     }
 

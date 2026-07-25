@@ -40,7 +40,7 @@ def test_main_serves_the_wizard_app_when_unconfigured(monkeypatch, test_database
         "DISCORD_CLIENT_ID",
         "DISCORD_CLIENT_SECRET",
         "DISCORD_OAUTH_REDIRECT_URI",
-        "DISCORD_TEST_GUILD_ID",
+        "DISCORD_GUILD_ID",
         "FLASK_SECRET_KEY",
     ):
         monkeypatch.delenv(var, raising=False)
@@ -76,7 +76,7 @@ def test_main_wizard_mode_uses_host_env_var_when_set(monkeypatch, test_database_
         "DISCORD_CLIENT_ID",
         "DISCORD_CLIENT_SECRET",
         "DISCORD_OAUTH_REDIRECT_URI",
-        "DISCORD_TEST_GUILD_ID",
+        "DISCORD_GUILD_ID",
         "FLASK_SECRET_KEY",
     ):
         monkeypatch.delenv(var, raising=False)
@@ -102,7 +102,7 @@ def test_main_serves_the_real_forum_app_when_configured(monkeypatch, test_databa
     monkeypatch.setenv("DISCORD_CLIENT_ID", "cid")
     monkeypatch.setenv("DISCORD_CLIENT_SECRET", "secret")
     monkeypatch.setenv("DISCORD_OAUTH_REDIRECT_URI", "http://localhost:5000/oauth/callback")
-    monkeypatch.setenv("DISCORD_TEST_GUILD_ID", "1")
+    monkeypatch.setenv("DISCORD_GUILD_ID", "1")
     monkeypatch.setenv("FLASK_SECRET_KEY", "test-key")
     monkeypatch.delenv("WEB_CONCURRENCY", raising=False)
 
@@ -133,7 +133,7 @@ def test_main_configured_mode_uses_host_env_var_when_set(monkeypatch, test_datab
     monkeypatch.setenv("DISCORD_CLIENT_ID", "cid")
     monkeypatch.setenv("DISCORD_CLIENT_SECRET", "secret")
     monkeypatch.setenv("DISCORD_OAUTH_REDIRECT_URI", "http://localhost:5000/oauth/callback")
-    monkeypatch.setenv("DISCORD_TEST_GUILD_ID", "1")
+    monkeypatch.setenv("DISCORD_GUILD_ID", "1")
     monkeypatch.setenv("FLASK_SECRET_KEY", "test-key")
     monkeypatch.setenv("HOST", "0.0.0.0")
 
@@ -156,7 +156,7 @@ def test_main_configured_mode_uses_port_env_var_when_set(monkeypatch, test_datab
     monkeypatch.setenv("DISCORD_CLIENT_ID", "cid")
     monkeypatch.setenv("DISCORD_CLIENT_SECRET", "secret")
     monkeypatch.setenv("DISCORD_OAUTH_REDIRECT_URI", "http://localhost:5000/oauth/callback")
-    monkeypatch.setenv("DISCORD_TEST_GUILD_ID", "1")
+    monkeypatch.setenv("DISCORD_GUILD_ID", "1")
     monkeypatch.setenv("FLASK_SECRET_KEY", "test-key")
     monkeypatch.setenv("PORT", "8123")
 
@@ -185,7 +185,7 @@ def test_main_wizard_mode_uses_port_env_var_when_set(monkeypatch, test_database_
         "DISCORD_CLIENT_ID",
         "DISCORD_CLIENT_SECRET",
         "DISCORD_OAUTH_REDIRECT_URI",
-        "DISCORD_TEST_GUILD_ID",
+        "DISCORD_GUILD_ID",
         "FLASK_SECRET_KEY",
     ):
         monkeypatch.delenv(var, raising=False)
@@ -211,7 +211,7 @@ def test_main_configured_mode_uses_web_concurrency_env_var_when_set(monkeypatch,
     monkeypatch.setenv("DISCORD_CLIENT_ID", "cid")
     monkeypatch.setenv("DISCORD_CLIENT_SECRET", "secret")
     monkeypatch.setenv("DISCORD_OAUTH_REDIRECT_URI", "http://localhost:5000/oauth/callback")
-    monkeypatch.setenv("DISCORD_TEST_GUILD_ID", "1")
+    monkeypatch.setenv("DISCORD_GUILD_ID", "1")
     monkeypatch.setenv("FLASK_SECRET_KEY", "test-key")
     monkeypatch.setenv("WEB_CONCURRENCY", "2")
 
@@ -234,7 +234,7 @@ def test_main_configured_mode_exits_when_schema_check_fails(monkeypatch, test_da
     monkeypatch.setenv("DISCORD_CLIENT_ID", "cid")
     monkeypatch.setenv("DISCORD_CLIENT_SECRET", "secret")
     monkeypatch.setenv("DISCORD_OAUTH_REDIRECT_URI", "http://localhost:5000/oauth/callback")
-    monkeypatch.setenv("DISCORD_TEST_GUILD_ID", "1")
+    monkeypatch.setenv("DISCORD_GUILD_ID", "1")
     monkeypatch.setenv("FLASK_SECRET_KEY", "test-key")
 
     async def fake_check_schema_up_to_date(dsn):
@@ -264,7 +264,7 @@ def test_main_wizard_mode_exits_when_schema_check_fails(monkeypatch, test_databa
         "DISCORD_CLIENT_ID",
         "DISCORD_CLIENT_SECRET",
         "DISCORD_OAUTH_REDIRECT_URI",
-        "DISCORD_TEST_GUILD_ID",
+        "DISCORD_GUILD_ID",
         "FLASK_SECRET_KEY",
     ):
         monkeypatch.delenv(var, raising=False)
@@ -302,7 +302,7 @@ def test_main_wizard_on_complete_schedules_a_delayed_restart(monkeypatch, test_d
         "DISCORD_CLIENT_ID",
         "DISCORD_CLIENT_SECRET",
         "DISCORD_OAUTH_REDIRECT_URI",
-        "DISCORD_TEST_GUILD_ID",
+        "DISCORD_GUILD_ID",
         "FLASK_SECRET_KEY",
     ):
         monkeypatch.delenv(var, raising=False)

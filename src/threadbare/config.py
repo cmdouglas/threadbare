@@ -60,46 +60,57 @@ def reload_env_file(dotenv_path: str | os.PathLike | None = None) -> None:
     load_dotenv(dotenv_path=dotenv_path)
 
 
+# Every required env var, mapped to the Settings field it populates. A table
+# rather than seven near-identical get/strip/append blocks, so adding a
+# required setting is one line.
+_REQUIRED_STR_SETTINGS = (
+    ("DISCORD_BOT_TOKEN", "discord_bot_token"),
+    ("DATABASE_URL", "database_url"),
+    ("DISCORD_CLIENT_ID", "discord_client_id"),
+    ("DISCORD_CLIENT_SECRET", "discord_client_secret"),
+    ("DISCORD_OAUTH_REDIRECT_URI", "discord_oauth_redirect_uri"),
+    ("FLASK_SECRET_KEY", "flask_secret_key"),
+)
+
+# Renamed from DISCORD_TEST_GUILD_ID: nothing about a deployment's own guild is
+# a test. Named here so the missing-config error can point an upgrading
+# operator straight at the .env line they need to change -- this is a hard
+# rename with no fallback (DESIGN.md §7 records it as a deliberate departure
+# from the upgrade contract's "safe default or guided upgrade step" rule), so a
+# clear error is the whole of the guided upgrade step.
+GUILD_ID_ENV_VAR = "DISCORD_GUILD_ID"
+_RENAMED_GUILD_ID_ENV_VAR = "DISCORD_TEST_GUILD_ID"
+
+
 def load_settings(env: Mapping[str, str] | None = None) -> Settings:
     if env is None:
         reload_env_file()
         env = os.environ
 
     errors: list[str] = []
+    values: dict[str, str] = {}
 
-    bot_token = env.get("DISCORD_BOT_TOKEN", "").strip()
-    if not bot_token:
-        errors.append("DISCORD_BOT_TOKEN is required")
+    for env_var, field in _REQUIRED_STR_SETTINGS:
+        value = env.get(env_var, "").strip()
+        if not value:
+            errors.append(f"{env_var} is required")
+        values[field] = value
 
-    raw_guild_id = env.get("DISCORD_TEST_GUILD_ID", "").strip()
+    raw_guild_id = env.get(GUILD_ID_ENV_VAR, "").strip()
     guild_id: int | None = None
     if not raw_guild_id:
-        errors.append("DISCORD_TEST_GUILD_ID is required")
+        message = f"{GUILD_ID_ENV_VAR} is required"
+        if env.get(_RENAMED_GUILD_ID_ENV_VAR, "").strip():
+            message += (
+                f" -- it was renamed from {_RENAMED_GUILD_ID_ENV_VAR}, which is still set in "
+                f"this environment. Rename that line in your .env to {GUILD_ID_ENV_VAR}."
+            )
+        errors.append(message)
     else:
         try:
             guild_id = int(raw_guild_id)
         except ValueError:
-            errors.append(f"DISCORD_TEST_GUILD_ID must be an integer, got {raw_guild_id!r}")
-
-    database_url = env.get("DATABASE_URL", "").strip()
-    if not database_url:
-        errors.append("DATABASE_URL is required")
-
-    client_id = env.get("DISCORD_CLIENT_ID", "").strip()
-    if not client_id:
-        errors.append("DISCORD_CLIENT_ID is required")
-
-    client_secret = env.get("DISCORD_CLIENT_SECRET", "").strip()
-    if not client_secret:
-        errors.append("DISCORD_CLIENT_SECRET is required")
-
-    oauth_redirect_uri = env.get("DISCORD_OAUTH_REDIRECT_URI", "").strip()
-    if not oauth_redirect_uri:
-        errors.append("DISCORD_OAUTH_REDIRECT_URI is required")
-
-    flask_secret_key = env.get("FLASK_SECRET_KEY", "").strip()
-    if not flask_secret_key:
-        errors.append("FLASK_SECRET_KEY is required")
+            errors.append(f"{GUILD_ID_ENV_VAR} must be an integer, got {raw_guild_id!r}")
 
     if errors:
         raise ConfigError("Invalid configuration:\n" + "\n".join(f"  - {e}" for e in errors))
@@ -108,14 +119,9 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
 
     assert guild_id is not None
     return Settings(
-        discord_bot_token=bot_token,
         discord_guild_id=guild_id,
-        database_url=database_url,
-        discord_client_id=client_id,
-        discord_client_secret=client_secret,
-        discord_oauth_redirect_uri=oauth_redirect_uri,
-        flask_secret_key=flask_secret_key,
         theme_storage_dir=theme_storage_dir,
+        **values,
     )
 
 

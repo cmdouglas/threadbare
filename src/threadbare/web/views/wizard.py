@@ -456,7 +456,7 @@ async def finish():
         "DISCORD_CLIENT_ID": state["discord_client_id"],
         "DISCORD_CLIENT_SECRET": session["client_secret"],
         "DISCORD_OAUTH_REDIRECT_URI": state["discord_oauth_redirect_uri"],
-        "DISCORD_TEST_GUILD_ID": str(state["discord_guild_id"]),
+        "DISCORD_GUILD_ID": str(state["discord_guild_id"]),
     }
     if not os.environ.get("FLASK_SECRET_KEY"):
         updates["FLASK_SECRET_KEY"] = _secrets.token_hex(32)

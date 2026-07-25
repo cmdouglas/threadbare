@@ -1,10 +1,10 @@
 """Regenerates tests/fixtures/permission_golden.json from the live
-DISCORD_TEST_GUILD_ID test server (DESIGN.md §7's "golden tests against
+DISCORD_GUILD_ID test server (DESIGN.md §7's "golden tests against
 permission fixtures exported from a real server", ROADMAP.md Phase 2's last
 checklist item). Dev-only, not part of the test suite or CI -- run by hand
 whenever the fixture server layout below needs to change.
 
-Requires DISCORD_BOT_TOKEN/DISCORD_TEST_GUILD_ID (.env) and the following
+Requires DISCORD_BOT_TOKEN/DISCORD_GUILD_ID (.env) and the following
 server layout to already exist (the bot's own minimal permissions can't
 create roles/overwrites itself, by this project's deliberate design -- see
 DEVELOPMENT.md for why the bot stays read-only):
@@ -70,7 +70,7 @@ async def main() -> None:
     intents = discord.Intents.none()
     intents.guilds = True
     client = discord.Client(intents=intents)
-    guild_id = int(os.environ["DISCORD_TEST_GUILD_ID"])
+    guild_id = int(os.environ["DISCORD_GUILD_ID"])
 
     @client.event
     async def on_ready():
@@ -105,7 +105,7 @@ async def main() -> None:
                 "_meta": {
                     "description": (
                         "Real role permission bitfields and channel/category overwrites "
-                        "exported from the live DISCORD_TEST_GUILD_ID test server (DESIGN.md "
+                        "exported from the live DISCORD_GUILD_ID test server (DESIGN.md "
                         "§7's 'golden tests against permission fixtures exported from a real "
                         "server'), not hand-invented numbers. Captured via "
                         "scripts/export_permission_golden.py against a purpose-built server "

@@ -43,7 +43,7 @@ async def test_full_lifecycle_create_edit_delete_via_webhook():
     if not webhook_url:
         pytest.skip("DISCORD_TEST_WEBHOOK_URL is not set; see DEVELOPMENT.md")
 
-    guild_id = int(os.environ["DISCORD_TEST_GUILD_ID"])
+    guild_id = int(os.environ["DISCORD_GUILD_ID"])
     token = os.environ["DISCORD_BOT_TOKEN"]
     test_database_url = os.environ["TEST_DATABASE_URL"]
 

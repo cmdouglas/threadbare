@@ -15,7 +15,7 @@ async def test_discover_and_backfill_guild_populates_data_without_preseeding():
     unlike every earlier manual verification), the real worker discovers
     the guild's channels and backfills their content automatically.
     """
-    guild_id = int(os.environ["DISCORD_TEST_GUILD_ID"])
+    guild_id = int(os.environ["DISCORD_GUILD_ID"])
     token = os.environ["DISCORD_BOT_TOKEN"]
     test_database_url = os.environ["TEST_DATABASE_URL"]
 

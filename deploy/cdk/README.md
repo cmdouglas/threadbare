@@ -52,7 +52,7 @@ secrets in Secrets Manager yourself, before the first deploy:
 2. **`threadbare/app-config`** — a JSON secret with these keys, matching exactly what the setup
    wizard would otherwise collect and write to `.env` for Option B/A:
    `DISCORD_BOT_TOKEN`, `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`,
-   `DISCORD_OAUTH_REDIRECT_URI`, `DISCORD_TEST_GUILD_ID`, `FLASK_SECRET_KEY`.
+   `DISCORD_OAUTH_REDIRECT_URI`, `DISCORD_GUILD_ID`, `FLASK_SECRET_KEY`.
 
 You'll also need an ACM certificate already issued and validated for whatever domain you're
 serving on (`aws acm request-certificate` + DNS validation, done ahead of time — this template

@@ -8,7 +8,7 @@ pytestmark = pytest.mark.live_discord
 
 
 async def test_bot_connects_and_fetches_guild():
-    guild_id = int(os.environ["DISCORD_TEST_GUILD_ID"])
+    guild_id = int(os.environ["DISCORD_GUILD_ID"])
     token = os.environ["DISCORD_BOT_TOKEN"]
 
     client = ThreadbareClient(guild_id=guild_id)

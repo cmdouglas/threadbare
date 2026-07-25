@@ -30,7 +30,6 @@ def message_to_row(message: MessageLike, *, channel_id: int | None, thread_id: i
         "reply_to_id": reply_to_id,
         "posted_at": message.created_at,
         "edited_at": message.edited_at,
-        "flags": 0,
         "type": message_type.value if message_type is not None else 0,
     }
 

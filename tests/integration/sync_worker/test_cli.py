@@ -13,6 +13,8 @@ connection after it finishes. Matches the pattern already established in
 tests/integration/sync_worker/test_backfill*.py for the same reason.
 """
 
+import sys
+
 import psycopg
 import pytest
 from psycopg.rows import dict_row
@@ -22,13 +24,17 @@ from threadbare.sync_worker import cli, repository
 
 
 def test_main_exits_when_schema_check_fails(monkeypatch, test_database_url, capsys):
+    # main() parses sys.argv via argparse, which (unlike the previous
+    # hand-rolled scan) rejects unrecognised flags -- so pytest's own argv
+    # has to be replaced rather than inherited.
+    monkeypatch.setattr(sys, "argv", ["threadbare-sync-worker"])
     monkeypatch.setattr("dotenv.load_dotenv", lambda *args, **kwargs: None)
     monkeypatch.setenv("DATABASE_URL", test_database_url)
     monkeypatch.setenv("DISCORD_BOT_TOKEN", "tok")
     monkeypatch.setenv("DISCORD_CLIENT_ID", "cid")
     monkeypatch.setenv("DISCORD_CLIENT_SECRET", "secret")
     monkeypatch.setenv("DISCORD_OAUTH_REDIRECT_URI", "http://localhost:5000/oauth/callback")
-    monkeypatch.setenv("DISCORD_TEST_GUILD_ID", "1")
+    monkeypatch.setenv("DISCORD_GUILD_ID", "1")
     monkeypatch.setenv("FLASK_SECRET_KEY", "test-key")
 
     async def fake_check_schema_up_to_date(dsn):
@@ -53,13 +59,17 @@ def test_main_proceeds_past_schema_check_when_up_to_date(monkeypatch, test_datab
     # database -- proves the guard is a no-op in the normal case, not just
     # that a fake failure is caught. create_pool is still faked so this
     # never opens a real pool or touches Discord.
+    # main() parses sys.argv via argparse, which (unlike the previous
+    # hand-rolled scan) rejects unrecognised flags -- so pytest's own argv
+    # has to be replaced rather than inherited.
+    monkeypatch.setattr(sys, "argv", ["threadbare-sync-worker"])
     monkeypatch.setattr("dotenv.load_dotenv", lambda *args, **kwargs: None)
     monkeypatch.setenv("DATABASE_URL", test_database_url)
     monkeypatch.setenv("DISCORD_BOT_TOKEN", "tok")
     monkeypatch.setenv("DISCORD_CLIENT_ID", "cid")
     monkeypatch.setenv("DISCORD_CLIENT_SECRET", "secret")
     monkeypatch.setenv("DISCORD_OAUTH_REDIRECT_URI", "http://localhost:5000/oauth/callback")
-    monkeypatch.setenv("DISCORD_TEST_GUILD_ID", "1")
+    monkeypatch.setenv("DISCORD_GUILD_ID", "1")
     monkeypatch.setenv("FLASK_SECRET_KEY", "test-key")
 
     reached = {}

@@ -13,7 +13,7 @@ from threadbare.config import (
 
 VALID_ENV = {
     "DISCORD_BOT_TOKEN": "fake-token",
-    "DISCORD_TEST_GUILD_ID": "1524883720350466048",
+    "DISCORD_GUILD_ID": "1524883720350466048",
     "DATABASE_URL": "postgresql://threadbare:threadbare@localhost:5432/threadbare_dev",
     "DISCORD_CLIENT_ID": "fake-client-id",
     "DISCORD_CLIENT_SECRET": "fake-client-secret",
@@ -50,7 +50,7 @@ def test_load_settings_reports_all_missing_vars_at_once():
 
     message = str(exc_info.value)
     assert "DISCORD_BOT_TOKEN" in message
-    assert "DISCORD_TEST_GUILD_ID" in message
+    assert "DISCORD_GUILD_ID" in message
     assert "DATABASE_URL" in message
     assert "DISCORD_CLIENT_ID" in message
     assert "DISCORD_CLIENT_SECRET" in message
@@ -59,9 +59,9 @@ def test_load_settings_reports_all_missing_vars_at_once():
 
 
 def test_load_settings_rejects_non_integer_guild_id():
-    env = dict(VALID_ENV, DISCORD_TEST_GUILD_ID="not-a-snowflake")
+    env = dict(VALID_ENV, DISCORD_GUILD_ID="not-a-snowflake")
 
-    with pytest.raises(ConfigError, match="DISCORD_TEST_GUILD_ID"):
+    with pytest.raises(ConfigError, match="DISCORD_GUILD_ID"):
         load_settings(env)
 
 
@@ -167,3 +167,33 @@ def test_reload_env_file_fills_genuinely_absent_env_var(tmp_path, monkeypatch):
     reload_env_file(env_path)
 
     assert os.environ["FLASK_SECRET_KEY"] == "from-file"
+
+
+def test_load_settings_names_the_old_variable_when_only_the_renamed_one_is_set():
+    """DISCORD_GUILD_ID was renamed from DISCORD_TEST_GUILD_ID with no
+    fallback (DESIGN.md §7 records the deliberate departure from the upgrade
+    contract). A clear error naming the rename *is* the guided upgrade step, so
+    an operator upgrading past this doesn't just see an opaque "is required".
+    """
+    env = dict(VALID_ENV)
+    env["DISCORD_TEST_GUILD_ID"] = env.pop("DISCORD_GUILD_ID")
+
+    with pytest.raises(ConfigError) as exc_info:
+        load_settings(env)
+
+    message = str(exc_info.value)
+    assert "DISCORD_GUILD_ID is required" in message
+    assert "renamed from DISCORD_TEST_GUILD_ID" in message
+    assert ".env" in message
+
+
+def test_load_settings_does_not_mention_the_rename_when_neither_is_set():
+    env = dict(VALID_ENV)
+    del env["DISCORD_GUILD_ID"]
+
+    with pytest.raises(ConfigError) as exc_info:
+        load_settings(env)
+
+    message = str(exc_info.value)
+    assert "DISCORD_GUILD_ID is required" in message
+    assert "renamed from" not in message

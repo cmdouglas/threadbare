@@ -77,7 +77,7 @@ def test_configured_process_serves_the_real_forum_app_under_gunicorn():
         "DISCORD_CLIENT_ID": "e2e-restart-client-id",
         "DISCORD_CLIENT_SECRET": "e2e-restart-client-secret",
         "DISCORD_OAUTH_REDIRECT_URI": f"http://{host}:{port}/oauth/callback",
-        "DISCORD_TEST_GUILD_ID": "1",
+        "DISCORD_GUILD_ID": "1",
         "FLASK_SECRET_KEY": "e2e-restart-test-secret-key",
     }
 

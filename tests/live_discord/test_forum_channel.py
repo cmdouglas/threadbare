@@ -50,7 +50,7 @@ async def test_discover_channels_computes_is_public_for_the_real_forum_channel()
         pytest.skip("DISCORD_TEST_FORUM_CHANNEL_ID is not set; see DEVELOPMENT.md")
     forum_channel_id = int(forum_channel_id)
 
-    guild_id = int(os.environ["DISCORD_TEST_GUILD_ID"])
+    guild_id = int(os.environ["DISCORD_GUILD_ID"])
     token = os.environ["DISCORD_BOT_TOKEN"]
     test_database_url = os.environ["TEST_DATABASE_URL"]
 
@@ -109,7 +109,7 @@ async def test_webhook_created_forum_post_is_discovered_live_via_on_thread_creat
             "see DEVELOPMENT.md"
         )
 
-    guild_id = int(os.environ["DISCORD_TEST_GUILD_ID"])
+    guild_id = int(os.environ["DISCORD_GUILD_ID"])
     token = os.environ["DISCORD_BOT_TOKEN"]
     test_database_url = os.environ["TEST_DATABASE_URL"]
 
