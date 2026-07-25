@@ -1323,3 +1323,65 @@ async def test_has_unread_works_for_a_thread(db_conn):
 
     assert await queries.has_unread(db_conn, user_id=1, thread_id=20, total=5) is False
     assert await queries.has_unread(db_conn, user_id=1, thread_id=20, total=6) is True
+
+
+async def test_count_unread_returns_total_when_marker_is_none(db_conn):
+    assert await queries.count_unread(db_conn, marker=None, total=5, channel_id=10) == 5
+
+
+async def test_count_unread_returns_zero_when_marker_is_at_the_last_message(db_conn):
+    await _seed_guild_and_channel(db_conn)
+    await _seed_user(db_conn, user_id=100, display_name="alice")
+    for i in range(1, 6):
+        await _seed_message(
+            db_conn,
+            message_id=i,
+            channel_id=10,
+            author_id=100,
+            posted_at=datetime(2024, 1, i, tzinfo=UTC),
+        )
+    marker = {
+        "last_read_message_id": 5,
+        "last_read_posted_at": datetime(2024, 1, 5, tzinfo=UTC),
+    }
+
+    assert await queries.count_unread(db_conn, marker=marker, total=5, channel_id=10) == 0
+
+
+async def test_count_unread_returns_the_count_of_messages_after_the_marker(db_conn):
+    await _seed_guild_and_channel(db_conn)
+    await _seed_user(db_conn, user_id=100, display_name="alice")
+    for i in range(1, 6):
+        await _seed_message(
+            db_conn,
+            message_id=i,
+            channel_id=10,
+            author_id=100,
+            posted_at=datetime(2024, 1, i, tzinfo=UTC),
+        )
+    marker = {
+        "last_read_message_id": 3,
+        "last_read_posted_at": datetime(2024, 1, 3, tzinfo=UTC),
+    }
+
+    assert await queries.count_unread(db_conn, marker=marker, total=5, channel_id=10) == 2
+
+
+async def test_count_unread_works_for_a_thread(db_conn):
+    await _seed_guild_and_channel(db_conn)
+    await _seed_thread(db_conn, thread_id=20, parent_channel_id=10)
+    await _seed_user(db_conn, user_id=100, display_name="alice")
+    for i in range(1, 6):
+        await _seed_thread_message(
+            db_conn,
+            message_id=i,
+            thread_id=20,
+            author_id=100,
+            posted_at=datetime(2024, 1, i, tzinfo=UTC),
+        )
+    marker = {
+        "last_read_message_id": 3,
+        "last_read_posted_at": datetime(2024, 1, 3, tzinfo=UTC),
+    }
+
+    assert await queries.count_unread(db_conn, marker=marker, total=5, thread_id=20) == 2

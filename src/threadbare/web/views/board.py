@@ -16,7 +16,6 @@ from threadbare.channel_types import NON_CONTENT_TYPES
 from threadbare.db import queries
 from threadbare.pagination import DEFAULT_PAGE_SIZE, page_number_for_offset
 from threadbare.pseudotopics import week_bounds
-from threadbare.read_status import is_unread
 from threadbare.rendering.render_service import render_message_for_display
 from threadbare.web import authz
 from threadbare.web.board_tree import board_view_mode
@@ -73,10 +72,16 @@ async def board_topics(channel_id: int):
             channel_ids=[],
             thread_ids=[t["id"] for t in threads],
         )
-        unread_threads = {
-            thread["id"]: is_unread(aggregates.get(thread["id"]), markers.get(thread["id"]))
+        thread_unread_counts = {
+            thread["id"]: await queries.count_unread(
+                conn,
+                marker=markers.get(thread["id"]),
+                total=aggregates.get(thread["id"], {}).get("post_count", 0),
+                thread_id=thread["id"],
+            )
             for thread in threads
         }
+        unread_threads = {thread_id: count > 0 for thread_id, count in thread_unread_counts.items()}
         # Same "partially read, not never-read or fully-read" reasoning as
         # board_index -- see that view's board_jump_to_unread_action.
         thread_jump_to_unread_action = {
@@ -99,7 +104,9 @@ async def board_topics(channel_id: int):
         aggregates=aggregates,
         authors=authors,
         unread_threads=unread_threads,
+        thread_unread_counts=thread_unread_counts,
         thread_jump_to_unread_action=thread_jump_to_unread_action,
+        visited_threads=set(markers),
         page=page,
         total_pages=total_pages,
         page_url=page_url,

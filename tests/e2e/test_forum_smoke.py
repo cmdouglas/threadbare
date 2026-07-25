@@ -290,6 +290,20 @@ def test_topic_list_pagination_row_jump_to_unread_link_appears_once_partially_re
     assert "topic message 25" in page.content()
 
 
+def test_topic_list_row_gets_visited_style_and_unread_count_once_opened(page, live_server, seeded):
+    page.goto(f"{live_server}/board/{CHANNEL_ID}/topics")
+    row = page.locator(".topic-row", has_text="e2e topic")
+    assert "topic-row-visited" not in row.get_attribute("class")
+
+    page.goto(f"{live_server}/topic/{THREAD_ID}/page/1")  # marks messages 0-24 as read
+    page.goto(f"{live_server}/board/{CHANNEL_ID}/topics")
+
+    row = page.locator(".topic-row", has_text="e2e topic")
+    assert "topic-row-visited" in row.get_attribute("class")
+    pagination_row = page.locator("tr.topic-pagination-row")
+    assert pagination_row.locator(".unread-count").inner_text() == "(5)"
+
+
 FORUM_CHANNEL_ID = 900600
 
 

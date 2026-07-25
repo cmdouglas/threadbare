@@ -327,6 +327,42 @@ def test_board_topics_shows_jump_to_unread_link_once_a_topic_is_partially_read(c
     assert b'class="jump-to-unread" href="/topic/3000/jump_to_unread"' in resp.data
 
 
+def test_board_topics_jump_to_unread_link_shows_the_unread_count(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10, type=15, name="a forum"))
+    run(_seed_thread(web_conn, thread_id=3000, parent_channel_id=10, name="my topic"))
+    for i in range(26):
+        run(_seed_thread_message(web_conn, message_id=i + 1, thread_id=3000, content=f"msg {i}"))
+    client.get("/topic/3000/page/1")
+
+    resp = client.get("/board/10/topics")
+
+    assert b'<span class="unread-count">(1)</span>' in resp.data
+
+
+def test_board_topics_shows_visited_row_class_once_a_topic_is_opened(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10, type=15, name="a forum"))
+    run(_seed_thread(web_conn, thread_id=3000, parent_channel_id=10, name="my topic"))
+    run(_seed_thread_message(web_conn, message_id=1, thread_id=3000, content="hello"))
+    client.get("/topic/3000/page/1")
+
+    resp = client.get("/board/10/topics")
+
+    assert b"topic-row-visited" in resp.data
+
+
+def test_board_topics_does_not_show_visited_row_class_for_a_never_opened_topic(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10, type=15, name="a forum"))
+    run(_seed_thread(web_conn, thread_id=3000, parent_channel_id=10, name="my topic"))
+    run(_seed_thread_message(web_conn, message_id=1, thread_id=3000, content="hello"))
+
+    resp = client.get("/board/10/topics")
+
+    assert b"topic-row-visited" not in resp.data
+
+
 def test_board_topics_hides_jump_to_unread_link_once_a_topic_is_fully_read(client, web_conn):
     run(_seed_guild(web_conn))
     run(_seed_board(web_conn, channel_id=10, type=15, name="a forum"))

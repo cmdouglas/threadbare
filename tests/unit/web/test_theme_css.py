@@ -63,3 +63,21 @@ def test_unread_dot_rule_exists(stylesheet):
     css = (STATIC_DIR / stylesheet).read_text()
 
     assert re.search(r"\.unread-dot\s*\{", css) is not None, f"{stylesheet} has no .unread-dot rule"
+
+
+@pytest.mark.parametrize("stylesheet", sorted(AVAILABLE_THEMES.values()))
+def test_visited_row_rule_exists(stylesheet):
+    css = (STATIC_DIR / stylesheet).read_text()
+
+    assert re.search(r"\.board-row-visited", css) is not None, (
+        f"{stylesheet} has no .board-row-visited rule"
+    )
+
+
+@pytest.mark.parametrize("stylesheet", sorted(AVAILABLE_THEMES.values()))
+def test_unread_count_rule_exists(stylesheet):
+    css = (STATIC_DIR / stylesheet).read_text()
+
+    assert re.search(r"\.unread-count\s*\{", css) is not None, (
+        f"{stylesheet} has no .unread-count rule"
+    )

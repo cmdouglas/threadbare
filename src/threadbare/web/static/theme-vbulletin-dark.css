@@ -166,6 +166,16 @@ a:visited {
   padding: var(--space-sm);
 }
 
+.board-row-visited,
+.topic-row-visited {
+  background: var(--color-bg-alt);
+}
+
+.unread-count {
+  color: var(--color-fg-muted);
+  font-size: var(--font-size-small);
+}
+
 .category-heading {
   background: linear-gradient(to bottom, #3a7cbf, #1d3f63);
   color: var(--color-accent-fg);

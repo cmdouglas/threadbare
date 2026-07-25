@@ -17,7 +17,7 @@
 {% for thread in threads %}
   {% set agg = aggregates.get(thread.id, {"post_count": 0, "last_message_id": None, "last_posted_at": None, "last_author_id": None}) %}
   {% set topic_total_pages = pagination.page_number_for_offset(agg.post_count - 1, page_size=posts_per_page) if agg.post_count > 0 else 1 %}
-  <tr class="topic-row{% if unread_threads.get(thread.id) %} topic-row-unread{% endif %}">
+  <tr class="topic-row{% if thread.id in visited_threads %} topic-row-visited{% endif %}{% if unread_threads.get(thread.id) %} topic-row-unread{% endif %}">
     <td class="topic-name">
       {% if unread_threads.get(thread.id) %}<span class="unread-dot" title="Unread posts" aria-label="Unread posts"></span>{% endif %}
       <a href="{{ request.script_root }}{{ urls.topic_url(thread.id) }}">{{ thread.name }}</a>
@@ -54,7 +54,7 @@
           <button type="submit">Go</button>
         </form>
         {% if thread.id in thread_jump_to_unread_action %}
-        <a class="jump-to-unread" href="{{ thread_jump_to_unread_action[thread.id] }}">Jump to first unread</a>
+        <a class="jump-to-unread" href="{{ thread_jump_to_unread_action[thread.id] }}">Jump to first unread <span class="unread-count">({{ thread_unread_counts[thread.id] }})</span></a>
         {% endif %}
       </div>
     </td>

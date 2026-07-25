@@ -264,6 +264,39 @@ def test_board_index_shows_jump_to_unread_link_once_a_board_is_partially_read(cl
     assert b'class="jump-to-unread" href="/board/10/continuous/jump_to_unread"' in resp.data
 
 
+def test_board_index_jump_to_unread_link_shows_the_unread_count(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10, name="general"))
+    for i in range(26):
+        run(_seed_message(web_conn, message_id=1000 + i, channel_id=10, content=f"msg {i}"))
+    client.get("/board/10/continuous/page/1")
+
+    resp = client.get("/")
+
+    assert b'<span class="unread-count">(1)</span>' in resp.data
+
+
+def test_board_index_shows_visited_row_class_once_a_board_is_opened(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10, name="general"))
+    run(_seed_message(web_conn, message_id=1000, channel_id=10))
+    client.get("/board/10/continuous/page/1")
+
+    resp = client.get("/")
+
+    assert b"board-row-visited" in resp.data
+
+
+def test_board_index_does_not_show_visited_row_class_for_a_never_opened_board(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10, name="general"))
+    run(_seed_message(web_conn, message_id=1000, channel_id=10))
+
+    resp = client.get("/")
+
+    assert b"board-row-visited" not in resp.data
+
+
 def test_board_index_hides_jump_to_unread_link_once_a_board_is_fully_read(client, web_conn):
     run(_seed_guild(web_conn))
     run(_seed_board(web_conn, channel_id=10, name="general"))
