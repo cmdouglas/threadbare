@@ -6,7 +6,7 @@
   <span class="reaction-filter-label">Filter by reaction:</span>
   {% for r in available_reactions %}
     {% if r.emoji == reaction %}
-    <strong class="reaction-filter-option preference-current">{{ emoji.render_emoji_token_html(r.emoji) | safe }} <span class="reaction-count">{{ r.total }}</span></strong>
+    <strong class="reaction-filter-option current-option">{{ emoji.render_emoji_token_html(r.emoji) | safe }} <span class="reaction-count">{{ r.total }}</span></strong>
     {% else %}
     <a class="reaction-filter-option" href="{{ reaction_filter_url(r.emoji) }}">{{ emoji.render_emoji_token_html(r.emoji) | safe }} <span class="reaction-count">{{ r.total }}</span></a>
     {% endif %}

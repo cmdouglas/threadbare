@@ -10,7 +10,7 @@
     <td class="week-post-count">{{ week.post_count }}</td>
     <td class="week-last-post">
       {% if week.last_posted_at %}
-        <time datetime="{{ week.last_posted_at.isoformat() }}">{{ week.last_posted_at }}</time>
+        <time datetime="{{ week.last_posted_at.isoformat() }}" title="{{ week.last_posted_at }}">{{ relative_time.relative_time(week.last_posted_at) }}</time>
       {% endif %}
     </td>
   </tr>

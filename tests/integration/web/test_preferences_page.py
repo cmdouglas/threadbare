@@ -20,16 +20,16 @@ def test_preferences_page_shows_default_state(client):
     resp = client.get("/preferences")
 
     assert resp.status_code == 200
-    assert b'class="preference-current">subsilver</strong>' in resp.data
+    assert b'class="current-option">subsilver</strong>' in resp.data
     assert b"Hide avatars" in resp.data
-    assert b'class="preference-current">25</strong>' in resp.data
+    assert b'class="current-option">25</strong>' in resp.data
 
 
 def test_preferences_page_theme_query_param_sets_cookie_and_marks_it_current(client):
     resp = client.get("/preferences?theme=plain")
 
     assert resp.status_code == 200
-    assert b'class="preference-current">plain</strong>' in resp.data
+    assert b'class="current-option">plain</strong>' in resp.data
     set_cookie_headers = resp.headers.get_all("Set-Cookie")
     assert any("theme=plain" in header for header in set_cookie_headers)
 
@@ -47,7 +47,7 @@ def test_preferences_page_posts_per_page_query_param_sets_cookie_and_marks_it_cu
     resp = client.get("/preferences?posts_per_page=50")
 
     assert resp.status_code == 200
-    assert b'class="preference-current">50</strong>' in resp.data
+    assert b'class="current-option">50</strong>' in resp.data
     set_cookie_headers = resp.headers.get_all("Set-Cookie")
     assert any("posts_per_page=50" in header for header in set_cookie_headers)
 

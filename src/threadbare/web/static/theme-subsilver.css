@@ -10,6 +10,7 @@
 :root {
   --color-bg: #ebebeb;
   --color-bg-alt: #f8f8f8;
+  --color-bg-visited: #dcdfe3;
   --color-fg: #000000;
   --color-fg-muted: #666666;
   --color-border: #98aab1;
@@ -39,6 +40,7 @@
   :root {
     --color-bg: #1c1f23;
     --color-bg-alt: #262a2f;
+    --color-bg-visited: #31373d;
     --color-fg: #d8dee3;
     --color-fg-muted: #9aa4ad;
     --color-border: #4a5560;
@@ -106,10 +108,36 @@ a:visited {
   text-decoration: none;
 }
 
-.theme-switcher {
+/* Preference controls (/preferences). All three are sibling <nav>s of links
+   with one <strong class="current-option"> for the active value, so they share
+   one rule -- .theme-switcher used to be styled alone (and in only three of the
+   four themes), while .avatar-toggle and .posts-per-page-switcher were styled
+   in none. */
+.theme-switcher,
+.avatar-toggle,
+.posts-per-page-switcher {
   font-size: var(--font-size-small);
   display: flex;
+  flex-wrap: wrap;
   gap: var(--space-xs);
+}
+
+.preference {
+  margin-bottom: var(--space-md);
+}
+
+/* Error/attention states. --color-danger is declared by every theme and
+   required of every uploaded bundle (theme_bundle.REQUIRED_CUSTOM_PROPERTIES),
+   but nothing referenced it -- so these four states rendered unstyled while
+   third-party theme authors were still obliged to supply the colour. */
+.sync-health-stale,
+.wizard-intent-bad,
+.admin-theme-errors {
+  color: var(--color-danger);
+}
+
+.admin-channel-row-bot-blocked td {
+  border-left: var(--border-width) solid var(--color-danger);
 }
 
 .preferences-nav a,
@@ -151,8 +179,8 @@ a:visited {
   border-bottom: var(--border-width) solid var(--color-border);
 }
 
-.board-row:nth-child(even),
-.topic-row:nth-child(even),
+.board-row:nth-child(even):not(.board-row-visited):not(.board-pagination-row),
+.topic-row:nth-child(even):not(.topic-row-visited):not(.topic-pagination-row),
 .week-row:nth-child(even) {
   background: var(--color-bg-alt);
 }
@@ -163,9 +191,24 @@ a:visited {
   padding: var(--space-xs) var(--space-sm);
 }
 
+/* Its own colour, not --color-bg-alt: that's the zebra-stripe colour, and
+   `.board-row:nth-child(even)` outranks `.board-row-visited` on specificity,
+   so visited rows were invisible on even rows and indistinguishable from an
+   ordinary even row on odd ones. The :not() exclusions on the zebra rule keep
+   the two from ever competing again. Falls back for custom-theme bundles that
+   predate this property (it's deliberately not in
+   theme_bundle.REQUIRED_CUSTOM_PROPERTIES, so old bundles still validate). */
 .board-row-visited,
 .topic-row-visited {
-  background: var(--color-bg-alt);
+  background: var(--color-bg-visited, var(--color-bg-alt));
+}
+
+/* Unread rows: emphasise the row's own name link, the classic forum
+   treatment. Both classes were emitted by the listing templates and styled by
+   no theme at all -- the .unread-dot was carrying the entire signal. */
+.board-row-unread td.board-name a,
+.topic-row-unread td.topic-name a {
+  font-weight: bold;
 }
 
 .unread-count {
@@ -305,8 +348,7 @@ td.topic-name a {
   color: var(--color-fg-muted);
 }
 
-.reply-quote,
-.post-reply-quote blockquote {
+.reply-quote {
   border: var(--border-width) solid var(--color-border);
   border-left: 3px solid var(--color-accent);
   background: var(--color-bg);
@@ -417,7 +459,7 @@ td.topic-name a {
   font-weight: bold;
 }
 
-.preference-current {
+.current-option {
   font-weight: bold;
 }
 

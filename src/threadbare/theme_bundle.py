@@ -23,8 +23,10 @@ import zipfile
 from dataclasses import dataclass, field
 
 # The :root custom-property contract every theme must define, mirroring
-# web/static/theme-plain.css (the reference theme). A unit test asserts this
-# set equals what theme-plain.css actually declares, guarding drift.
+# web/static/theme-plain.css (the reference theme). This is a *minimum*, not an
+# exact set: a theme may declare more (see OPTIONAL_CUSTOM_PROPERTIES below),
+# and a unit test asserts theme-plain.css declares at least all of these,
+# guarding against a property being dropped from the reference theme.
 REQUIRED_CUSTOM_PROPERTIES = frozenset(
     {
         "--color-bg",
@@ -51,6 +53,21 @@ REQUIRED_CUSTOM_PROPERTIES = frozenset(
         "--container-max-width",
     }
 )
+
+# Properties a theme MAY declare but isn't required to, documented here because
+# a bundle author reading REQUIRED_CUSTOM_PROPERTIES alone had no way to learn
+# they exist at all. Every built-in theme references these; each has a var()
+# fallback at its use site, so omitting one degrades rather than breaks.
+#
+#   --embed-color   Set inline per-embed by rendering/embeds.py from Discord's
+#                   own embed colour, so a theme never declares a value -- it
+#                   only ever supplies the fallback for embeds with no colour.
+#   --color-bg-visited
+#                   Background for an already-visited board/topic row. Falls
+#                   back to --color-bg-alt, which is also the zebra-stripe
+#                   colour, so a theme that skips it loses the visited/unvisited
+#                   distinction on striped rows.
+OPTIONAL_CUSTOM_PROPERTIES = frozenset({"--embed-color", "--color-bg-visited"})
 
 # Extension -> Content-Type allowlist for bundled assets. Deliberately
 # excludes svg/html/js: assets are served from the app's own origin, and
@@ -89,7 +106,12 @@ MAX_UNCOMPRESSED_BYTES = 200 * 1024 * 1024
 MAX_FILE_BYTES = 100 * 1024 * 1024
 MAX_ENTRIES = 1000
 
-_S_IFLNK = 0o120000
+# Shared with web/theme_storage.py, which re-checks every member at extraction
+# time. Only these two constants are shared: the *checks* are deliberately
+# duplicated (defense in depth -- see theme_storage.py's docstring), and two
+# independent implementations is the point.
+S_IFLNK = 0o120000
+DRIVE_LETTER_RE = re.compile(r"^[A-Za-z]:")
 
 _URL_RE = re.compile(r"url\(\s*(['\"]?)(?P<target>[^'\")]+)\1\s*\)", re.IGNORECASE)
 _IMPORT_RE = re.compile(r"@import\s+(?:url\(\s*)?['\"](?P<target>[^'\"]+)['\"]", re.IGNORECASE)
@@ -127,13 +149,13 @@ def _is_unsafe_member(info: zipfile.ZipInfo) -> bool:
     name = info.filename
     if name.startswith("/") or name.startswith("\\"):
         return True
-    if re.match(r"^[A-Za-z]:", name):  # drive-letter absolute (windows zip)
+    if DRIVE_LETTER_RE.match(name):  # drive-letter absolute (windows zip)
         return True
     parts = name.replace("\\", "/").split("/")
     if ".." in parts:
         return True
     mode = (info.external_attr >> 16) & 0o170000
-    return mode == _S_IFLNK
+    return mode == S_IFLNK
 
 
 def _referenced_targets(css: str) -> list[str]:

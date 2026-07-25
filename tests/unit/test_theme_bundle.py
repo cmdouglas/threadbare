@@ -215,9 +215,34 @@ def test_slugify_is_empty_for_a_nameless_input():
     assert theme_bundle.slugify("???") == ""
 
 
-def test_required_custom_properties_match_theme_plain_css():
+def test_theme_plain_css_declares_every_required_custom_property():
+    """The reference theme must satisfy the contract it defines. A subset check,
+    not equality: the contract is a *minimum*, so a theme declaring extras (see
+    theme_bundle.OPTIONAL_CUSTOM_PROPERTIES) is fine -- an equality assertion
+    here just meant adding any new property broke this test.
+    """
     css = PLAIN_CSS.read_text()
     root_block = re.search(r":root\s*\{(.*?)\}", css, re.DOTALL).group(1)
     declared = set(re.findall(r"(--[a-z0-9-]+)\s*:", root_block))
 
-    assert declared == set(theme_bundle.REQUIRED_CUSTOM_PROPERTIES)
+    missing = set(theme_bundle.REQUIRED_CUSTOM_PROPERTIES) - declared
+    assert not missing, f"theme-plain.css is missing required properties: {sorted(missing)}"
+
+
+def test_theme_plain_css_declares_nothing_undocumented():
+    """Anything the reference theme declares beyond the required set must be
+    listed in OPTIONAL_CUSTOM_PROPERTIES, so a bundle author can discover it.
+    """
+    css = PLAIN_CSS.read_text()
+    root_block = re.search(r":root\s*\{(.*?)\}", css, re.DOTALL).group(1)
+    declared = set(re.findall(r"(--[a-z0-9-]+)\s*:", root_block))
+
+    undocumented = (
+        declared
+        - set(theme_bundle.REQUIRED_CUSTOM_PROPERTIES)
+        - set(theme_bundle.OPTIONAL_CUSTOM_PROPERTIES)
+    )
+    assert not undocumented, (
+        "theme-plain.css declares properties that are neither required nor "
+        f"documented as optional: {sorted(undocumented)}"
+    )

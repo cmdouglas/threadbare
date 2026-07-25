@@ -1,8 +1,8 @@
 {# Expects: thread, active ("flat" or "tree") #}
 <p class="topic-view-controls">
-  {% if active == "flat" %}<strong class="preference-current">Flat view</strong>
+  {% if active == "flat" %}<strong class="current-option">Flat view</strong>
   {% else %}<a href="{{ url_for('topic.topic_page', thread_id=thread.id, page=1) }}">Flat view</a>{% endif %}
   &middot;
-  {% if active == "tree" %}<strong class="preference-current">Tree view</strong>
+  {% if active == "tree" %}<strong class="current-option">Tree view</strong>
   {% else %}<a href="{{ url_for('topic.topic_tree_view', thread_id=thread.id) }}">Tree view</a>{% endif %}
 </p>

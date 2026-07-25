@@ -12,11 +12,10 @@ against zip-slip -- never a blind extractall.
 
 import io
 import os
-import re
 import shutil
 import zipfile
 
-_S_IFLNK = 0o120000
+from threadbare.theme_bundle import DRIVE_LETTER_RE, S_IFLNK
 
 
 def _theme_dir(root: str, slug: str) -> str:
@@ -25,11 +24,11 @@ def _theme_dir(root: str, slug: str) -> str:
 
 def _is_unsafe_member(info: zipfile.ZipInfo) -> bool:
     name = info.filename
-    if name.startswith("/") or name.startswith("\\") or re.match(r"^[A-Za-z]:", name):
+    if name.startswith("/") or name.startswith("\\") or DRIVE_LETTER_RE.match(name):
         return True
     if ".." in name.replace("\\", "/").split("/"):
         return True
-    return (info.external_attr >> 16) & 0o170000 == _S_IFLNK
+    return (info.external_attr >> 16) & 0o170000 == S_IFLNK
 
 
 def _safe_extract(zip_bytes: bytes, dest: str) -> None:
