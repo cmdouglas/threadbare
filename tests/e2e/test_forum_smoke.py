@@ -405,6 +405,18 @@ def test_search_click_through_lands_on_the_right_post(page, live_server, seeded)
     assert "pizza recipe" in page.locator("#post-900200").inner_text()
 
 
+def test_search_this_users_posts_form_scopes_results_to_that_author(page, live_server, seeded):
+    page.goto(f"{live_server}/user/{BOT_USER_ID}")
+
+    page.locator(".user-search-form input[name=q]").fill("hello")
+    page.locator(".user-search-form button[type=submit]").click()
+
+    assert "/search" in page.url
+    assert "1 result" in page.content()
+    assert page.locator(".search-result", has_text="a-bot").count() == 1
+    assert page.locator(".search-result", has_text="a-moderator").count() == 0
+
+
 def test_attachment_image_is_capped_to_the_viewport_height(page, live_server, seeded):
     page.goto(f"{live_server}/board/{CHANNEL_ID}/continuous/page/1")
 

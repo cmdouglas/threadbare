@@ -599,6 +599,20 @@ async def test_search_messages_filters_by_author(db_conn):
     assert [r["id"] for r in rows] == [1]
 
 
+async def test_search_messages_filters_by_author_id(db_conn):
+    await _seed_guild_and_channel(db_conn)
+    await _seed_user(db_conn, user_id=100, display_name="alice")
+    await _seed_user(db_conn, user_id=101, display_name="alicia")
+    await _seed_message(db_conn, message_id=1, channel_id=10, author_id=100, content="pizza time")
+    await _seed_message(db_conn, message_id=2, channel_id=10, author_id=101, content="pizza too")
+
+    rows = await queries.search_messages(
+        db_conn, query="pizza", author_id=100, visible_channel_ids=set()
+    )
+
+    assert [r["id"] for r in rows] == [1]
+
+
 async def test_search_messages_filters_by_channel_including_child_threads(db_conn):
     await _seed_guild_and_channel(db_conn, channel_id=10)
     await _seed_guild_and_channel(db_conn, guild_id=2, channel_id=11)
@@ -669,6 +683,20 @@ async def test_search_messages_ignores_visible_ids_for_a_non_enrolled_channel(db
     await _seed_message(db_conn, message_id=1, channel_id=10, author_id=100, content="pizza")
 
     assert await queries.search_messages(db_conn, query="pizza", visible_channel_ids={10}) == []
+
+
+async def test_search_messages_author_id_does_not_bypass_visibility(db_conn):
+    await _seed_guild_and_channel(db_conn, channel_id=10, is_public=False)
+    await db_conn.execute("UPDATE channels SET visibility_enrolled = true WHERE id = 10")
+    await _seed_user(db_conn, user_id=100, display_name="alice")
+    await _seed_message(db_conn, message_id=1, channel_id=10, author_id=100, content="pizza")
+
+    assert (
+        await queries.search_messages(
+            db_conn, query="pizza", author_id=100, visible_channel_ids=set()
+        )
+        == []
+    )
 
 
 async def test_search_messages_preceding_count_reflects_position_in_container(db_conn):
@@ -768,6 +796,21 @@ async def test_count_search_results_matches_search_messages_count(db_conn):
 
     assert (
         await queries.count_search_results(db_conn, query="pizza", visible_channel_ids=set()) == 2
+    )
+
+
+async def test_count_search_results_filters_by_author_id(db_conn):
+    await _seed_guild_and_channel(db_conn)
+    await _seed_user(db_conn, user_id=100, display_name="alice")
+    await _seed_user(db_conn, user_id=101, display_name="bob")
+    await _seed_message(db_conn, message_id=1, channel_id=10, author_id=100, content="pizza a")
+    await _seed_message(db_conn, message_id=2, channel_id=10, author_id=101, content="pizza b")
+
+    assert (
+        await queries.count_search_results(
+            db_conn, query="pizza", author_id=100, visible_channel_ids=set()
+        )
+        == 1
     )
 
 

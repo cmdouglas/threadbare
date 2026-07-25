@@ -26,10 +26,16 @@ def _make_page_url():
     return page_url
 
 
+def _clear_author_url():
+    args = {k: v for k, v in request.args.to_dict().items() if k not in ("author_id", "page")}
+    return url_for("search.search", **args)
+
+
 @bp.route("/search")
 async def search():
     query = request.args.get("q", "").strip()
     author = request.args.get("author") or None
+    author_id = request.args.get("author_id", type=int)
     channel_id = request.args.get("channel", type=int)
     after = _parse_date(request.args.get("after"))
     before = _parse_date(request.args.get("before"))
@@ -37,6 +43,13 @@ async def search():
 
     results: list[dict] = []
     total = 0
+    author_display_name = None
+    if author_id is not None:
+        pool = current_app.config["POOL"]
+        async with pool.connection() as conn:
+            author_row = await queries.get_user(conn, author_id)
+        if author_row is not None:
+            author_display_name = author_row["display_name"]
     if query:
         pool = current_app.config["POOL"]
         async with pool.connection() as conn:
@@ -44,6 +57,7 @@ async def search():
                 conn,
                 query=query,
                 author=author,
+                author_id=author_id,
                 channel_id=channel_id,
                 after=after,
                 before=before,
@@ -55,6 +69,7 @@ async def search():
                 conn,
                 query=query,
                 author=author,
+                author_id=author_id,
                 channel_id=channel_id,
                 after=after,
                 before=before,
@@ -74,4 +89,7 @@ async def search():
         total_pages=total_pages,
         page_url=_make_page_url(),
         jump_action=url_for("search.search"),
+        author_id=author_id,
+        author_display_name=author_display_name,
+        clear_author_url=_clear_author_url() if author_id is not None else None,
     )

@@ -66,6 +66,18 @@ def test_user_page_shows_display_name_and_post_count(client, web_conn):
     assert b"my post" in resp.data
 
 
+def test_user_page_has_a_search_this_users_posts_form(client, web_conn):
+    run(_seed_guild_and_channel(web_conn))
+    run(_seed_user(web_conn, user_id=100, display_name="alice"))
+
+    resp = client.get("/user/100")
+
+    assert resp.status_code == 200
+    assert b'action="/search"' in resp.data
+    assert b'<input type="hidden" name="author_id" value="100">' in resp.data
+    assert b'name="q"' in resp.data
+
+
 def test_user_page_shows_posts_from_an_enrolled_non_public_channel_when_visible(client, web_conn):
     run(_seed_guild_and_channel(web_conn, is_public=False, visibility_enrolled=True))
     run(_seed_role(web_conn, role_id=1, permissions=BOTH_REQUIRED))  # @everyone

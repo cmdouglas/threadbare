@@ -125,6 +125,54 @@ def test_search_with_no_matches(client, web_conn):
     assert b"0 results" in resp.data
 
 
+def test_search_filters_by_author_id(client, web_conn):
+    run(_seed_guild_and_channel(web_conn))
+    run(_seed_user(web_conn, user_id=100, display_name="alice"))
+    run(_seed_user(web_conn, user_id=101, display_name="bob"))
+    run(_seed_message(web_conn, message_id=1, channel_id=10, author_id=100, content="pizza time"))
+    run(_seed_message(web_conn, message_id=2, channel_id=10, author_id=101, content="pizza too"))
+
+    resp = client.get("/search?q=pizza&author_id=100")
+
+    assert resp.status_code == 200
+    assert b"1 result" in resp.data
+    assert b"alice" in resp.data
+    assert b"bob" not in resp.data
+
+
+def test_search_shows_a_banner_and_clear_link_when_author_id_is_set(client, web_conn):
+    run(_seed_guild_and_channel(web_conn))
+    run(_seed_user(web_conn, user_id=100, display_name="alice"))
+    run(_seed_message(web_conn, message_id=1, channel_id=10, author_id=100, content="pizza time"))
+
+    resp = client.get("/search?q=pizza&author_id=100")
+
+    assert resp.status_code == 200
+    assert b"Only showing posts by alice" in resp.data
+    assert b'class="search-clear-author"' in resp.data
+
+
+def test_search_hides_the_author_banner_when_no_author_id_is_set(client, web_conn):
+    run(_seed_guild_and_channel(web_conn))
+    run(_seed_user(web_conn, user_id=100, display_name="alice"))
+    run(_seed_message(web_conn, message_id=1, channel_id=10, author_id=100, content="pizza time"))
+
+    resp = client.get("/search?q=pizza")
+
+    assert b"Only showing posts by" not in resp.data
+
+
+def test_search_jump_to_page_form_preserves_author_id(client, web_conn):
+    run(_seed_guild_and_channel(web_conn))
+    run(_seed_user(web_conn, user_id=100, display_name="alice"))
+    run(_seed_message(web_conn, message_id=1, channel_id=10, author_id=100, content="pizza time"))
+
+    resp = client.get("/search?q=pizza&author_id=100")
+
+    assert resp.status_code == 200
+    assert b'<input type="hidden" name="author_id" value="100">' in resp.data
+
+
 def test_search_jump_to_page_form_preserves_the_current_filters(client, web_conn):
     run(_seed_guild_and_channel(web_conn))
     run(_seed_user(web_conn, user_id=100, display_name="alice"))

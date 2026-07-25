@@ -413,6 +413,7 @@ _SEARCH_WHERE_SQL = f"""
     m.tsv @@ websearch_to_tsquery('english', %(q)s)
     AND {_visibility_clause("c.")}
     AND (%(author)s::text IS NULL OR u.display_name ILIKE %(author)s)
+    AND (%(author_id)s::bigint IS NULL OR m.author_id = %(author_id)s)
     AND (
         %(channel_id)s::bigint IS NULL
         OR m.channel_id = %(channel_id)s
@@ -434,6 +435,7 @@ def _search_params(
     *,
     query: str,
     author: str | None,
+    author_id: int | None,
     channel_id: int | None,
     after: datetime | None,
     before: datetime | None,
@@ -442,6 +444,7 @@ def _search_params(
     return {
         "q": query,
         "author": f"%{author}%" if author else None,
+        "author_id": author_id,
         "channel_id": channel_id,
         "after": after,
         "before": before,
@@ -454,6 +457,7 @@ async def search_messages(
     *,
     query: str,
     author: str | None = None,
+    author_id: int | None = None,
     channel_id: int | None = None,
     after: datetime | None = None,
     before: datetime | None = None,
@@ -517,6 +521,7 @@ async def search_messages(
         **_search_params(
             query=query,
             author=author,
+            author_id=author_id,
             channel_id=channel_id,
             after=after,
             before=before,
@@ -623,6 +628,7 @@ async def count_search_results(
     *,
     query: str,
     author: str | None = None,
+    author_id: int | None = None,
     channel_id: int | None = None,
     after: datetime | None = None,
     before: datetime | None = None,
@@ -631,6 +637,7 @@ async def count_search_results(
     params = _search_params(
         query=query,
         author=author,
+        author_id=author_id,
         channel_id=channel_id,
         after=after,
         before=before,

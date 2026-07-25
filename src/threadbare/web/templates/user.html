@@ -17,6 +17,11 @@
 </ul>
 {% endif %}
 <p class="user-post-count">{{ post_count }} post{{ "s" if post_count != 1 else "" }}</p>
+<form class="user-search-form" action="{{ url_for('search.search') }}" method="get">
+  <input type="hidden" name="author_id" value="{{ profile.id }}">
+  <label>Search {{ profile.display_name }}&rsquo;s posts <input type="search" name="q" placeholder="Search…"></label>
+  <button type="submit">Search</button>
+</form>
 <h2>Recent posts</h2>
 {% for message_row, rendered, page in posts %}
   {% include "_post.html" %}
