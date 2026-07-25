@@ -289,6 +289,7 @@ async def get_messages_page(
     channel_id: int | None = None,
     page: int = 1,
     page_size: int = DEFAULT_PAGE_SIZE,
+    total: int,
     since: datetime | None = None,
     until: datetime | None = None,
 ) -> list[dict]:
@@ -296,23 +297,45 @@ async def get_messages_page(
     get_message_for_render so a page's rows drop straight into
     render_message_for_display. since/until scope a weekly pseudo-topic to
     its window; otherwise this is the whole container.
+
+    `total` -- the same count every caller already has from
+    count_messages_before, to compute total_pages for its pager -- decides
+    which end of the (posted_at, id) index to walk from: whichever side has
+    fewer rows to skip. A plain ORDER BY ... OFFSET forward from page 1 is
+    O(offset): fine near the front, but a real, measured ~850ms nested-loop
+    skip for the last page of a 1,000,000-row board (RESOLVED_ISSUES.md).
+    Walking backward (ORDER BY ... DESC, then reversing the fetched rows)
+    for back-half pages turns that specific worst case into an O(page_size)
+    fetch -- offset-from-end 0 for the very last page. Pages near the middle
+    of a very large container are still O(min(offset-from-start,
+    offset-from-end)): roughly half the previous cost, not eliminated --
+    exact, arbitrary-page jumps can't be made cheap without a denormalized
+    per-row rank, which is out of scope here (ROADMAP.md's keyset-cursor
+    backlog item covers the sequential next/prev case this doesn't).
     """
     assert (thread_id is None) != (channel_id is None)
     conditions = [
         "m.thread_id = %(thread_id)s" if thread_id is not None else "m.channel_id = %(channel_id)s"
     ]
-    params: dict = {
-        "thread_id": thread_id,
-        "channel_id": channel_id,
-        "limit": page_size,
-        "offset": (page - 1) * page_size,
-    }
+    params: dict = {"thread_id": thread_id, "channel_id": channel_id}
     if since is not None:
         conditions.append("m.posted_at >= %(since)s")
         params["since"] = since
     if until is not None:
         conditions.append("m.posted_at < %(until)s")
         params["until"] = until
+
+    start = (page - 1) * page_size
+    end = min(page * page_size, total)
+    limit = end - start
+    if limit <= 0:
+        return []
+    trailing = total - end
+
+    fetch_backward = trailing < start
+    params["limit"] = limit
+    params["offset"] = trailing if fetch_backward else start
+    order_sql = "m.posted_at DESC, m.id DESC" if fetch_backward else "m.posted_at, m.id"
 
     async with conn.cursor() as cur:
         await cur.execute(
@@ -321,12 +344,16 @@ async def get_messages_page(
             FROM messages m
             JOIN users u ON u.id = m.author_id
             WHERE {" AND ".join(conditions)}
-            ORDER BY m.posted_at, m.id
+            ORDER BY {order_sql}
             LIMIT %(limit)s OFFSET %(offset)s
             """,
             params,
         )
-        return await cur.fetchall()
+        rows = await cur.fetchall()
+
+    if fetch_backward:
+        rows.reverse()
+    return rows
 
 
 async def get_attachment_by_id(conn: psycopg.AsyncConnection, attachment_id: int) -> dict | None:
@@ -440,6 +467,51 @@ async def search_messages(
     container" primitive count_messages_before uses, computed inline so
     results link into the right page of the right topic/board rather than
     an isolated snippet (DESIGN.md §5.4).
+
+    preceding_count is deliberately *not* a single always-forward correlated
+    subquery per row anymore (a real gap found and fixed: 25 independent
+    O(container size) scans, ~988,000 rows each, ~2.2s measured for a search
+    whose hits sit deep in a channel's history -- RESOLVED_ISSUES.md). Three
+    changes, the first two mirroring get_messages_page's nearest-end fix:
+
+    1. Per-container stats (min/max posted_at, exact row count) are computed
+       once per *distinct* container among this page's matches, not once per
+       matched row -- a real win whenever hits cluster in the same
+       channel/thread, which they usually do for a specific search term.
+       Exact count is a genuine COUNT(*) scan even for threads, not
+       threads.message_count -- that field comes straight from Discord's own
+       (documented-approximate) thread metadata, not a count of what's
+       actually mirrored locally, so it isn't trustworthy as the exact total
+       this math depends on.
+    2. Each row then counts whichever side of its (posted_at, id) boundary
+       is likely smaller (via the min/max straddle) -- "preceding" if it's
+       closer to the container's start, else "following", with
+       preceding_count derived as total - 1 - following when going
+       backward. Still O(n) in the worst case for a container that only
+       showed up once, but no longer the *guaranteed* worst case for every
+       hit regardless of where it actually sits.
+    3. The boundary conditions use `m2.thread_id = matches.thread_id` (or
+       `m2.channel_id = matches.channel_id` for a direct message) rather
+       than the `IS NOT DISTINCT FROM` this used before -- EXPLAIN ANALYZE
+       showed Postgres falling back to a full Seq Scan for that comparison
+       even with an otherwise-matching composite index, because `IS NOT
+       DISTINCT FROM` isn't sargable the way plain equality is. A message's
+       channel_id/thread_id are mutually exclusive by messages_container_
+       check (schema migration 0001), so `channel_id = X` alone already
+       implies `thread_id IS NULL` -- no need to say so, and saying so
+       anyway (an earlier draft of this fix did) was *also* enough to defeat
+       the planner's selectivity estimate into another accidental Seq Scan.
+
+    One real cost remains, measured and left as-is rather than papered over:
+    the per-container COUNT(*) in step 1 is a genuine full scan of that
+    container when it isn't small -- fine for an ordinary channel, but for a
+    search whose hits cluster in a channel that itself holds most of the
+    table (exactly ROADMAP.md's "million-message channel" scenario), that
+    scan alone measured ~140-220ms. Nothing shy of a maintained per-channel
+    message counter (out of scope here -- there's no local equivalent of
+    threads.message_count for channels, and adding one is a sync-worker
+    write-path change, not a query change) removes this; DESIGN.md §10
+    tracks it as the narrowed, honest remainder of this gap.
     """
     params = {
         **_search_params(
@@ -456,18 +528,90 @@ async def search_messages(
     async with conn.cursor() as cur:
         await cur.execute(
             f"""
-            SELECT m.id, m.channel_id, m.thread_id, m.posted_at, m.author_id,
-                   u.display_name AS author_display_name,
-                   ts_headline('english', m.content, websearch_to_tsquery('english', %(q)s),
-                                'MaxFragments=1,MaxWords=35,MinWords=15') AS snippet,
-                   (SELECT count(*) FROM messages m2
-                    WHERE m2.thread_id IS NOT DISTINCT FROM m.thread_id
-                      AND m2.channel_id IS NOT DISTINCT FROM m.channel_id
-                      AND (m2.posted_at, m2.id) < (m.posted_at, m.id)) AS preceding_count
-            {_SEARCH_FROM_SQL}
-            WHERE {_SEARCH_WHERE_SQL}
-            ORDER BY ts_rank(m.tsv, websearch_to_tsquery('english', %(q)s)) DESC, m.posted_at DESC
-            LIMIT %(limit)s OFFSET %(offset)s
+            WITH matches AS (
+                SELECT m.id, m.channel_id, m.thread_id, m.posted_at, m.author_id,
+                       u.display_name AS author_display_name,
+                       ts_headline('english', m.content, websearch_to_tsquery('english', %(q)s),
+                                    'MaxFragments=1,MaxWords=35,MinWords=15') AS snippet,
+                       ts_rank(m.tsv, websearch_to_tsquery('english', %(q)s)) AS rank
+                {_SEARCH_FROM_SQL}
+                WHERE {_SEARCH_WHERE_SQL}
+                ORDER BY rank DESC, m.posted_at DESC
+                LIMIT %(limit)s OFFSET %(offset)s
+            ),
+            thread_ids AS (
+                SELECT DISTINCT thread_id FROM matches WHERE thread_id IS NOT NULL
+            ),
+            channel_ids AS (
+                SELECT DISTINCT channel_id FROM matches WHERE thread_id IS NULL
+            ),
+            thread_stats AS (
+                SELECT t.thread_id AS container_key, true AS is_thread,
+                       mn.posted_at AS min_t, mx.posted_at AS max_t, tot.total
+                FROM thread_ids t
+                JOIN LATERAL (
+                    SELECT posted_at FROM messages
+                    WHERE thread_id = t.thread_id ORDER BY posted_at ASC, id ASC LIMIT 1
+                ) mn ON true
+                JOIN LATERAL (
+                    SELECT posted_at FROM messages
+                    WHERE thread_id = t.thread_id ORDER BY posted_at DESC, id DESC LIMIT 1
+                ) mx ON true
+                JOIN LATERAL (
+                    SELECT count(*) AS total FROM messages WHERE thread_id = t.thread_id
+                ) tot ON true
+            ),
+            channel_stats AS (
+                SELECT c.channel_id AS container_key, false AS is_thread,
+                       mn.posted_at AS min_t, mx.posted_at AS max_t, tot.total
+                FROM channel_ids c
+                JOIN LATERAL (
+                    SELECT posted_at FROM messages
+                    WHERE channel_id = c.channel_id
+                    ORDER BY posted_at ASC, id ASC LIMIT 1
+                ) mn ON true
+                JOIN LATERAL (
+                    SELECT posted_at FROM messages
+                    WHERE channel_id = c.channel_id
+                    ORDER BY posted_at DESC, id DESC LIMIT 1
+                ) mx ON true
+                JOIN LATERAL (
+                    SELECT count(*) AS total FROM messages
+                    WHERE channel_id = c.channel_id
+                ) tot ON true
+            ),
+            stats AS (
+                SELECT * FROM thread_stats
+                UNION ALL
+                SELECT * FROM channel_stats
+            )
+            SELECT matches.id, matches.channel_id, matches.thread_id, matches.posted_at,
+                   matches.author_id, matches.author_display_name, matches.snippet,
+                   CASE WHEN matches.thread_id IS NOT NULL THEN
+                     CASE
+                       WHEN (matches.posted_at - stats.min_t) <= (stats.max_t - matches.posted_at)
+                       THEN (SELECT count(*) FROM messages m2
+                             WHERE m2.thread_id = matches.thread_id
+                               AND (m2.posted_at, m2.id) < (matches.posted_at, matches.id))
+                       ELSE stats.total - 1 - (SELECT count(*) FROM messages m2
+                             WHERE m2.thread_id = matches.thread_id
+                               AND (m2.posted_at, m2.id) > (matches.posted_at, matches.id))
+                     END
+                   ELSE
+                     CASE
+                       WHEN (matches.posted_at - stats.min_t) <= (stats.max_t - matches.posted_at)
+                       THEN (SELECT count(*) FROM messages m2
+                             WHERE m2.channel_id = matches.channel_id
+                               AND (m2.posted_at, m2.id) < (matches.posted_at, matches.id))
+                       ELSE stats.total - 1 - (SELECT count(*) FROM messages m2
+                             WHERE m2.channel_id = matches.channel_id
+                               AND (m2.posted_at, m2.id) > (matches.posted_at, matches.id))
+                     END
+                   END AS preceding_count
+            FROM matches
+            JOIN stats ON stats.container_key = COALESCE(matches.thread_id, matches.channel_id)
+                       AND stats.is_thread = (matches.thread_id IS NOT NULL)
+            ORDER BY matches.rank DESC, matches.posted_at DESC
             """,
             params,
         )

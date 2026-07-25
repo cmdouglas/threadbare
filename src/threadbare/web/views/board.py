@@ -90,7 +90,7 @@ async def board_continuous_page(channel_id: int, page: int):
         breadcrumbs = await board_breadcrumbs(conn, channel, script_root=request.script_root)
         total = await queries.count_messages_before(conn, channel_id=channel_id)
         rows = await queries.get_messages_page(
-            conn, channel_id=channel_id, page=page, page_size=g.posts_per_page
+            conn, channel_id=channel_id, page=page, page_size=g.posts_per_page, total=total
         )
         posts = [
             (
@@ -172,6 +172,7 @@ async def board_week_page(channel_id: int, week_id: str, page: int):
             channel_id=channel_id,
             page=page,
             page_size=g.posts_per_page,
+            total=total,
             since=since,
             until=until,
         )

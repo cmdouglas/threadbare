@@ -420,7 +420,9 @@ async def test_get_messages_page_matches_get_message_for_render_column_shape(db_
     await _seed_user(db_conn, user_id=100, display_name="alice")
     await _seed_message(db_conn, message_id=1, channel_id=10, author_id=100, posted_at=T1)
 
-    [page_row] = await queries.get_messages_page(db_conn, channel_id=10, page=1, page_size=25)
+    [page_row] = await queries.get_messages_page(
+        db_conn, channel_id=10, page=1, page_size=25, total=1
+    )
     render_row = await queries.get_message_for_render(db_conn, 1)
 
     assert page_row.keys() == render_row.keys()
@@ -433,7 +435,7 @@ async def test_get_messages_page_orders_by_posted_at_then_id(db_conn):
     await _seed_message(db_conn, message_id=2, channel_id=10, author_id=100, posted_at=T2)
     await _seed_message(db_conn, message_id=1, channel_id=10, author_id=100, posted_at=T1)
 
-    rows = await queries.get_messages_page(db_conn, channel_id=10, page=1, page_size=25)
+    rows = await queries.get_messages_page(db_conn, channel_id=10, page=1, page_size=25, total=2)
 
     assert [r["id"] for r in rows] == [1, 2]
 
@@ -444,8 +446,8 @@ async def test_get_messages_page_paginates_with_page_size(db_conn):
     for i, t in enumerate([T1, T2, T3], start=1):
         await _seed_message(db_conn, message_id=i, channel_id=10, author_id=100, posted_at=t)
 
-    page1 = await queries.get_messages_page(db_conn, channel_id=10, page=1, page_size=2)
-    page2 = await queries.get_messages_page(db_conn, channel_id=10, page=2, page_size=2)
+    page1 = await queries.get_messages_page(db_conn, channel_id=10, page=1, page_size=2, total=3)
+    page2 = await queries.get_messages_page(db_conn, channel_id=10, page=2, page_size=2, total=3)
 
     assert [r["id"] for r in page1] == [1, 2]
     assert [r["id"] for r in page2] == [3]
@@ -459,7 +461,7 @@ async def test_get_messages_page_windowed_by_since_and_until(db_conn):
     await _seed_message(db_conn, message_id=3, channel_id=10, author_id=100, posted_at=T3)
 
     rows = await queries.get_messages_page(
-        db_conn, channel_id=10, page=1, page_size=25, since=T2, until=T3
+        db_conn, channel_id=10, page=1, page_size=25, total=1, since=T2, until=T3
     )
 
     assert [r["id"] for r in rows] == [2]
@@ -471,9 +473,50 @@ async def test_get_messages_page_for_a_thread(db_conn):
     await _seed_user(db_conn, user_id=100, display_name="alice")
     await _seed_thread_message(db_conn, message_id=1, thread_id=3000, author_id=100, posted_at=T1)
 
-    rows = await queries.get_messages_page(db_conn, thread_id=3000, page=1, page_size=25)
+    rows = await queries.get_messages_page(db_conn, thread_id=3000, page=1, page_size=25, total=1)
 
     assert [r["id"] for r in rows] == [1]
+
+
+async def test_get_messages_page_fetches_a_tail_page_from_the_end(db_conn):
+    """A page nearer the end than the start should still return the right
+    rows in the right (ascending) order -- exercises the DESC-scan-then-
+    reverse branch of the nearest-end optimization, not just the forward
+    OFFSET branch every other get_messages_page test happens to take.
+    """
+    await _seed_guild_and_channel(db_conn)
+    await _seed_user(db_conn, user_id=100, display_name="alice")
+    for i, t in enumerate(
+        [
+            T1,
+            T2,
+            T3,
+            T3 + timedelta(seconds=1),
+            T3 + timedelta(seconds=2),
+            T3 + timedelta(seconds=3),
+        ],
+        start=1,
+    ):
+        await _seed_message(db_conn, message_id=i, channel_id=10, author_id=100, posted_at=t)
+
+    last_page = await queries.get_messages_page(
+        db_conn, channel_id=10, page=3, page_size=2, total=6
+    )
+
+    assert [r["id"] for r in last_page] == [5, 6]
+
+
+async def test_get_messages_page_tail_page_can_be_a_partial_page(db_conn):
+    await _seed_guild_and_channel(db_conn)
+    await _seed_user(db_conn, user_id=100, display_name="alice")
+    for i, t in enumerate([T1, T2, T3], start=1):
+        await _seed_message(db_conn, message_id=i, channel_id=10, author_id=100, posted_at=t)
+
+    last_page = await queries.get_messages_page(
+        db_conn, channel_id=10, page=2, page_size=2, total=3
+    )
+
+    assert [r["id"] for r in last_page] == [3]
 
 
 async def test_get_attachment_by_id_returns_row(db_conn):
@@ -639,7 +682,69 @@ async def test_search_messages_preceding_count_reflects_position_in_container(db
 
     [row] = await queries.search_messages(db_conn, query="pizza", visible_channel_ids=set())
 
+    # T3 sits at the end of its container -- exercises the "count backward,
+    # derive from total" branch of the nearest-end optimization.
     assert row["preceding_count"] == 2
+
+
+async def test_search_messages_preceding_count_for_a_hit_near_the_start(db_conn):
+    await _seed_guild_and_channel(db_conn)
+    await _seed_user(db_conn, user_id=100, display_name="alice")
+    await _seed_message(
+        db_conn, message_id=1, channel_id=10, author_id=100, content="pizza", posted_at=T1
+    )
+    await _seed_message(db_conn, message_id=2, channel_id=10, author_id=100, posted_at=T2)
+    await _seed_message(db_conn, message_id=3, channel_id=10, author_id=100, posted_at=T3)
+
+    [row] = await queries.search_messages(db_conn, query="pizza", visible_channel_ids=set())
+
+    # T1 sits at the start of its container -- exercises the plain forward
+    # "count preceding directly" branch.
+    assert row["preceding_count"] == 0
+
+
+async def test_search_messages_preceding_count_for_a_thread_hit_ignores_stale_message_count(
+    db_conn,
+):
+    """threads.message_count comes straight from Discord's own (documented
+    approximate) thread metadata, not a count of what's actually mirrored --
+    the total this math depends on must come from a real COUNT(*), not that
+    stored field. Seeding a deliberately wrong message_count would only
+    make preceding_count wrong here if the query fell back to trusting it.
+    """
+    await _seed_guild_and_channel(db_conn)
+    await _seed_thread(db_conn, thread_id=3000, parent_channel_id=10)
+    await db_conn.execute("UPDATE threads SET message_count = 999 WHERE id = 3000")
+    await _seed_user(db_conn, user_id=100, display_name="alice")
+    await _seed_thread_message(db_conn, message_id=1, thread_id=3000, author_id=100, posted_at=T1)
+    await _seed_thread_message(db_conn, message_id=2, thread_id=3000, author_id=100, posted_at=T2)
+    await _seed_thread_message(
+        db_conn, message_id=3, thread_id=3000, author_id=100, content="pizza", posted_at=T3
+    )
+
+    [row] = await queries.search_messages(db_conn, query="pizza", visible_channel_ids=set())
+
+    assert row["preceding_count"] == 2
+
+
+async def test_search_messages_preceding_count_dedupes_stats_across_shared_container(db_conn):
+    """Two hits in the same channel should each get their own correct
+    preceding_count even though they share one batched container-stats row.
+    """
+    await _seed_guild_and_channel(db_conn)
+    await _seed_user(db_conn, user_id=100, display_name="alice")
+    await _seed_message(
+        db_conn, message_id=1, channel_id=10, author_id=100, content="pizza a", posted_at=T1
+    )
+    await _seed_message(db_conn, message_id=2, channel_id=10, author_id=100, posted_at=T2)
+    await _seed_message(
+        db_conn, message_id=3, channel_id=10, author_id=100, content="pizza b", posted_at=T3
+    )
+
+    rows = await queries.search_messages(db_conn, query="pizza", visible_channel_ids=set())
+
+    by_id = {r["id"]: r["preceding_count"] for r in rows}
+    assert by_id == {1: 0, 3: 2}
 
 
 async def test_search_messages_handles_malformed_query_without_raising(db_conn):

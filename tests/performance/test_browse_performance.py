@@ -114,44 +114,21 @@ def test_first_page_of_a_million_message_board_loads_under_200ms(client, seeded_
     assert elapsed < TIME_LIMIT_SECONDS
 
 
-@pytest.mark.xfail(
-    reason=(
-        "Real, documented scale limitation (ROADMAP.md/DESIGN.md §10), not "
-        "a bug being papered over: db/queries.get_messages_page paginates "
-        "via OFFSET, not a keyset cursor. EXPLAIN ANALYZE confirms Postgres "
-        "genuinely walks all ~999,975 preceding index entries to serve the "
-        "last page of a 1,000,000-row board (~700-850ms measured), even "
-        "though only 25 rows come back. Fixing this for real means "
-        "switching board/topic pagination to keyset cursors project-wide, "
-        "out of scope for this pass -- this test stays red on purpose so "
-        "the gap can't silently regress out of view."
-    ),
-    strict=False,
-)
 def test_last_page_of_a_million_message_board_loads_under_200ms(client, seeded_channel):
-    # The board's read path (db/queries.get_messages_page) paginates via
-    # OFFSET, not a keyset cursor -- this specifically stresses the worst
-    # case (skipping ~TOTAL_MESSAGES rows of index entries) rather than only
-    # ever measuring the cheap first page.
+    # The board's read path (db/queries.get_messages_page) used to paginate
+    # purely via forward OFFSET -- Postgres genuinely walked all ~999,975
+    # preceding index entries to serve the last page of a 1,000,000-row
+    # board (~700-964ms measured) even though only 25 rows come back. Fixed
+    # by fetching from whichever end of the (posted_at, id) index is closer
+    # (get_messages_page's `total` kwarg); this specifically stresses that
+    # fix's exact target case (the very last page) rather than only ever
+    # measuring the cheap first page. Real, measured result now ~65-70ms --
+    # see RESOLVED_ISSUES.md.
     response, elapsed = _timed_get(client, f"/board/{CHANNEL_ID}/continuous/page/{LAST_PAGE}")
     assert response.status_code == 200
     assert elapsed < TIME_LIMIT_SECONDS
 
 
-@pytest.mark.xfail(
-    reason=(
-        "Real, documented scale limitation (ROADMAP.md/DESIGN.md §10), not "
-        "a bug being papered over: db/queries.search_messages computes each "
-        "result's page-context link via a preceding_count correlated "
-        "subquery, run once per result row. EXPLAIN ANALYZE confirms each "
-        "of those 25 subqueries scans up to ~988,000 rows of the matched "
-        "message's channel to count what precedes it (~2.2s measured for "
-        "this search). A real fix needs a cheaper 'which page is this on' "
-        "primitive at scale, out of scope for this pass -- this test stays "
-        "red on purpose so the gap can't silently regress out of view."
-    ),
-    strict=False,
-)
 def test_search_loads_under_200ms(client, seeded_channel):
     response, elapsed = _timed_get(client, f"/search?q={synthetic.SEARCH_NEEDLE}")
     assert response.status_code == 200

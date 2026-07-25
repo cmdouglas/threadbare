@@ -31,7 +31,7 @@ async def topic_page(thread_id: int, page: int):
         breadcrumbs = await topic_breadcrumbs(conn, thread, script_root=request.script_root)
         total = await queries.count_messages_before(conn, thread_id=thread_id)
         rows = await queries.get_messages_page(
-            conn, thread_id=thread_id, page=page, page_size=g.posts_per_page
+            conn, thread_id=thread_id, page=page, page_size=g.posts_per_page, total=total
         )
         posts = [
             (
