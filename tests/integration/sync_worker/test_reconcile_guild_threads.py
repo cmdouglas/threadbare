@@ -224,3 +224,59 @@ async def test_reconcile_guild_threads_rediscovers_a_thread_not_seen_since_last_
         assert await cur.fetchone() is not None
 
     await _cleanup(db_conn)
+
+
+class OneThreadRaisesFetcher(ThreadKeyedFetcher):
+    """ThreadKeyedFetcher that blows up for one thread id."""
+
+    def __init__(self, failing_id: int, pages_by_thread: dict[int, list[FakeMessage]]):
+        super().__init__(pages_by_thread)
+        self._failing_id = failing_id
+
+    async def fetch_batch(self, *, channel_id: int, after: int | None, limit: int) -> list:
+        if channel_id == self._failing_id:
+            self.calls.append(channel_id)
+            raise RuntimeError("simulated Discord/Postgres failure")
+        return await super().fetch_batch(channel_id=channel_id, after=after, limit=limit)
+
+
+async def test_reconcile_guild_threads_isolates_one_threads_failure_from_the_rest(
+    db_conn, test_database_url
+):
+    """Thread-loop twin of reconcile_guild's isolation guard -- one bad thread
+    must not abort the sweep (and so must not kill the nightly loop; see
+    test_reconcile_guild.py's version for the full rationale).
+    """
+    try:
+        await _seed_channel(db_conn, guild_id=1, channel_id=10, is_public=True)
+        await db_conn.commit()
+
+        threads = [FakeThread(id=3001, parent_id=10), FakeThread(id=3002, parent_id=10)]
+        channel = FakeChannel(id=10)
+        guild = FakeGuild([channel], active_threads=threads)
+        client = FakeClient(guild)
+        author = FakeAuthor(id=1)
+        fetcher = OneThreadRaisesFetcher(
+            3001,
+            {
+                3001: [FakeMessage(id=101, author=author)],
+                3002: [FakeMessage(id=102, author=author)],
+            },
+        )
+
+        pool = create_pool(test_database_url)
+        await pool.open()
+        try:
+            await reconcile_guild_threads(
+                client, pool, guild_id=1, channels=[channel], fetcher=fetcher
+            )
+        finally:
+            await pool.close()
+
+        # The healthy thread still reconciled despite its sibling raising.
+        async with db_conn.cursor() as cur:
+            await cur.execute("SELECT id FROM messages ORDER BY id")
+            ids = [r["id"] for r in await cur.fetchall()]
+        assert ids == [102]
+    finally:
+        await _cleanup(db_conn)

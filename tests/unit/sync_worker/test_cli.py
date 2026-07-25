@@ -33,25 +33,38 @@ def test_parse_reset_flags_with_neither_flag():
     assert cli._parse_reset_flags([]) == (None, False)
 
 
+# argparse exits 2 (the conventional shell "usage error" code) rather than the
+# 1 the hand-rolled parser used, and writes its own usage message -- both are
+# argparse's standard behaviour, and worth having over a bespoke code/message.
 def test_parse_reset_flags_rejects_non_numeric_channel_id(capsys):
     with pytest.raises(SystemExit) as exc_info:
         cli._parse_reset_flags(["--reset-channel", "abc"])
 
-    assert exc_info.value.code == 1
-    assert "numeric" in capsys.readouterr().err
+    assert exc_info.value.code == 2
+    assert "--reset-channel" in capsys.readouterr().err
 
 
 def test_parse_reset_flags_rejects_missing_channel_id(capsys):
     with pytest.raises(SystemExit) as exc_info:
         cli._parse_reset_flags(["--reset-channel"])
 
-    assert exc_info.value.code == 1
-    assert "numeric" in capsys.readouterr().err
+    assert exc_info.value.code == 2
+    assert "--reset-channel" in capsys.readouterr().err
+
+
+def test_parse_reset_flags_rejects_an_unknown_flag(capsys):
+    """New with argparse: the hand-rolled scan silently ignored anything it
+    didn't recognise, so a typo'd flag started a normal sync-worker run.
+    """
+    with pytest.raises(SystemExit) as exc_info:
+        cli._parse_reset_flags(["--reset-chanel", "123"])
+
+    assert exc_info.value.code == 2
 
 
 def test_parse_reset_flags_rejects_both_flags_together(capsys):
     with pytest.raises(SystemExit) as exc_info:
         cli._parse_reset_flags(["--reset-channel", "123", "--reset-all-channels"])
 
-    assert exc_info.value.code == 1
-    assert "mutually exclusive" in capsys.readouterr().err
+    assert exc_info.value.code == 2
+    assert "not allowed with" in capsys.readouterr().err

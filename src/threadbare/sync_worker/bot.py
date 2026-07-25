@@ -161,11 +161,24 @@ class ThreadbareClient(discord.Client):
             )
             self._heartbeat_task.add_done_callback(partial(_log_if_failed, name="heartbeat"))
 
+    def _handles(self, guild_id: int | None) -> bool:
+        """Whether this event should be processed at all.
+
+        Two conditions, spelled out once instead of in all eighteen handlers:
+        the event must belong to the guild we mirror (never another guild the
+        bot happens to be in -- a correctness boundary, not an optimisation),
+        and `pool` must exist. The latter is purely a test affordance (see the
+        class docstring: tests that only need a bare login construct a client
+        with no pool), and having it inline eighteen times made a test-only
+        concern look like production logic.
+        """
+        return self.pool is not None and guild_id == self.guild_id
+
     async def on_socket_event_type(self, event_type: str) -> None:
         self.last_gateway_event_at = datetime.now(UTC)
 
     async def on_message(self, message: discord.Message) -> None:
-        if self.pool is None or message.guild is None or message.guild.id != self.guild_id:
+        if message.guild is None or not self._handles(message.guild.id):
             return
         channel_id, thread_id, thread = await _resolve_container(self, message.channel)
         async with self.pool.connection() as conn:
@@ -177,13 +190,13 @@ class ThreadbareClient(discord.Client):
         # No raw variant exists for this event (unlike message/thread/
         # reaction events) -- discord.py has no RawMemberUpdateEvent, so the
         # cooked handler is the only option here.
-        if self.pool is None or after.guild.id != self.guild_id:
+        if not self._handles(after.guild.id):
             return
         async with self.pool.connection() as conn:
             await events.handle_member_update(conn, before, after)
 
     async def on_raw_message_edit(self, payload: discord.RawMessageUpdateEvent) -> None:
-        if self.pool is None or payload.guild_id != self.guild_id:
+        if not self._handles(payload.guild_id):
             return
         message = payload.cached_message
         if message is None:
@@ -201,13 +214,13 @@ class ThreadbareClient(discord.Client):
             )
 
     async def on_raw_message_delete(self, payload: discord.RawMessageDeleteEvent) -> None:
-        if self.pool is None or payload.guild_id != self.guild_id:
+        if not self._handles(payload.guild_id):
             return
         async with self.pool.connection() as conn:
             await events.handle_message_delete(conn, payload.message_id)
 
     async def on_raw_bulk_message_delete(self, payload: discord.RawBulkMessageDeleteEvent) -> None:
-        if self.pool is None or payload.guild_id != self.guild_id:
+        if not self._handles(payload.guild_id):
             return
         async with self.pool.connection() as conn:
             await events.handle_bulk_message_delete(conn, list(payload.message_ids))
@@ -217,7 +230,7 @@ class ThreadbareClient(discord.Client):
         # newly_created flag is set) — unlike update/delete, there's no
         # cached-vs-uncached ambiguity here since this is the first time the
         # client learns of the thread at all.
-        if self.pool is None or thread.guild.id != self.guild_id:
+        if not self._handles(thread.guild.id):
             return
         async with self.pool.connection() as conn:
             await events.handle_thread_upsert(conn, thread)
@@ -226,7 +239,7 @@ class ThreadbareClient(discord.Client):
         # The raw variant always fires, even for threads discord.py hasn't
         # cached — the cooked on_thread_update doesn't (same reasoning as
         # using on_raw_message_edit over on_message_edit elsewhere).
-        if self.pool is None or payload.guild_id != self.guild_id:
+        if not self._handles(payload.guild_id):
             return
         thread = payload.thread
         if thread is None:
@@ -238,13 +251,13 @@ class ThreadbareClient(discord.Client):
         # The raw variant always fires; the cooked on_thread_delete only
         # fires for already-cached threads — exactly the unreliability
         # ROADMAP.md flags for thread deletes.
-        if self.pool is None or payload.guild_id != self.guild_id:
+        if not self._handles(payload.guild_id):
             return
         async with self.pool.connection() as conn:
             await events.handle_thread_delete(conn, payload.thread_id)
 
     async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent) -> None:
-        if self.pool is None or payload.guild_id != self.guild_id:
+        if not self._handles(payload.guild_id):
             return
         async with self.pool.connection() as conn:
             await events.handle_reaction_add(
@@ -252,7 +265,7 @@ class ThreadbareClient(discord.Client):
             )
 
     async def on_raw_reaction_remove(self, payload: discord.RawReactionActionEvent) -> None:
-        if self.pool is None or payload.guild_id != self.guild_id:
+        if not self._handles(payload.guild_id):
             return
         async with self.pool.connection() as conn:
             await events.handle_reaction_remove(
@@ -260,7 +273,7 @@ class ThreadbareClient(discord.Client):
             )
 
     async def on_raw_reaction_clear(self, payload: discord.RawReactionClearEvent) -> None:
-        if self.pool is None or payload.guild_id != self.guild_id:
+        if not self._handles(payload.guild_id):
             return
         async with self.pool.connection() as conn:
             await events.handle_reaction_clear(conn, payload.message_id)
@@ -268,7 +281,7 @@ class ThreadbareClient(discord.Client):
     async def on_raw_reaction_clear_emoji(
         self, payload: discord.RawReactionClearEmojiEvent
     ) -> None:
-        if self.pool is None or payload.guild_id != self.guild_id:
+        if not self._handles(payload.guild_id):
             return
         async with self.pool.connection() as conn:
             await events.handle_reaction_clear_emoji(
@@ -276,7 +289,7 @@ class ThreadbareClient(discord.Client):
             )
 
     async def on_guild_channel_create(self, channel: discord.abc.GuildChannel) -> None:
-        if self.pool is None or channel.guild.id != self.guild_id:
+        if not self._handles(channel.guild.id):
             return
         async with self.pool.connection() as conn:
             await events.handle_channel_create(conn, channel, guild_id=self.guild_id)
@@ -284,33 +297,33 @@ class ThreadbareClient(discord.Client):
     async def on_guild_channel_update(
         self, before: discord.abc.GuildChannel, after: discord.abc.GuildChannel
     ) -> None:
-        if self.pool is None or after.guild.id != self.guild_id:
+        if not self._handles(after.guild.id):
             return
         async with self.pool.connection() as conn:
             await events.handle_channel_upsert(conn, after, guild_id=self.guild_id)
             await events.handle_channel_permissions_changed(conn, after)
 
     async def on_guild_channel_delete(self, channel: discord.abc.GuildChannel) -> None:
-        if self.pool is None or channel.guild.id != self.guild_id:
+        if not self._handles(channel.guild.id):
             return
         async with self.pool.connection() as conn:
             await events.handle_channel_delete(conn, channel.id)
 
     async def on_guild_role_create(self, role: discord.Role) -> None:
-        if self.pool is None or role.guild.id != self.guild_id:
+        if not self._handles(role.guild.id):
             return
         async with self.pool.connection() as conn:
             await events.handle_role_upsert(conn, role, guild_id=self.guild_id)
 
     async def on_guild_role_update(self, before: discord.Role, after: discord.Role) -> None:
-        if self.pool is None or after.guild.id != self.guild_id:
+        if not self._handles(after.guild.id):
             return
         async with self.pool.connection() as conn:
             await events.handle_role_upsert(conn, after, guild_id=self.guild_id)
             await events.handle_role_permissions_changed(conn, after.guild)
 
     async def on_guild_role_delete(self, role: discord.Role) -> None:
-        if self.pool is None or role.guild.id != self.guild_id:
+        if not self._handles(role.guild.id):
             return
         async with self.pool.connection() as conn:
             await events.handle_role_delete(conn, role.id)

@@ -137,6 +137,77 @@ async def test_reconcile_guild_never_reconciles_a_public_forum_channels_top_leve
     await _cleanup(db_conn)
 
 
+class OneChannelRaisesFetcher:
+    """Raises for `failing_id`, serves a normal page for everything else --
+    proves one channel's failure doesn't abort the whole sweep.
+
+    Unlike ChannelKeyedFetcher above, this serves its page on the *first* call
+    per channel rather than only when `after is None`: reconcile_guild always
+    passes a real lookback cursor, so an `after is None` guard would make every
+    channel look empty and the "messages actually landed" assertion vacuous.
+    """
+
+    def __init__(self, failing_id: int, pages_by_channel: dict[int, list[FakeMessage]]):
+        self._failing_id = failing_id
+        self._pages_by_channel = pages_by_channel
+        self.calls: list[int] = []
+
+    async def fetch_batch(self, *, channel_id: int, after: int | None, limit: int) -> list:
+        first_call = channel_id not in self.calls
+        self.calls.append(channel_id)
+        if channel_id == self._failing_id:
+            raise RuntimeError("simulated Discord/Postgres failure")
+        if not first_call:
+            return []
+        return self._pages_by_channel.get(channel_id, [])
+
+
+async def test_reconcile_guild_isolates_one_channels_failure_from_the_rest(
+    db_conn, test_database_url
+):
+    """Backfill has isolated per-channel failures since its own milestone
+    (backfill_guild's _backfill_one); its reconciliation twin never grew the
+    same guard, so a single raising channel aborted the entire nightly sweep
+    -- and, because bot.py only creates the reconciliation task when it's
+    None, killed nightly reconciliation until the next process restart.
+    """
+    # try/finally rather than this file's usual trailing _cleanup() call: the
+    # seeds here are committed (reconcile_guild needs its own pool connection
+    # to see them), so a failed assertion would otherwise leave them behind
+    # and break every later test in the file.
+    try:
+        await _seed_channel(db_conn, guild_id=1, channel_id=10, is_public=True)
+        await _seed_channel(db_conn, guild_id=1, channel_id=20, is_public=True)
+        await _seed_channel(db_conn, guild_id=1, channel_id=30, is_public=True)
+        await db_conn.commit()
+
+        author = FakeAuthor(id=1)
+        fetcher = OneChannelRaisesFetcher(
+            20,
+            {10: [FakeMessage(id=100, author=author)], 30: [FakeMessage(id=300, author=author)]},
+        )
+        guild = FakeGuild([FakeChannel(10), FakeChannel(20), FakeChannel(30)])
+        client = FakeClient(guild)
+
+        pool = create_pool(test_database_url)
+        await pool.open()
+        try:
+            await reconcile_guild(client, pool, guild_id=1, fetcher=fetcher)
+        finally:
+            await pool.close()
+
+        # Every channel was attempted, including the two after the failing one.
+        assert fetcher.calls.count(20) == 1
+        assert 30 in fetcher.calls
+        # ...and the surviving channels' messages actually landed.
+        async with db_conn.cursor() as cur:
+            await cur.execute("SELECT id FROM messages ORDER BY id")
+            ids = [r["id"] for r in await cur.fetchall()]
+        assert ids == [100, 300]
+    finally:
+        await _cleanup(db_conn)
+
+
 async def test_reconcile_guild_reconciles_a_visibility_enrolled_non_public_channel(
     db_conn, test_database_url
 ):

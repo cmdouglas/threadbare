@@ -18,6 +18,7 @@ from typing import TypedDict
 from threadbare.discord_permissions import (
     REQUIRED_PERMISSIONS,
     OverwriteTier,
+    RawOverwrite,
     compute_effective_permissions,
 )
 
@@ -26,11 +27,13 @@ MEMBER_OVERWRITE_TYPE = 1
 
 
 @dataclass(frozen=True)
-class RestOverwrite:
-    id: int
-    type: int  # 0 = role, 1 = member
-    allow: int
-    deny: int
+class RestOverwrite(RawOverwrite):
+    """Discord's REST-JSON overwrite shape: the shared allow/deny pair plus the
+    id/type tagging that only this (REST) representation carries.
+    """
+
+    id: int = 0
+    type: int = 0  # 0 = role, 1 = member
 
 
 def parse_overwrites(raw: list[dict]) -> list[RestOverwrite]:

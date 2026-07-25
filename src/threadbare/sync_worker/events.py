@@ -10,13 +10,11 @@ import discord
 
 from threadbare.sync_worker import repository, transform
 from threadbare.sync_worker.backfill import RepositoryBackfillSink
-from threadbare.sync_worker.channel_overwrites import sync_channel_overwrites
+from threadbare.sync_worker.channel_type_sets import NO_ROW
 from threadbare.sync_worker.discord_types import MessageLike, RoleLike, ThreadLike, UserLike
 from threadbare.sync_worker.permissions import (
-    everyone_overwrite,
-    refresh_channel_bot_access,
-    refresh_channel_public_status,
-    should_sync,
+    channel_should_sync,
+    refresh_channel_permission_state,
 )
 
 
@@ -82,7 +80,8 @@ async def handle_member_update(conn, before: UserLike, after: UserLike) -> None:
 
 async def handle_role_upsert(conn, role: RoleLike, *, guild_id: int) -> None:
     """New or edited role -- keeps the roles table (used for username
-    display color, DESIGN.md Phase 2's future permission mirroring) fresh.
+    display color, and for permission mirroring's base-permission lookup:
+    db/queries.get_base_permissions) fresh.
     Separate from handle_role_permissions_changed, which recomputes channel
     is_public and has nothing to do with storing role rows.
     """
@@ -102,10 +101,7 @@ async def handle_thread_upsert(conn, thread: ThreadLike) -> None:
     written, so it needs its own gate to avoid seeding a row for a thread
     whose parent isn't supposed to be mirrored.
     """
-    flags = await repository.get_channel_sync_flags(conn, thread.parent_id)
-    if flags is None or not should_sync(
-        is_public=flags[0], indexed=flags[1], visibility_enrolled=flags[2]
-    ):
+    if not await channel_should_sync(conn, thread.parent_id):
         return
     await repository.upsert_thread(conn, transform.thread_to_row(thread))
 
@@ -141,7 +137,6 @@ async def handle_reaction_clear_emoji(conn, *, message_id: int, emoji: str) -> N
 
 # Voice/stage-voice channels never get a channels row at all -- a stated
 # non-goal (DESIGN.md §2), matching discover_channels()'s own exclusion.
-_NO_ROW_CHANNEL_TYPES = (discord.ChannelType.voice, discord.ChannelType.stage_voice)
 
 
 async def handle_channel_upsert(conn, channel: discord.abc.GuildChannel, *, guild_id: int) -> None:
@@ -155,7 +150,7 @@ async def handle_channel_upsert(conn, channel: discord.abc.GuildChannel, *, guil
     never touches is_public/indexed on conflict, so this is safe to call
     unconditionally, same reasoning as handle_role_upsert.
     """
-    if channel.type in _NO_ROW_CHANNEL_TYPES:
+    if channel.type in NO_ROW:
         return
     if channel.category is not None:
         await repository.upsert_channel(
@@ -173,7 +168,7 @@ async def handle_channel_create(conn, channel: discord.abc.GuildChannel, *, guil
     admin action before any content is ever fetched. Same category
     self-heal and voice/stage-voice exclusion as handle_channel_upsert.
     """
-    if channel.type in _NO_ROW_CHANNEL_TYPES:
+    if channel.type in NO_ROW:
         return
     if channel.category is not None:
         await repository.upsert_channel(
@@ -200,20 +195,12 @@ async def handle_channel_permissions_changed(conn, channel: discord.abc.GuildCha
     re-syncs the full stored role/member overwrite tables to match Discord
     exactly.
     """
-    category_overwrite = everyone_overwrite(channel.category) if channel.category else None
-    await refresh_channel_public_status(
+    await refresh_channel_permission_state(
         conn,
-        channel_id=channel.id,
+        channel,
         default_role_permissions=channel.guild.default_role.permissions.value,
-        category_overwrite=category_overwrite,
-        channel_overwrite=everyone_overwrite(channel),
+        sync_overwrites=True,
     )
-    await refresh_channel_bot_access(
-        conn,
-        channel_id=channel.id,
-        bot_permissions=channel.permissions_for(channel.guild.me).value,
-    )
-    await sync_channel_overwrites(conn, channel)
 
 
 async def handle_role_permissions_changed(conn, guild: discord.Guild) -> None:
@@ -228,16 +215,12 @@ async def handle_role_permissions_changed(conn, guild: discord.Guild) -> None:
     for channel in guild.channels:
         if channel.type is discord.ChannelType.category:
             continue
-        category_overwrite = everyone_overwrite(channel.category) if channel.category else None
-        await refresh_channel_public_status(
+        # sync_overwrites=False: see refresh_channel_permission_state's
+        # docstring -- a role's own attributes changing can't add or remove a
+        # channel's overwrite rows.
+        await refresh_channel_permission_state(
             conn,
-            channel_id=channel.id,
+            channel,
             default_role_permissions=default_role_permissions,
-            category_overwrite=category_overwrite,
-            channel_overwrite=everyone_overwrite(channel),
-        )
-        await refresh_channel_bot_access(
-            conn,
-            channel_id=channel.id,
-            bot_permissions=channel.permissions_for(guild.me).value,
+            sync_overwrites=False,
         )

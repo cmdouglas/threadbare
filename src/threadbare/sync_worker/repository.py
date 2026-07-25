@@ -5,6 +5,8 @@ manages transaction boundaries. This is also what lets integration tests get
 per-test isolation for free via rollback, without truncating tables.
 """
 
+from typing import NamedTuple
+
 import psycopg
 from psycopg.types.json import Json
 
@@ -33,6 +35,15 @@ async def upsert_channel(conn: psycopg.AsyncConnection, row: dict, *, indexed: b
     value) — discover_channels threads its site-wide auto-index setting
     through here, but only ever affects a genuinely new row, since ON
     CONFLICT never touches it.
+
+    This and insert_new_channel are the authoritative description of how
+    `indexed` gets its value. 0001_initial_schema.sql's inline comment still
+    says "defaults it true on first sight ... and never mutates it afterward",
+    which predates both site_settings.auto_index_new_channels (0009) and
+    insert_new_channel's always-false live path -- and cannot be corrected,
+    because db/migrate.py checksums applied migration files and refuses to run
+    if one changes. Migration comments are frozen once shipped; treat them as a
+    historical record, not current documentation.
     """
     await conn.execute(
         """
@@ -109,24 +120,10 @@ async def upsert_thread(conn: psycopg.AsyncConnection, row: dict) -> None:
     )
 
 
-async def get_channel_is_public(conn: psycopg.AsyncConnection, channel_id: int) -> bool | None:
-    async with conn.cursor() as cur:
-        await cur.execute("SELECT is_public FROM channels WHERE id = %s", (channel_id,))
-        row = await cur.fetchone()
-    return row["is_public"] if row else None
-
-
 async def set_channel_is_public(
     conn: psycopg.AsyncConnection, channel_id: int, is_public: bool
 ) -> None:
     await conn.execute("UPDATE channels SET is_public = %s WHERE id = %s", (is_public, channel_id))
-
-
-async def get_channel_bot_can_read(conn: psycopg.AsyncConnection, channel_id: int) -> bool | None:
-    async with conn.cursor() as cur:
-        await cur.execute("SELECT bot_can_read FROM channels WHERE id = %s", (channel_id,))
-        row = await cur.fetchone()
-    return row["bot_can_read"] if row else None
 
 
 async def set_channel_bot_can_read(
@@ -278,23 +275,48 @@ async def sync_message_embeds(
         )
 
 
+class ChannelSyncFlags(NamedTuple):
+    """A channel's four sync-relevant booleans.
+
+    A NamedTuple rather than a bare tuple: six call sites used to index this
+    positionally (`flags[0]`, `flags[2]`), which made adding a flag a
+    touch-everything change and made `flags[2]` unreadable at the call site.
+    Tuple-compatible, so nothing that unpacks it needed changing.
+
+    bot_can_read is informational only -- should_sync deliberately ignores it,
+    so a channel regaining bot access resumes syncing with no toggle (see
+    permissions.refresh_channel_bot_access).
+    """
+
+    is_public: bool
+    indexed: bool
+    visibility_enrolled: bool
+    bot_can_read: bool
+
+
 async def get_channel_sync_flags(
     conn: psycopg.AsyncConnection, channel_id: int
-) -> tuple[bool, bool, bool] | None:
-    """(is_public, indexed, visibility_enrolled) for a known channel, or None
-    if we've never seen it (e.g. backfill hasn't run for it yet) — nothing to
-    reconcile then. Feeds directly into permissions.should_sync's three
-    kwargs.
+) -> ChannelSyncFlags | None:
+    """A known channel's sync flags, or None if we've never seen it (e.g.
+    backfill hasn't run for it yet) — nothing to reconcile then. The single
+    reader for all four columns; channel_should_sync below wraps the common
+    "should this channel sync at all" question.
     """
     async with conn.cursor() as cur:
         await cur.execute(
-            "SELECT is_public, indexed, visibility_enrolled FROM channels WHERE id = %s",
+            "SELECT is_public, indexed, visibility_enrolled, bot_can_read "
+            "FROM channels WHERE id = %s",
             (channel_id,),
         )
         row = await cur.fetchone()
     if row is None:
         return None
-    return row["is_public"], row["indexed"], row["visibility_enrolled"]
+    return ChannelSyncFlags(
+        is_public=row["is_public"],
+        indexed=row["indexed"],
+        visibility_enrolled=row["visibility_enrolled"],
+        bot_can_read=row["bot_can_read"],
+    )
 
 
 async def get_backfill_checkpoint(conn: psycopg.AsyncConnection, channel_id: int) -> int | None:

@@ -1,16 +1,13 @@
 """Narrow structural types describing only the attributes our code reads off
-discord.py objects. Business logic is written against these Protocols, never
-against discord.py types directly, so it can be unit tested with plain
+discord.py objects. Business logic is written against these Protocols rather
+than discord.py types wherever it can be, so it can be unit tested with plain
 fixtures (SimpleNamespace, dataclasses) instead of a live gateway connection.
+Two spots in transform.py genuinely can't be (see that module's docstring) --
+the rule is "prefer the Protocol", not an absolute.
 """
 
 from datetime import datetime
 from typing import Protocol
-
-
-class OverwriteLike(Protocol):
-    allow: int
-    deny: int
 
 
 class AssetLike(Protocol):

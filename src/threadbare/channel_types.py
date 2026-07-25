@@ -19,9 +19,6 @@ MEDIA = 16
 # for the same reason).
 FORUM_LIKE_TYPES = frozenset({FORUM, MEDIA})
 
-# Freeform channels can hold both direct messages and native Discord threads.
-FREEFORM_TYPES = frozenset({TEXT, NEWS})
-
 # Channel types that never hold browsable/backfillable content of their own
 # -- categories are pure grouping metadata, voice/stage-voice channels are a
 # stated non-goal (DESIGN.md §2). Used everywhere a "is this a real content

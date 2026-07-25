@@ -1,6 +1,14 @@
-"""Discord payload -> row shape. Pure, no I/O — takes MessageLike/UserLike/
-AttachmentLike Protocol objects (see discord_types.py) and returns plain
-dicts ready for repository.upsert_*.
+"""Discord payload -> row shape. No I/O, no DB, no network — takes
+MessageLike/UserLike/AttachmentLike Protocol objects (see discord_types.py) and
+returns plain dicts ready for repository.upsert_*.
+
+Mostly, but not entirely, written against those Protocols rather than discord.py
+itself: two places genuinely need the real library and say so at their call
+sites -- channel_overwrite_rows' `isinstance(target, discord.Role)` (Discord's
+overwrite targets are Role-or-Member and only the library can tell them apart)
+and thread_to_row's `discord.utils.snowflake_time` fallback for a thread with no
+created_at. discord_types.py's "never against discord.py types directly" states
+the convention more absolutely than it holds; these two are the exceptions.
 """
 
 from datetime import datetime

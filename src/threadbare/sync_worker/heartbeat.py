@@ -1,7 +1,8 @@
 """Worker-alive heartbeat (DESIGN.md §9) — a singleton row updated on an
 interval, distinct from sync_state's per-channel checkpoints. The
-comparison/alerting logic for staleness belongs to the future admin page;
-this module only records the raw timestamps.
+comparison/alerting logic for staleness lives in the admin page instead
+(db/admin_queries.is_heartbeat_stale, rendered by admin.html); this module only
+records the raw timestamps.
 """
 
 import asyncio

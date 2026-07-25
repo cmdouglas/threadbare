@@ -1,6 +1,7 @@
 """Persists a channel/category's per-role and per-member permission
-overwrites -- the raw data Phase 2's future permission-resolution algorithm
-will read (DESIGN.md §7), previously only ever read transiently off live
+overwrites -- the raw data channel_visibility.compute_visible_channel_ids
+reads to resolve per-user visibility (DESIGN.md §7 Phase 2, shipped). Before
+that, overwrites were only ever read transiently off live
 discord.py objects to compute the single is_public boolean (permissions.py)
 and discarded immediately after. Kept separate from permissions.py (which
 computes is_public and knows nothing about storing raw overwrite rows) and

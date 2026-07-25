@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 
 import discord
 
+from threadbare.discord_permissions import READ_MESSAGE_HISTORY, VIEW_CHANNEL
 from threadbare.sync_worker import repository
 from threadbare.sync_worker.discovery import (
     discover_active_threads,
@@ -10,7 +11,6 @@ from threadbare.sync_worker.discovery import (
     discover_member_roles,
     discover_roles,
 )
-from threadbare.sync_worker.permissions import READ_MESSAGE_HISTORY, VIEW_CHANNEL
 
 BOTH_REQUIRED = VIEW_CHANNEL | READ_MESSAGE_HISTORY
 
@@ -231,8 +231,8 @@ async def test_discover_channels_computes_is_public_per_channel(db_conn):
 
     await discover_channels(client, db_conn, guild_id=1)
 
-    assert await repository.get_channel_is_public(db_conn, 10) is True
-    assert await repository.get_channel_is_public(db_conn, 11) is False
+    assert (await repository.get_channel_sync_flags(db_conn, 10)).is_public is True
+    assert (await repository.get_channel_sync_flags(db_conn, 11)).is_public is False
 
 
 async def test_discover_channels_computes_bot_can_read_per_channel(db_conn):
@@ -247,8 +247,8 @@ async def test_discover_channels_computes_bot_can_read_per_channel(db_conn):
 
     await discover_channels(client, db_conn, guild_id=1)
 
-    assert await repository.get_channel_bot_can_read(db_conn, 10) is True
-    assert await repository.get_channel_bot_can_read(db_conn, 11) is False
+    assert (await repository.get_channel_sync_flags(db_conn, 10)).bot_can_read is True
+    assert (await repository.get_channel_sync_flags(db_conn, 11)).bot_can_read is False
 
 
 async def test_discover_channels_computes_is_public_for_forum_channels_like_any_other_channel(

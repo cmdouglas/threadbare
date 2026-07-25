@@ -12,27 +12,15 @@ tables this module reads from.
 """
 
 import logging
-from dataclasses import dataclass
 
 from threadbare.discord_permissions import (
     REQUIRED_PERMISSIONS,
     OverwriteTier,
+    RawOverwrite,
     compute_effective_permissions,
 )
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass(frozen=True)
-class _Overwrite:
-    """Wraps a plain dict_row into something with .allow/.deny attribute
-    access, satisfying OverwriteLike -- DB rows only support ["allow"]
-    indexing. Same gap wizard/preflight.py's RestOverwrite closes for its
-    own REST-JSON rows.
-    """
-
-    allow: int
-    deny: int
 
 
 def _tier_for(
@@ -76,11 +64,11 @@ def _tier_for(
     )
 
     return OverwriteTier(
-        everyone_overwrite=_Overwrite(everyone_row["allow"], everyone_row["deny"])
+        everyone_overwrite=RawOverwrite(everyone_row["allow"], everyone_row["deny"])
         if everyone_row
         else None,
-        role_overwrites=tuple(_Overwrite(r["allow"], r["deny"]) for r in role_rows),
-        member_overwrite=_Overwrite(member_row["allow"], member_row["deny"])
+        role_overwrites=tuple(RawOverwrite(r["allow"], r["deny"]) for r in role_rows),
+        member_overwrite=RawOverwrite(member_row["allow"], member_row["deny"])
         if member_row
         else None,
     )

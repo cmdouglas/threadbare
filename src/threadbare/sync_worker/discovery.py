@@ -12,11 +12,10 @@ import discord
 
 from threadbare.sync_worker import repository, transform
 from threadbare.sync_worker.channel_overwrites import sync_channel_overwrites
+from threadbare.sync_worker.channel_type_sets import NO_CONTENT_ROW
 from threadbare.sync_worker.permissions import (
-    everyone_overwrite,
-    refresh_channel_bot_access,
-    refresh_channel_public_status,
-    should_sync,
+    channel_should_sync,
+    refresh_channel_permission_state,
 )
 
 
@@ -51,14 +50,7 @@ async def discover_channels(client: discord.Client, conn, *, guild_id: int) -> l
 
     channels = await guild.fetch_channels()
     categories = [c for c in channels if c.type is discord.ChannelType.category]
-    # Voice/stage-voice channels are a stated non-goal (DESIGN.md §2) and,
-    # unlike categories, nothing parents off them -- they get no row at all.
-    non_content_types = (
-        discord.ChannelType.category,
-        discord.ChannelType.voice,
-        discord.ChannelType.stage_voice,
-    )
-    others = [c for c in channels if c.type not in non_content_types]
+    others = [c for c in channels if c.type not in NO_CONTENT_ROW]
 
     # Categories first: a channel's parent_id FK must point at a category
     # row that already exists, and fetch_channels() doesn't guarantee any
@@ -75,20 +67,11 @@ async def discover_channels(client: discord.Client, conn, *, guild_id: int) -> l
         await repository.upsert_channel(
             conn, transform.channel_to_row(channel, guild_id=guild.id), indexed=auto_index
         )
-        await sync_channel_overwrites(conn, channel)
-
-        category_overwrite = everyone_overwrite(channel.category) if channel.category else None
-        await refresh_channel_public_status(
+        await refresh_channel_permission_state(
             conn,
-            channel_id=channel.id,
+            channel,
             default_role_permissions=default_role_permissions,
-            category_overwrite=category_overwrite,
-            channel_overwrite=everyone_overwrite(channel),
-        )
-        await refresh_channel_bot_access(
-            conn,
-            channel_id=channel.id,
-            bot_permissions=channel.permissions_for(guild.me).value,
+            sync_overwrites=True,
         )
         discovered_ids.append(channel.id)
 
@@ -158,10 +141,7 @@ async def discover_active_threads(client: discord.Client, conn, *, guild_id: int
 
     discovered_ids = []
     for thread in threads:
-        flags = await repository.get_channel_sync_flags(conn, thread.parent_id)
-        if flags is None or not should_sync(
-            is_public=flags[0], indexed=flags[1], visibility_enrolled=flags[2]
-        ):
+        if not await channel_should_sync(conn, thread.parent_id):
             continue
         await repository.upsert_thread(conn, transform.thread_to_row(thread))
         discovered_ids.append(thread.id)

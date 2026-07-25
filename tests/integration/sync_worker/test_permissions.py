@@ -1,9 +1,8 @@
 from dataclasses import dataclass
 
+from threadbare.discord_permissions import READ_MESSAGE_HISTORY, VIEW_CHANNEL
 from threadbare.sync_worker import repository
 from threadbare.sync_worker.permissions import (
-    READ_MESSAGE_HISTORY,
-    VIEW_CHANNEL,
     refresh_channel_bot_access,
     refresh_channel_public_status,
 )
@@ -42,7 +41,7 @@ async def test_refresh_sets_is_public_true_on_first_sight(db_conn):
     )
 
     assert result is True
-    assert await repository.get_channel_is_public(db_conn, 10) is True
+    assert (await repository.get_channel_sync_flags(db_conn, 10)).is_public is True
 
 
 async def test_refresh_purges_content_when_channel_becomes_non_public(db_conn):
@@ -65,7 +64,7 @@ async def test_refresh_purges_content_when_channel_becomes_non_public(db_conn):
     )
 
     assert result is False
-    assert await repository.get_channel_is_public(db_conn, 10) is False
+    assert (await repository.get_channel_sync_flags(db_conn, 10)).is_public is False
     async with db_conn.cursor() as cur:
         await cur.execute("SELECT count(*) AS n FROM messages WHERE channel_id = 10")
         assert (await cur.fetchone())["n"] == 0
@@ -120,7 +119,7 @@ async def test_refresh_does_not_purge_a_visibility_enrolled_channel_losing_publi
     )
 
     assert result is False
-    assert await repository.get_channel_is_public(db_conn, 10) is False
+    assert (await repository.get_channel_sync_flags(db_conn, 10)).is_public is False
     async with db_conn.cursor() as cur:
         await cur.execute("SELECT count(*) AS n FROM messages WHERE channel_id = 10")
         assert (await cur.fetchone())["n"] == 1
@@ -132,7 +131,7 @@ async def test_refresh_channel_bot_access_sets_true_when_bot_has_required_permis
     result = await refresh_channel_bot_access(db_conn, channel_id=10, bot_permissions=BOTH_REQUIRED)
 
     assert result is True
-    assert await repository.get_channel_bot_can_read(db_conn, 10) is True
+    assert (await repository.get_channel_sync_flags(db_conn, 10)).bot_can_read is True
 
 
 async def test_refresh_channel_bot_access_sets_false_when_bot_lacks_view_channel(db_conn):
@@ -143,7 +142,7 @@ async def test_refresh_channel_bot_access_sets_false_when_bot_lacks_view_channel
     )
 
     assert result is False
-    assert await repository.get_channel_bot_can_read(db_conn, 10) is False
+    assert (await repository.get_channel_sync_flags(db_conn, 10)).bot_can_read is False
 
 
 async def test_refresh_channel_bot_access_does_not_touch_is_public_or_content(db_conn):
@@ -163,7 +162,7 @@ async def test_refresh_channel_bot_access_does_not_touch_is_public_or_content(db
 
     await refresh_channel_bot_access(db_conn, channel_id=10, bot_permissions=0)
 
-    assert await repository.get_channel_is_public(db_conn, 10) is True
+    assert (await repository.get_channel_sync_flags(db_conn, 10)).is_public is True
     async with db_conn.cursor() as cur:
         await cur.execute("SELECT count(*) AS n FROM messages WHERE channel_id = 10")
         assert (await cur.fetchone())["n"] == 1

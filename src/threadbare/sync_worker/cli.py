@@ -1,3 +1,4 @@
+import argparse
 import asyncio
 import sys
 
@@ -52,32 +53,41 @@ async def _run_reset(settings, *, channel_id: int | None, reset_all: bool) -> No
         await pool.close()
 
 
+def _build_parser() -> argparse.ArgumentParser:
+    """argparse rather than hand-rolled argv scanning: the previous version
+    open-coded `argv.index("--reset-channel")` plus `int(argv[idx + 1])`, its own
+    mutual-exclusion check, and a separate `"--version" in argv` scan -- all of
+    which argparse does, including `--help`, which there wasn't one of before.
+    """
+    parser = argparse.ArgumentParser(
+        prog="threadbare-sync-worker",
+        description="Mirror a Discord guild's history into Postgres.",
+    )
+    parser.add_argument(
+        "--version", action="version", version=f"threadbare {threadbare.__version__}"
+    )
+    reset = parser.add_mutually_exclusive_group()
+    reset.add_argument(
+        "--reset-channel",
+        type=int,
+        metavar="CHANNEL_ID",
+        help="Clear one channel's backfill checkpoint, then exit.",
+    )
+    reset.add_argument(
+        "--reset-all-channels",
+        action="store_true",
+        help="Clear every channel's backfill checkpoint, then exit.",
+    )
+    return parser
+
+
 def _parse_reset_flags(argv: list[str]) -> tuple[int | None, bool]:
-    reset_all = "--reset-all-channels" in argv
-    channel_id = None
-    if "--reset-channel" in argv:
-        idx = argv.index("--reset-channel")
-        try:
-            channel_id = int(argv[idx + 1])
-        except (IndexError, ValueError):
-            print("--reset-channel requires a numeric channel id", file=sys.stderr)
-            raise SystemExit(1) from None
-
-    if channel_id is not None and reset_all:
-        print("--reset-channel and --reset-all-channels are mutually exclusive", file=sys.stderr)
-        raise SystemExit(1)
-
-    return channel_id, reset_all
+    args = _build_parser().parse_args(argv)
+    return args.reset_channel, args.reset_all_channels
 
 
 def main() -> None:
-    argv = sys.argv[1:]
-
-    if "--version" in argv:
-        print(f"threadbare {threadbare.__version__}")
-        raise SystemExit(0)
-
-    channel_id, reset_all = _parse_reset_flags(argv)
+    channel_id, reset_all = _parse_reset_flags(sys.argv[1:])
 
     configure_logging()
 

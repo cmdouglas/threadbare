@@ -11,6 +11,7 @@ tracking.
 """
 
 import asyncio
+import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Protocol
@@ -31,17 +32,12 @@ from threadbare.sync_worker.backfill import (
 from threadbare.sync_worker.checkpoints import advance_backfill_progress
 from threadbare.sync_worker.discord_types import MessageLike
 from threadbare.sync_worker.discovery import discover_active_threads
-from threadbare.sync_worker.permissions import should_sync
+from threadbare.sync_worker.permissions import channel_should_sync
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_LOOKBACK = timedelta(hours=24)
 DEFAULT_RECONCILIATION_HOUR = 3
-
-
-def diff_message_sets(local_ids: set[int], remote_ids: set[int]) -> set[int]:
-    """Ids present locally but absent from a fresh fetch of the same window
-    — a gateway-outage delete that was missed.
-    """
-    return local_ids - remote_ids
 
 
 def next_run_at(now: datetime, hour: int) -> datetime:
@@ -145,8 +141,10 @@ async def reconcile_channel(
             break
         cursor = progress.last_message_id
 
+    # Present locally but absent from a fresh fetch of the same window: a
+    # gateway-outage delete that was missed.
     local_ids = await sink.local_message_ids_since(channel_id, after)
-    stale_ids = diff_message_sets(local_ids, remote_ids)
+    stale_ids = local_ids - remote_ids
     if stale_ids:
         await sink.delete_messages(list(stale_ids))
 
@@ -186,7 +184,7 @@ async def reconcile_thread(
         cursor = progress.last_message_id
 
     local_ids = await sink.local_thread_message_ids_since(thread_id, after)
-    stale_ids = diff_message_sets(local_ids, remote_ids)
+    stale_ids = local_ids - remote_ids
     if stale_ids:
         await sink.delete_messages(list(stale_ids))
 
@@ -235,13 +233,22 @@ async def reconcile_guild(
         if channel.type in SKIPPED_CHANNEL_TYPES:
             continue
         async with pool.connection() as conn:
-            flags = await repository.get_channel_sync_flags(conn, channel.id)
-            if flags is None or not should_sync(
-                is_public=flags[0], indexed=flags[1], visibility_enrolled=flags[2]
-            ):
+            if not await channel_should_sync(conn, channel.id):
                 continue
             sink = RepositoryReconciliationSink(conn)
-            await reconcile_channel(fetcher, sink, channel_id=channel.id, after=after)
+            try:
+                await reconcile_channel(fetcher, sink, channel_id=channel.id, after=after)
+            except Exception:
+                # Same isolation rationale as backfill_guild's _backfill_one,
+                # which this loop is otherwise the structural twin of. Extra
+                # bite here: an un-caught exception propagates out of
+                # reconciliation_loop's `while True`, and bot.py only creates
+                # the reconciliation task when it's None -- so one bad channel
+                # would silently end nightly reconciliation for the lifetime of
+                # the process. This channel converges on the next sweep.
+                logger.exception(
+                    "Reconciliation failed for channel %s -- other channels continue", channel.id
+                )
 
     await reconcile_guild_threads(
         client,
@@ -298,7 +305,13 @@ async def reconcile_guild_threads(
     for thread_id in thread_ids:
         async with pool.connection() as conn:
             sink = RepositoryReconciliationSink(conn)
-            await reconcile_thread(fetcher, sink, thread_id=thread_id, after=after)
+            try:
+                await reconcile_thread(fetcher, sink, thread_id=thread_id, after=after)
+            except Exception:
+                # Same isolation rationale as reconcile_guild's channel loop.
+                logger.exception(
+                    "Reconciliation failed for thread %s -- other threads continue", thread_id
+                )
 
 
 async def reconciliation_loop(
@@ -312,8 +325,21 @@ async def reconciliation_loop(
     """Runs reconcile_guild immediately on startup (catch-up after any
     downtime), then nightly at `hour` thereafter. Runs forever — intended as
     a background asyncio task for the sync worker's lifetime.
+
+    A whole sweep failing must never end that lifetime. reconcile_guild
+    already isolates per-channel and per-thread failures, so reaching this
+    handler means something broader broke (guild fetch, channel listing, the
+    pool itself) — all transient enough to be worth retrying on the next
+    sweep. Without this, the task would die and bot.py's
+    `if self._reconciliation_task is None` guard would never recreate it, so
+    reconciliation would stay dead until the process restarted.
+    asyncio.CancelledError is deliberately not caught (it isn't an Exception
+    subclass), so shutdown still cancels this promptly.
     """
     while True:
-        await reconcile_guild(client, pool, guild_id=guild_id, lookback=lookback)
+        try:
+            await reconcile_guild(client, pool, guild_id=guild_id, lookback=lookback)
+        except Exception:
+            logger.exception("Reconciliation sweep failed -- retrying at the next scheduled run")
         now = datetime.now(UTC)
         await asyncio.sleep((next_run_at(now, hour) - now).total_seconds())

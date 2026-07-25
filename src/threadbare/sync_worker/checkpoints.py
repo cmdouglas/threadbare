@@ -1,8 +1,11 @@
 """Pure cursor/checkpoint math for paginated backfill. Kept separate from
 backfill.py's orchestration so it's trivially unit-testable and so the
-message-history cursor (snowflake-based, here) stays distinct from the
-thread-listing cursor (timestamp-based, a different concept — see the sync
-worker plan's risk notes; not yet implemented, added when thread backfill is).
+message-history cursor stays a self-contained concept.
+
+Snowflake-based throughout. Thread backfill (backfill.backfill_thread, its
+thread_sync_state checkpoints) shipped reusing this same cursor rather than the
+separate timestamp-based thread-listing cursor the original plan speculated
+about -- that was never needed and never built.
 """
 
 from dataclasses import dataclass

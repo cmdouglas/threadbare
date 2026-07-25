@@ -225,30 +225,38 @@ async def test_get_channel_sync_flags_returns_none_for_unknown_channel(db_conn):
     assert await repository.get_channel_sync_flags(db_conn, 999) is None
 
 
-async def test_get_channel_sync_flags_returns_is_public_indexed_and_enrolled(db_conn):
+async def test_get_channel_sync_flags_returns_every_sync_relevant_flag(db_conn):
     await _seed_guild_and_channel(db_conn, is_public=True)
 
-    assert await repository.get_channel_sync_flags(db_conn, 10) == (True, True, False)
+    flags = await repository.get_channel_sync_flags(db_conn, 10)
+
+    # Asserted by name, not against a positional tuple: the field order is not
+    # the contract, and a positional assertion here is what made adding
+    # bot_can_read to this reader look like a behaviour change.
+    assert flags.is_public is True
+    assert flags.indexed is True
+    assert flags.visibility_enrolled is False
+    # Schema default is true (optimistic) -- see migration 0012.
+    assert flags.bot_can_read is True
 
 
 async def test_get_channel_sync_flags_reflects_visibility_enrolled(db_conn):
     await _seed_guild_and_channel(db_conn, is_public=False, visibility_enrolled=True)
 
-    assert await repository.get_channel_sync_flags(db_conn, 10) == (False, True, True)
+    flags = await repository.get_channel_sync_flags(db_conn, 10)
 
-
-async def test_get_channel_is_public_returns_none_for_unknown_channel(db_conn):
-    assert await repository.get_channel_is_public(db_conn, 999) is None
+    assert flags.is_public is False
+    assert flags.visibility_enrolled is True
 
 
 async def test_get_and_set_channel_is_public(db_conn):
     await _seed_guild_and_channel(db_conn, is_public=False)
 
-    assert await repository.get_channel_is_public(db_conn, 10) is False
+    assert (await repository.get_channel_sync_flags(db_conn, 10)).is_public is False
 
     await repository.set_channel_is_public(db_conn, 10, True)
 
-    assert await repository.get_channel_is_public(db_conn, 10) is True
+    assert (await repository.get_channel_sync_flags(db_conn, 10)).is_public is True
 
 
 async def _seed_thread(conn, *, thread_id, parent_channel_id):

@@ -12,20 +12,16 @@ from typing import Protocol
 import discord
 
 from threadbare.sync_worker import repository, transform
+from threadbare.sync_worker.channel_type_sets import SKIPPED_FOR_DIRECT_HISTORY
 from threadbare.sync_worker.checkpoints import advance_backfill_progress
 from threadbare.sync_worker.discord_types import MessageLike
 from threadbare.sync_worker.discovery import discover_active_threads
-from threadbare.sync_worker.permissions import should_sync
+from threadbare.sync_worker.permissions import channel_should_sync
 
-SKIPPED_CHANNEL_TYPES = (
-    discord.ChannelType.category,
-    discord.ChannelType.forum,
-    # Voice/stage-voice channels are a stated non-goal (DESIGN.md §2).
-    # discover_channels() no longer creates rows for them, but this guards
-    # an already-deployed install with a stale row from before that fix.
-    discord.ChannelType.voice,
-    discord.ChannelType.stage_voice,
-)
+# Re-exported under its historical name; reconciliation.py imports it from
+# here. The voice/stage-voice members also guard an already-deployed install
+# with a stale row from before discover_channels stopped creating them.
+SKIPPED_CHANNEL_TYPES = SKIPPED_FOR_DIRECT_HISTORY
 
 logger = logging.getLogger(__name__)
 
@@ -117,8 +113,8 @@ class BoundedHistoryFetcher:
     calls. discord.py's HTTPClient already honors rate-limit headers and
     backs off automatically — this is a different concern, bounding how
     many requests we allow in flight at once so backfilling/reconciling many
-    channels concurrently (once a multi-channel orchestrator exists; see
-    ROADMAP.md) doesn't outpace discord.py's own bucket prediction.
+    channels concurrently (backfill_guild below, and reconciliation's
+    reconcile_guild) doesn't outpace discord.py's own bucket prediction.
     """
 
     def __init__(self, fetcher: HistoryFetcher, *, max_concurrency: int = DEFAULT_MAX_CONCURRENCY):
@@ -360,10 +356,7 @@ async def backfill_guild(
 
     async def _backfill_one(channel_id: int) -> None:
         async with semaphore, pool.connection() as conn:
-            flags = await repository.get_channel_sync_flags(conn, channel_id)
-            if flags is None or not should_sync(
-                is_public=flags[0], indexed=flags[1], visibility_enrolled=flags[2]
-            ):
+            if not await channel_should_sync(conn, channel_id):
                 return
             sink = RepositoryBackfillSink(conn)
             try:
@@ -416,10 +409,8 @@ async def discover_archived_threads(pool, *, channels: list) -> set[int]:
         if channel.type is discord.ChannelType.category or not hasattr(channel, "archived_threads"):
             return
         async with pool.connection() as conn:
-            flags = await repository.get_channel_sync_flags(conn, channel.id)
-        if flags is None or not should_sync(
-            is_public=flags[0], indexed=flags[1], visibility_enrolled=flags[2]
-        ):
+            should = await channel_should_sync(conn, channel.id)
+        if not should:
             return
         # ForumChannel.archived_threads() has no private= kwarg at all (forum
         # threads can never be private) — TextChannel.archived_threads()

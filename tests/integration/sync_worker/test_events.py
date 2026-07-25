@@ -3,8 +3,8 @@ from datetime import UTC, datetime
 
 import discord
 
+from threadbare.discord_permissions import READ_MESSAGE_HISTORY, VIEW_CHANNEL
 from threadbare.sync_worker import events, repository
-from threadbare.sync_worker.permissions import READ_MESSAGE_HISTORY, VIEW_CHANNEL
 
 BOTH_REQUIRED = VIEW_CHANNEL | READ_MESSAGE_HISTORY
 
@@ -492,7 +492,7 @@ async def test_handle_channel_permissions_changed_sets_is_public(db_conn):
 
     await events.handle_channel_permissions_changed(db_conn, channel)
 
-    assert await repository.get_channel_is_public(db_conn, 10) is True
+    assert (await repository.get_channel_sync_flags(db_conn, 10)).is_public is True
 
 
 async def test_handle_channel_permissions_changed_sets_bot_can_read(db_conn):
@@ -502,7 +502,7 @@ async def test_handle_channel_permissions_changed_sets_bot_can_read(db_conn):
 
     await events.handle_channel_permissions_changed(db_conn, channel)
 
-    assert await repository.get_channel_bot_can_read(db_conn, 10) is False
+    assert (await repository.get_channel_sync_flags(db_conn, 10)).bot_can_read is False
 
 
 async def test_handle_channel_permissions_changed_purges_on_revoke(db_conn):
@@ -518,7 +518,7 @@ async def test_handle_channel_permissions_changed_purges_on_revoke(db_conn):
 
     await events.handle_channel_permissions_changed(db_conn, channel)
 
-    assert await repository.get_channel_is_public(db_conn, 10) is False
+    assert (await repository.get_channel_sync_flags(db_conn, 10)).is_public is False
     async with db_conn.cursor() as cur:
         await cur.execute("SELECT count(*) AS n FROM messages WHERE channel_id = 10")
         assert (await cur.fetchone())["n"] == 0
@@ -751,8 +751,8 @@ async def test_handle_role_permissions_changed_recomputes_every_channel(db_conn)
 
     await events.handle_role_permissions_changed(db_conn, guild)
 
-    assert await repository.get_channel_is_public(db_conn, 10) is False
-    assert await repository.get_channel_is_public(db_conn, 11) is False
+    assert (await repository.get_channel_sync_flags(db_conn, 10)).is_public is False
+    assert (await repository.get_channel_sync_flags(db_conn, 11)).is_public is False
     # the category itself was skipped, not blown up on (it has no row to update)
 
 
@@ -774,7 +774,7 @@ async def test_handle_role_permissions_changed_recomputes_bot_can_read_too(db_co
 
     await events.handle_role_permissions_changed(db_conn, guild)
 
-    assert await repository.get_channel_bot_can_read(db_conn, 10) is False
+    assert (await repository.get_channel_sync_flags(db_conn, 10)).bot_can_read is False
 
 
 async def test_handle_role_permissions_changed_does_not_touch_overwrite_tables(db_conn):

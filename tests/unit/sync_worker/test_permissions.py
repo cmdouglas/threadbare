@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from threadbare.sync_worker.permissions import (
+from threadbare.discord_permissions import (
     READ_MESSAGE_HISTORY,
     VIEW_CHANNEL,
     compute_is_public,

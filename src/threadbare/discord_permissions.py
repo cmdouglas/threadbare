@@ -5,11 +5,10 @@ wizard can reuse compute_is_public()/REQUIRED_PERMISSIONS without dragging
 discord.py into the web process -- web/discord_rest.py's own docstring
 states that decoupling is a deliberate project invariant, not a preference.
 
-sync_worker/permissions.py re-exports these same names for every existing
-sync-worker caller, and keeps its own discord.py/psycopg-touching functions
-(refresh_channel_public_status, everyone_overwrite, should_sync) alongside
-them -- this module is the pure subset extracted out of it, not a
-replacement for it.
+sync_worker/permissions.py keeps the discord.py/psycopg-touching functions
+that surround this math (refresh_channel_public_status, everyone_overwrite,
+should_sync) -- this module is the pure subset extracted out of it, not a
+replacement for it. Callers import the pure names from here directly.
 
 compute_effective_permissions() is the one shared implementation of
 Discord's full permission-resolution order (DESIGN.md §7 Phase 2):
@@ -29,13 +28,34 @@ ADMINISTRATOR = 1 << 3
 
 REQUIRED_PERMISSIONS = VIEW_CHANNEL | READ_MESSAGE_HISTORY
 
-# A permission bitmask wide enough to cover every documented Discord
-# permission bit (currently up to ~bit 46) -- used only as the
-# "everything is granted" sentinel Administrator short-circuits to.
+# The "everything is granted" sentinel Administrator short-circuits to. Only
+# ever compared against specific bits with `&`, never shown or stored, so the
+# exact width just needs to stay at or above Discord's highest permission bit
+# (~46 as of Discord's current docs); 49 leaves a few bits of headroom for
+# ones they add later, and needs no maintenance when they do.
 _ALL_PERMISSIONS = (1 << 49) - 1
 
 
 class OverwriteLike(Protocol):
+    """Structural type for anything carrying a permission overwrite's raw
+    allow/deny bitfields. Callers with their own row/object shapes (discord.py
+    objects, Discord REST JSON, Postgres rows) satisfy this without importing
+    anything; RawOverwrite below is the concrete adapter for callers that just
+    need a value to pass along.
+    """
+
+    allow: int
+    deny: int
+
+
+@dataclass(frozen=True)
+class RawOverwrite:
+    """The one concrete OverwriteLike in the project. Three private,
+    byte-identical copies of this used to exist (in sync_worker/permissions.py,
+    channel_visibility.py, and -- with two extra fields -- wizard/preflight.py),
+    which structural typing kept working and therefore hid.
+    """
+
     allow: int
     deny: int
 
