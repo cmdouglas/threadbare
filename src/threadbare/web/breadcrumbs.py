@@ -10,7 +10,7 @@ from threadbare import urls
 from threadbare.db import queries
 
 
-async def board_breadcrumbs(conn, channel: dict, *, script_root: str) -> list[dict]:
+async def board_breadcrumbs(conn, channel: dict) -> list[dict]:
     crumbs = [{"label": "Home", "href": url_for("board_index.board_index")}]
     if channel["parent_id"] is not None:
         category = await queries.get_channel(conn, channel["parent_id"])
@@ -25,7 +25,7 @@ async def topic_breadcrumbs(conn, thread: dict, *, script_root: str) -> list[dic
     channel = await queries.get_channel(conn, thread["parent_channel_id"])
     if channel is None:
         return [{"label": "Home", "href": url_for("board_index.board_index")}]
-    crumbs = await board_breadcrumbs(conn, channel, script_root=script_root)
+    crumbs = await board_breadcrumbs(conn, channel)
     crumbs.append(
         {"label": channel["name"], "href": f"{script_root}{urls.board_url(channel['id'])}"}
     )

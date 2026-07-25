@@ -1,7 +1,7 @@
 from flask import Blueprint, current_app, g, render_template, session, url_for
 
+from threadbare import pagination
 from threadbare.db import queries
-from threadbare.pagination import DEFAULT_PAGE_SIZE, page_number_for_offset
 from threadbare.web.board_tree import board_view_mode, group_channels_by_category
 
 bp = Blueprint("board_index", __name__)
@@ -37,23 +37,30 @@ async def board_index():
         board_message_totals: dict[int, int] = {}
         board_total_pages: dict[int, int] = {}
         board_jump_action: dict[int, str] = {}
+        # Built explicitly rather than derived from board_message_totals' keys:
+        # the two happened to coincide, but that was an implicit invariant
+        # spanning twenty lines, reached through a dict whose name says nothing
+        # about view mode.
+        freeform_board_ids: list[int] = []
         for group in groups:
             for board in group["boards"]:
                 if board_view_mode(board) == "freeform":
                     total = await queries.count_messages_before(conn, channel_id=board["id"])
                     board_message_totals[board["id"]] = total
-                    page_size = g.posts_per_page
+                    freeform_board_ids.append(board["id"])
                     board_jump_action[board["id"]] = url_for(
                         "board.board_continuous_jump_to_page", channel_id=board["id"]
                     )
                 else:
                     total = await queries.count_topics_for_board(conn, board["id"])
-                    page_size = DEFAULT_PAGE_SIZE
                     board_jump_action[board["id"]] = url_for(
                         "board.board_topics", channel_id=board["id"]
                     )
-                board_total_pages[board["id"]] = (
-                    page_number_for_offset(total - 1, page_size=page_size) if total > 0 else 1
+                # Same page size for both arms: a topics_only board's topic list
+                # is paginated by board.board_topics, which honours the reader's
+                # posts_per_page preference like every other listing.
+                board_total_pages[board["id"]] = pagination.total_pages(
+                    total, page_size=g.posts_per_page
                 )
 
         # Unread state only covers freeform boards here: a topics_only
@@ -62,7 +69,6 @@ async def board_index():
         # would need every one of its threads' read state aggregated up,
         # which is real added scope left for later rather than showing
         # something that would just always read "unread".
-        freeform_board_ids = list(board_message_totals)
         markers = await queries.get_read_markers(
             conn, user_id=session["user_id"], channel_ids=freeform_board_ids, thread_ids=[]
         )

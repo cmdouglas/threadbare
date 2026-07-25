@@ -11,7 +11,7 @@
     <th class="board-last-post">Last post</th>
   </tr>
   {% for board in group.boards %}
-  {% set agg = aggregates.get(board.id, {"post_count": 0, "last_message_id": None, "last_posted_at": None, "last_author_id": None}) %}
+  {% set agg = aggregates.get(board.id, {"post_count": 0, "last_posted_at": None, "last_author_id": None}) %}
   {% set mode = board_tree.board_view_mode(board) %}
   <tr class="board-row{% if board.id in visited_boards %} board-row-visited{% endif %}{% if unread_boards.get(board.id) %} board-row-unread{% endif %}">
     <td class="board-name">

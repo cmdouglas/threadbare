@@ -2,6 +2,8 @@ from datetime import UTC, datetime
 
 from flask import Blueprint, current_app, g, render_template, request, url_for
 
+from threadbare import pagination
+from threadbare.channel_types import NON_CONTENT_TYPES
 from threadbare.db import queries
 from threadbare.pagination import page_number_for_offset
 
@@ -17,18 +19,13 @@ def _parse_date(value: str | None) -> datetime | None:
         return None
 
 
-def _make_page_url():
-    args = request.args.to_dict()
-
-    def page_url(page: int) -> str:
-        return url_for("search.search", **{**args, "page": page})
-
-    return page_url
-
-
-def _clear_author_url():
-    args = {k: v for k, v in request.args.to_dict().items() if k not in ("author_id", "page")}
-    return url_for("search.search", **args)
+def _url_with(**overrides: object) -> str:
+    """This route's URL with the current query string, plus overrides. A key set
+    to None is dropped. One helper instead of a page-url builder and a
+    clear-author builder that each re-derived request.args.to_dict() filtering.
+    """
+    args = {**request.args.to_dict(), **overrides}
+    return url_for("search.search", **{k: v for k, v in args.items() if v is not None})
 
 
 @bp.route("/search")
@@ -45,15 +42,30 @@ async def search():
     results: list[dict] = []
     total = 0
     author_display_name = None
-    if author_id is not None:
-        pool = current_app.config["POOL"]
-        async with pool.connection() as conn:
+    settings = current_app.config["SETTINGS"]
+    pool = current_app.config["POOL"]
+    # One connection for the whole request: web/db.py opens a fresh connection
+    # per .connection() call (no pooling survives Flask's async_to_sync
+    # bridge), so the author lookup and the search itself used to cost two
+    # separate handshakes on top of app.py's before_request hooks.
+    async with pool.connection() as conn:
+        if author_id is not None:
             author_row = await queries.get_user(conn, author_id)
-        if author_row is not None:
-            author_display_name = author_row["display_name"]
-    if query:
-        pool = current_app.config["POOL"]
-        async with pool.connection() as conn:
+            if author_row is not None:
+                author_display_name = author_row["display_name"]
+
+        # Boards the requester can actually see, for the channel <select> --
+        # this used to be a raw numeric "Channel ID" input, in an app whose
+        # wizard exists partly so a mod never has to hand-type a snowflake.
+        channel_choices = [
+            {"id": row["id"], "name": row["name"]}
+            for row in await queries.get_boards_and_categories(
+                conn, settings.discord_guild_id, visible_channel_ids=g.visible_channel_ids
+            )
+            if row["type"] not in NON_CONTENT_TYPES
+        ]
+
+        if query:
             results = await queries.search_messages(
                 conn,
                 query=query,
@@ -78,10 +90,12 @@ async def search():
                 reaction=reaction,
                 visible_channel_ids=g.visible_channel_ids,
             )
-        for row in results:
-            row["page"] = page_number_for_offset(row["preceding_count"], page_size=g.posts_per_page)
+            for row in results:
+                row["page"] = page_number_for_offset(
+                    row["preceding_count"], page_size=g.posts_per_page
+                )
 
-    total_pages = page_number_for_offset(total - 1, page_size=g.posts_per_page) if total > 0 else 1
+    total_pages = pagination.total_pages(total, page_size=g.posts_per_page)
 
     return render_template(
         "search_results.html",
@@ -90,9 +104,11 @@ async def search():
         total=total,
         page=page,
         total_pages=total_pages,
-        page_url=_make_page_url(),
+        page_url=lambda n: _url_with(page=n),
         jump_action=url_for("search.search"),
         author_id=author_id,
         author_display_name=author_display_name,
-        clear_author_url=_clear_author_url() if author_id is not None else None,
+        channel_id=channel_id,
+        channel_choices=channel_choices,
+        clear_author_url=_url_with(author_id=None, page=None) if author_id is not None else None,
     )

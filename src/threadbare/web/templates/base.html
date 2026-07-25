@@ -21,6 +21,7 @@
   </nav>
   <nav class="account-nav">
     {% if session.get("user_id") %}
+      {% if session.get("display_name") %}<span class="account-name">{{ session.get("display_name") }}</span>{% endif %}
       {% if session.get("is_mod") %}<a href="{{ url_for('admin.index') }}">Admin</a>{% endif %}
       <a href="{{ url_for('auth.logout') }}">Log out</a>
     {% else %}

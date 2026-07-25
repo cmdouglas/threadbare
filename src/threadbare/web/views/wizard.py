@@ -43,6 +43,7 @@ from threadbare.web.discord_rest import (
     get_bot_user,
     get_current_user,
     get_current_user_guilds,
+    get_guild,
     get_guild_channels,
     get_guild_member,
     get_guild_roles,
@@ -78,7 +79,10 @@ _STEP_FOR_ENDPOINT = {
 # oauth_callback must always be reachable -- it's registered at the exact
 # path a mod pastes into Discord's developer portal as the redirect URI,
 # and that has to keep working regardless of wizard progress.
-_ALWAYS_ALLOWED_ENDPOINTS = {"wizard.oauth_callback", "wizard.static"}
+# The wizard blueprint declares no static_folder, so there is no
+# "wizard.static" endpoint to allow -- assets come from the app-level
+# `static` endpoint (see wizard_base.html).
+_ALWAYS_ALLOWED_ENDPOINTS = {"wizard.oauth_callback"}
 
 
 def _route_for_step(step: str) -> str:
@@ -181,11 +185,11 @@ async def invite():
             guilds = await get_bot_guilds(session["bot_token"])
         except DiscordRestError:
             flash("Couldn't reach Discord to check -- try again in a moment.")
-            return render_template("wizard_invite.html", state=state, invite_url=_invite_url(state))
+            return render_template("wizard_invite.html", invite_url=_invite_url(state))
 
         if not guilds:
             flash("The bot hasn't joined a server yet -- use the invite link above first.")
-            return render_template("wizard_invite.html", state=state, invite_url=_invite_url(state))
+            return render_template("wizard_invite.html", invite_url=_invite_url(state))
 
         if len(guilds) == 1:
             async with pool.connection() as conn:
@@ -195,10 +199,10 @@ async def invite():
             return redirect(url_for("wizard.channels"))
 
         return render_template(
-            "wizard_invite.html", state=state, invite_url=_invite_url(state), guild_choices=guilds
+            "wizard_invite.html", invite_url=_invite_url(state), guild_choices=guilds
         )
 
-    return render_template("wizard_invite.html", state=state, invite_url=_invite_url(state))
+    return render_template("wizard_invite.html", invite_url=_invite_url(state))
 
 
 def _invite_url(state: dict) -> str:
@@ -223,6 +227,7 @@ async def channels():
             await wizard_queries.update_wizard_state(conn, step="oauth", channels_confirmed=True)
         return redirect(url_for("wizard.oauth"))
 
+    guild = await get_guild(bot_token, guild_id)
     guild_channels = await get_guild_channels(bot_token, guild_id)
     guild_roles = await get_guild_roles(bot_token, guild_id)
     bot_user = await get_bot_user(bot_token)
@@ -279,7 +284,12 @@ async def channels():
     non_category_rows = [
         {k: v for k, v in row.items() if k != "overwrites"} for row in channel_rows
     ]
-    guild_row = {"id": guild_id, "name": f"guild-{guild_id}", "icon": None}
+    # The real name/icon, not a "guild-{id}" placeholder: web/app.py's
+    # resolve_site_title renders guilds.name into every page's masthead, and the
+    # sync worker (which would otherwise correct it via discover_channels) isn't
+    # started until the operator restarts it by hand after the wizard finishes
+    # -- so a placeholder here is what the whole site is titled in the meantime.
+    guild_row = {"id": guild_id, "name": guild["name"], "icon": guild.get("icon")}
     async with pool.connection() as conn:
         await wizard_queries.seed_guild_and_channels(
             conn,
@@ -332,7 +342,6 @@ async def channels():
 
     return render_template(
         "wizard_channels.html",
-        state=state,
         channel_rows=rows,
         intent_status=intent_status,
         auto_index_new_channels=auto_index_new_channels,
@@ -346,6 +355,11 @@ async def oauth():
         state = await wizard_queries.get_or_create_wizard_state(conn)
 
     redirect_uri = url_for("wizard.oauth_callback", _external=True)
+    # Every branch below needs this: the template gates the "Continue to finish
+    # setup" button on it, so omitting it on the POST branches (as they used to)
+    # hid the button again after a secret re-save, even though the login test
+    # had already passed.
+    oauth_verified = session.get("oauth_verified", False)
 
     if request.method == "POST":
         client_secret = request.form.get("client_secret", "").strip()
@@ -355,7 +369,7 @@ async def oauth():
                 "wizard_oauth.html",
                 state=state,
                 redirect_uri=redirect_uri,
-                has_client_secret="client_secret" in session,
+                oauth_verified=oauth_verified,
                 show_secret_form=True,
             )
 
@@ -372,18 +386,16 @@ async def oauth():
             "wizard_oauth.html",
             state=state,
             redirect_uri=redirect_uri,
-            has_client_secret=True,
+            oauth_verified=oauth_verified,
             show_secret_form=False,
         )
 
-    has_client_secret = "client_secret" in session
     return render_template(
         "wizard_oauth.html",
         state=state,
         redirect_uri=redirect_uri,
-        oauth_verified=session.get("oauth_verified", False),
-        has_client_secret=has_client_secret,
-        show_secret_form=request.args.get("edit") == "1" or not has_client_secret,
+        oauth_verified=oauth_verified,
+        show_secret_form=request.args.get("edit") == "1" or "client_secret" not in session,
     )
 
 

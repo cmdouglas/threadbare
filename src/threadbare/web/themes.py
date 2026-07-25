@@ -18,17 +18,18 @@ def resolve_theme(
     *,
     query_param: str | None,
     cookie_value: str | None,
-    available: set[str] | None = None,
+    available: set[str],
 ) -> str:
     """`available` is the set of currently-valid theme slugs -- the built-ins
     plus any registered custom themes whose bundle actually exists on disk
     (web/app.py supplies that combined set). Stays pure/DB-free by taking the
-    set as a parameter rather than importing the DB here. Defaults to the
-    built-ins alone when omitted (unit tests, any built-in-only caller). A
-    slug that isn't in `available` -- including a custom theme that's since
-    been deleted -- falls through to DEFAULT_THEME, which is always a built-in.
+    set as a parameter rather than importing the DB here. Required rather than
+    defaulting to the built-ins: web/app.py always supplies it, so the default
+    only ever described test callers. A slug that isn't in `available` --
+    including a custom theme that's since been deleted -- falls through to
+    DEFAULT_THEME, which is always a built-in.
     """
-    valid = set(AVAILABLE_THEMES) if available is None else available
+    valid = available
     if query_param in valid:
         return query_param
     if cookie_value in valid:

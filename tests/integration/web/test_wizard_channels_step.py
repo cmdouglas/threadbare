@@ -27,8 +27,15 @@ def _seed_invite_step(client, web_conn, *, channels_confirmed=False):
         sess["bot_token"] = "tok123"
 
 
+GUILD_NAME = "My Real Server"
+GUILD_ICON = "abc123icon"
+
+
 def _stub_discord(monkeypatch, *, everyone_perms=1024 | 65536, overwrites=None, in_category=False):
     overwrites = overwrites if overwrites is not None else []
+
+    async def fake_get_guild(token, guild_id, **kwargs):
+        return {"id": str(guild_id), "name": GUILD_NAME, "icon": GUILD_ICON}
 
     async def fake_get_guild_channels(token, guild_id, **kwargs):
         channels = [
@@ -68,6 +75,7 @@ def _stub_discord(monkeypatch, *, everyone_perms=1024 | 65536, overwrites=None, 
     async def fake_get_recent_channel_message(token, channel_id, **kwargs):
         return {"id": "1", "content": "hi"}
 
+    monkeypatch.setattr(wizard_view, "get_guild", fake_get_guild)
     monkeypatch.setattr(wizard_view, "get_guild_channels", fake_get_guild_channels)
     monkeypatch.setattr(wizard_view, "get_guild_roles", fake_get_guild_roles)
     monkeypatch.setattr(wizard_view, "get_bot_user", fake_get_bot_user)
@@ -84,6 +92,29 @@ def test_channels_get_shows_discovered_channel(wizard_client, web_conn, monkeypa
     assert resp.status_code == 200
     assert b"general" in resp.data
     assert b"Message Content intent: enabled" in resp.data
+
+
+def test_channels_get_seeds_the_real_guild_name_and_icon(wizard_client, web_conn, monkeypatch):
+    """web/app.py's resolve_site_title renders guilds.name into every page's
+    masthead, and the sync worker that would correct a placeholder isn't
+    running yet at this point in the wizard -- so seeding "guild-{id}" here
+    titled the whole site that until the operator restarted the worker.
+    """
+    _seed_invite_step(wizard_client, web_conn)
+    _stub_discord(monkeypatch)
+
+    resp = wizard_client.get("/channels")
+
+    assert resp.status_code == 200
+
+    async def _fetch():
+        async with web_conn.cursor() as cur:
+            await cur.execute("SELECT name, icon FROM guilds WHERE id = %s", (GUILD_ID,))
+            return await cur.fetchone()
+
+    row = run(_fetch())
+    assert row["name"] == GUILD_NAME
+    assert row["icon"] == GUILD_ICON
 
 
 def test_channels_get_shows_denied_when_bot_lacks_permission(wizard_client, web_conn, monkeypatch):

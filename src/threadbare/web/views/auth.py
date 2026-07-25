@@ -63,6 +63,10 @@ async def oauth_callback():
         return render_template("login_denied.html"), 403
 
     session["user_id"] = int(user["id"])
+    # Shown in the masthead's account nav (base.html) so a reader can tell
+    # which Discord account the login gate let through -- the session is the
+    # only place this is known, since a member who has never posted has no
+    # users row to look it up from.
     session["display_name"] = user.get("username", "")
     session["is_mod"] = has_mod_permissions(int(guild.get("permissions", 0)))
 

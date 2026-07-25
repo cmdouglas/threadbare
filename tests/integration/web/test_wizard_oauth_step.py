@@ -129,6 +129,50 @@ def test_oauth_callback_succeeds_and_sets_verified_flag(wizard_client, web_conn,
         assert sess["oauth_verified"] is True
 
 
+def test_oauth_post_keeps_the_continue_button_once_login_is_already_verified(
+    wizard_client, web_conn, monkeypatch
+):
+    """The POST branches never passed oauth_verified to the template, so
+    re-saving the client secret after a successful login test hid the
+    "Continue to finish setup" button until the operator reloaded by hand.
+    """
+    _seed_oauth_step(wizard_client, web_conn)
+    wizard_client.post("/oauth", data={"client_secret": "shh"})
+    stub_oauth_functions(
+        monkeypatch,
+        wizard_view,
+        user={"id": "1", "username": "mod"},
+        guilds=[{"id": str(GUILD_ID)}],
+    )
+    wizard_client.get("/oauth/callback?code=abc123")
+
+    # Verified state is visible on a plain GET...
+    assert b"Continue to finish setup" in wizard_client.get("/oauth").data
+
+    # ...and must survive re-saving the secret.
+    resp = wizard_client.post("/oauth", data={"client_secret": "shh2"})
+
+    assert b"Continue to finish setup" in resp.data
+
+
+def test_oauth_post_with_a_blank_secret_keeps_the_continue_button_when_verified(
+    wizard_client, web_conn, monkeypatch
+):
+    _seed_oauth_step(wizard_client, web_conn)
+    wizard_client.post("/oauth", data={"client_secret": "shh"})
+    stub_oauth_functions(
+        monkeypatch,
+        wizard_view,
+        user={"id": "1", "username": "mod"},
+        guilds=[{"id": str(GUILD_ID)}],
+    )
+    wizard_client.get("/oauth/callback?code=abc123")
+
+    resp = wizard_client.post("/oauth", data={"client_secret": ""})
+
+    assert b"Continue to finish setup" in resp.data
+
+
 def test_oauth_callback_with_no_code_does_not_set_verified(wizard_client, web_conn):
     _seed_oauth_step(wizard_client, web_conn)
     wizard_client.post("/oauth", data={"client_secret": "shh"})

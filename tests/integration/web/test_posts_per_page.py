@@ -93,3 +93,33 @@ def test_invalid_query_param_posts_per_page_falls_back_to_default_and_does_not_s
 
     assert resp.data.count(b'class="post"') == 25
     assert "Set-Cookie" not in resp.headers
+
+
+def _seed_40_topics(web_conn):
+    run(_seed_guild_and_channel(web_conn))
+    run(_seed_user(web_conn))
+    for i in range(40):
+        run(_seed_thread(web_conn, thread_id=3000 + i, parent_channel_id=10, name=f"thread {i}"))
+
+
+def test_board_topics_honours_the_posts_per_page_preference(client, web_conn):
+    """board_topics hardcoded pagination.DEFAULT_PAGE_SIZE while every other
+    listing used the preference, so a reader on 100/page still got 25 topics
+    per page with no explanation -- and the same template already used the
+    preference to compute each thread's own page count.
+    """
+    _seed_40_topics(web_conn)
+
+    resp = client.get("/board/10/topics?posts_per_page=10")
+
+    assert resp.status_code == 200
+    assert resp.data.count(b'class="topic-row') == 10
+
+
+def test_board_topics_uses_25_topics_per_page_by_default(client, web_conn):
+    _seed_40_topics(web_conn)
+
+    resp = client.get("/board/10/topics")
+
+    assert resp.status_code == 200
+    assert resp.data.count(b'class="topic-row') == 25

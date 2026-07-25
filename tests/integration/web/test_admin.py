@@ -1,6 +1,7 @@
 from datetime import UTC, datetime, timedelta
 
 import threadbare
+from threadbare.db.migrate import discover_migrations
 
 from .conftest import run
 
@@ -219,9 +220,11 @@ def test_admin_index_shows_app_version_and_latest_schema_migration(client, web_c
     body = resp.data.decode()
     assert threadbare.__version__ in body
     # The real test DB has every real migration applied (see
-    # tests/integration/db/test_migrate.py's idempotency test) --
-    # 0014_custom_themes is the current latest by filename ordering.
-    assert "0014_custom_themes" in body
+    # tests/integration/db/test_migrate.py's idempotency test). Derived from
+    # the migrations directory rather than hardcoded: a literal version here
+    # made every future migration fail this test for no real reason.
+    latest = discover_migrations()[-1].version
+    assert latest in body
 
 
 def test_admin_index_shows_auto_index_setting_enabled_by_default(client, web_conn):

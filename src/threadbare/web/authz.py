@@ -13,8 +13,16 @@ orchestration (several queries plus channel_visibility's pure resolution),
 not a single query -- and here rather than a new module because this
 module's own binary gate is literally what it's meant to replace. Wired in
 via web/app.py's resolve_visible_channels before_request hook, which stashes
-the result on g.visible_channel_ids for board.py/search.py/topic.py/user.py
-to consult through channel_passes_visibility_gate.
+the result on g.visible_channel_ids for every read path to consult.
+
+Two consumers, deliberately different, and worth knowing which is which:
+
+- board.py/topic.py (direct navigation to a known id) call
+  channel_passes_visibility_gate below.
+- search.py/user.py/board_index.py/attachments.py never call it -- they pass
+  g.visible_channel_ids straight into db/queries.py, whose _visibility_clause
+  applies the stricter SQL rule (see that function, and the note on the gate
+  itself about how the two differ).
 """
 
 import logging
@@ -24,13 +32,15 @@ from flask import abort, session
 
 from threadbare import channel_visibility
 from threadbare.db import queries
+from threadbare.discord_permissions import ADMINISTRATOR
 
 logger = logging.getLogger(__name__)
 
-# Discord permission bit flags (Discord API docs, PERMISSIONS bitwise
-# flags), matching sync_worker/permissions.py's naming convention.
+# ADMINISTRATOR comes from the dependency-free threadbare.discord_permissions
+# rather than being redefined here -- that module exists precisely so the web
+# app can share this math without importing discord.py. MANAGE_GUILD lives here
+# because it's only ever a web-side (OAuth `guilds` scope) concern.
 MANAGE_GUILD = 1 << 5
-ADMINISTRATOR = 1 << 3
 
 MOD_PERMISSIONS = MANAGE_GUILD | ADMINISTRATOR
 
@@ -73,12 +83,24 @@ def mod_required(view):
 def channel_passes_visibility_gate(channel: dict, visible_channel_ids: set[int]) -> bool:
     """True if `channel` (a queries.get_channel row, including
     visibility_enrolled) should be shown to this requester on direct
-    board/topic navigation. Non-enrolled (default) channels are always
-    True here -- the existing "no check at all" v1 gap for direct nav on
-    non-enrolled channels is intentionally unchanged. An enrolled channel
-    is gated purely by membership in the requester's visible_channel_ids;
-    is_public/indexed don't factor in here, since enrollment supersedes
-    them for this check.
+    board/topic navigation.
+
+    DELIBERATELY LAXER than db/queries._visibility_clause, which is what the
+    listings, search, post-history and the attachment proxy apply. That clause
+    requires `indexed AND (is_public OR (enrolled AND visible))`; this returns
+    True unconditionally for any non-enrolled channel, so a channel that is
+    un-indexed or non-public but not enrolled is hidden from every listing yet
+    still renders on direct navigation to its id. That is the pre-Phase-2 v1
+    behaviour, kept unchanged on purpose: enrollment is the opt-in that turns
+    on real per-user filtering, and tightening this would change what existing
+    installs expose without a mod asking for it (DESIGN.md's upgrade contract,
+    rule 4).
+
+    The cost of that choice is that "who may see this channel" has two
+    implementations. If they're ever unified, the strict one is the one to keep,
+    and it needs to be a deliberate, release-noted change rather than a
+    refactor. Anything that serves real message *content* should use the strict
+    rule regardless -- see queries.get_attachment_by_id, which does.
     """
     if not channel["visibility_enrolled"]:
         return True

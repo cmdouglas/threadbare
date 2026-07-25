@@ -90,6 +90,9 @@ class ResolvedRefs:
     users: dict[int, str]
     channels: dict[int, str]
     roles: dict[int, str] = field(default_factory=dict)
+    """roles defaults to empty so a caller with no role mentions on the page
+    can omit it; build_resolved_refs always populates it (see resolve.py).
+    """
 
 
 def _normalize_animated_emoji(content: str) -> str:
@@ -169,9 +172,8 @@ def _render_node(node: Node, refs: ResolvedRefs, animated_emoji_ids: frozenset[i
             name = refs.users.get(node.discord_id, "unknown user")
             return f'<span class="mention mention-user">@{html.escape(name)}</span>'
         case NodeType.ROLE:
-            # No `roles` table exists to resolve against (ROADMAP.md §3) --
-            # always rendered as an inert placeholder.
-            return '<span class="mention mention-role">@unknown role</span>'
+            name = refs.roles.get(node.discord_id, "unknown role")
+            return f'<span class="mention mention-role">@{html.escape(name)}</span>'
         case NodeType.CHANNEL:
             name = refs.channels.get(node.discord_id, "unknown-channel")
             return (

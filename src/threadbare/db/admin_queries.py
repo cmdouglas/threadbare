@@ -1,10 +1,16 @@
 """Read/write queries for the mod admin page -- deliberately separate from
-db/queries.py, which is entirely read-only and safe for any logged-in
-member. This module both writes (`set_channel_indexed`) and reads tables
-that are otherwise sync-worker-internal (`sync_state`, `worker_heartbeat`),
-so keeping it apart makes the mod-only privilege boundary auditable at the
-module level: every function here is reachable only through routes gated by
-web/authz.py's mod_required.
+db/queries.py, which holds only what is safe for any logged-in member
+(member-scoped reads, plus each member writing their own read marker). This
+module makes privileged writes (`set_channel_indexed`,
+`set_channel_visibility_enrolled`) and reads tables that are otherwise
+sync-worker-internal (`sync_state`, `worker_heartbeat`), so keeping it apart
+makes the mod-only privilege boundary auditable at the module level: every
+function here is reachable only through routes gated by web/authz.py's
+mod_required.
+
+("entirely read-only" was the original description of db/queries.py; that
+stopped being literally true when per-user read markers shipped -- the boundary
+this split actually draws is member-safe vs. mod-only, not read vs. write.)
 """
 
 from datetime import UTC, datetime, timedelta
@@ -12,6 +18,7 @@ from datetime import UTC, datetime, timedelta
 import psycopg
 
 from threadbare.channel_types import NON_CONTENT_TYPES
+from threadbare.sync_worker import repository
 
 # The sync worker heartbeats every 60s (sync_worker/heartbeat.py); this
 # tolerates a few missed beats (transient slowness/GC pauses) before
@@ -84,15 +91,15 @@ async def get_worker_heartbeat(conn: psycopg.AsyncConnection) -> dict | None:
 
 
 async def get_auto_index_new_channels(conn: psycopg.AsyncConnection) -> bool:
-    """Mirrors sync_worker/repository.py's own copy of this read (same
-    split-by-module convention as get_channel_indexed vs.
-    sync_worker.repository.get_channel_is_public) -- falls back to True
-    when no site_settings row exists yet.
+    """Delegates to sync_worker/repository.py rather than repeating its SQL.
+
+    This module's usual convention is to keep its own reads, so the mod-only
+    privilege boundary stays auditable here -- but that argument doesn't apply
+    to a plain site-wide setting the sync worker already reads identically,
+    fallback included. Two copies of the `or True` default (see migration 0009)
+    meant two places to change it.
     """
-    async with conn.cursor() as cur:
-        await cur.execute("SELECT auto_index_new_channels FROM site_settings WHERE id = true")
-        row = await cur.fetchone()
-    return row["auto_index_new_channels"] if row else True
+    return await repository.get_auto_index_new_channels(conn)
 
 
 async def set_auto_index_new_channels(conn: psycopg.AsyncConnection, value: bool) -> None:

@@ -645,6 +645,39 @@ def test_board_continuous_page_shows_jump_to_unread_link_when_more_pages_remain_
     assert b'class="jump-to-unread"' in resp.data
 
 
+def test_board_continuous_page_hides_jump_to_unread_on_a_reaction_filtered_first_visit(
+    client, web_conn
+):
+    """A reaction filter deliberately skips mark_read, so a first visit leaves
+    no marker at all -- and the listing pages' rule (which requires a marker,
+    because a marker-less jump just re-lands on page 1) has to hold here too.
+    Otherwise the link renders pointing at the page you're already on.
+    """
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10))
+    run(_seed_user(web_conn))
+    for i in range(30):
+        run(
+            _seed_message(
+                web_conn,
+                message_id=i + 1,
+                channel_id=10,
+                content=f"message {i}",
+                posted_at=T1 + timedelta(days=i),
+            )
+        )
+    run(
+        web_conn.execute(
+            "INSERT INTO reactions (message_id, emoji, count) VALUES (%s, %s, %s)", (2, "🔥", 1)
+        )
+    )
+
+    resp = client.get("/board/10/continuous/page/1?reaction=%F0%9F%94%A5")
+
+    assert resp.status_code == 200
+    assert b'class="jump-to-unread"' not in resp.data
+
+
 def test_board_continuous_page_hides_jump_to_unread_link_once_caught_up_via_a_later_page(
     client, web_conn
 ):

@@ -12,9 +12,10 @@ from flask import (
     url_for,
 )
 
+from threadbare import pagination
 from threadbare.channel_types import NON_CONTENT_TYPES
 from threadbare.db import queries
-from threadbare.pagination import DEFAULT_PAGE_SIZE, page_number_for_offset
+from threadbare.pagination import page_number_for_offset
 from threadbare.pseudotopics import week_bounds
 from threadbare.rendering.render_service import render_message_for_display
 from threadbare.web import authz
@@ -35,8 +36,7 @@ async def _get_board_or_404(conn, channel_id: int) -> dict:
 
 @bp.route("/board/<int:channel_id>")
 async def board_landing(channel_id: int):
-    """Smart-dispatch entrypoint, matching the index-redirect idiom already
-    used by board_continuous_index: a freeform (text/news) channel defaults
+    """Smart-dispatch entrypoint for a board: a freeform (text/news) channel defaults
     to continuous browsing, a topics_only (forum/media) channel has nothing
     else to default to, so it goes straight to the topic list.
     """
@@ -57,11 +57,11 @@ async def board_topics(channel_id: int):
     async with pool.connection() as conn:
         channel = await _get_board_or_404(conn, channel_id)
         mode = board_view_mode(channel)
-        breadcrumbs = await board_breadcrumbs(conn, channel, script_root=request.script_root)
+        breadcrumbs = await board_breadcrumbs(conn, channel)
 
         total_topics = await queries.count_topics_for_board(conn, channel_id)
         threads = await queries.get_threads_for_board(
-            conn, channel_id, page=page, page_size=DEFAULT_PAGE_SIZE
+            conn, channel_id, page=page, page_size=g.posts_per_page
         )
         aggregates = await queries.get_thread_post_aggregates(conn, [t["id"] for t in threads])
         author_ids = {a["last_author_id"] for a in aggregates.values() if a["last_author_id"]}
@@ -81,16 +81,37 @@ async def board_topics(channel_id: int):
             )
             for thread in threads
         }
+        # Computed here rather than in Jinja: board_index.py already does the
+        # identical math in Python for the sibling listing page, and having one
+        # of the pair open-code it in the template meant the same expression
+        # existed in two languages.
+        thread_total_pages = {
+            thread["id"]: pagination.total_pages(
+                aggregates.get(thread["id"], {}).get("post_count", 0),
+                page_size=g.posts_per_page,
+            )
+            for thread in threads
+        }
         unread_threads = {thread_id: count > 0 for thread_id, count in thread_unread_counts.items()}
-        # Same "partially read, not never-read or fully-read" reasoning as
-        # board_index -- see that view's board_jump_to_unread_action.
+        # One count_unread query per thread on the page, so up to
+        # g.posts_per_page of them (100 at the largest setting). Stated
+        # explicitly because board_index.py's version of this loop carries a
+        # "a handful to a few dozen channels" justification that does NOT
+        # transfer here -- threads are per-page and unbounded in a way channels
+        # aren't. Acceptable at v1 scale (each is an indexed count over one
+        # container), and the shape to fix first if a topic list ever feels slow.
+        #
+        # The jump-link filter below is the separate "partially read, not
+        # never-read or fully-read" rule -- see board_index's
+        # board_jump_to_unread_action for that reasoning, and
+        # queries.has_unread for the content-page equivalent.
         thread_jump_to_unread_action = {
             thread["id"]: url_for("topic.topic_jump_to_unread", thread_id=thread["id"])
             for thread in threads
             if thread["id"] in markers and unread_threads.get(thread["id"])
         }
 
-    total_pages = page_number_for_offset(total_topics - 1) if total_topics > 0 else 1
+    total_pages = pagination.total_pages(total_topics, page_size=g.posts_per_page)
 
     def page_url(n: int) -> str:
         return url_for("board.board_topics", channel_id=channel_id, page=n)
@@ -105,6 +126,7 @@ async def board_topics(channel_id: int):
         authors=authors,
         unread_threads=unread_threads,
         thread_unread_counts=thread_unread_counts,
+        thread_total_pages=thread_total_pages,
         thread_jump_to_unread_action=thread_jump_to_unread_action,
         visited_threads=set(markers),
         page=page,
@@ -128,7 +150,7 @@ async def board_continuous_page(channel_id: int, page: int):
     pool = current_app.config["POOL"]
     async with pool.connection() as conn:
         channel = await _get_board_or_404(conn, channel_id)
-        breadcrumbs = await board_breadcrumbs(conn, channel, script_root=request.script_root)
+        breadcrumbs = await board_breadcrumbs(conn, channel)
         total = await queries.count_messages_before(conn, channel_id=channel_id, reaction=reaction)
         rows = await queries.get_messages_page(
             conn,
@@ -173,7 +195,7 @@ async def board_continuous_page(channel_id: int, page: int):
             conn, channel_id=channel_id
         )
 
-    total_pages = page_number_for_offset(total - 1, page_size=g.posts_per_page) if total > 0 else 1
+    total_pages = pagination.total_pages(total, page_size=g.posts_per_page)
 
     def page_url(n: int) -> str:
         return url_for(
@@ -211,6 +233,7 @@ async def board_continuous_jump(channel_id: int):
 
     pool = current_app.config["POOL"]
     async with pool.connection() as conn:
+        await _get_board_or_404(conn, channel_id)
         preceding = await queries.count_messages_before(
             conn, channel_id=channel_id, before=target_date
         )
@@ -257,7 +280,7 @@ async def board_continuous_jump_to_unread(channel_id: int):
                 before=(marker["last_read_posted_at"], marker["last_read_message_id"]),
             )
             page = page_number_for_offset(preceding + 1, page_size=g.posts_per_page)
-    total_pages = page_number_for_offset(total - 1, page_size=g.posts_per_page) if total > 0 else 1
+    total_pages = pagination.total_pages(total, page_size=g.posts_per_page)
     page = min(page, total_pages)
     return redirect(url_for("board.board_continuous_page", channel_id=channel_id, page=page))
 
@@ -267,7 +290,7 @@ async def board_weeks_index(channel_id: int):
     pool = current_app.config["POOL"]
     async with pool.connection() as conn:
         channel = await _get_board_or_404(conn, channel_id)
-        breadcrumbs = await board_breadcrumbs(conn, channel, script_root=request.script_root)
+        breadcrumbs = await board_breadcrumbs(conn, channel)
         weeks = await queries.get_weeks_for_board(conn, channel_id)
 
     return render_template(
@@ -282,7 +305,7 @@ async def board_week_page(channel_id: int, week_id: str, page: int):
     pool = current_app.config["POOL"]
     async with pool.connection() as conn:
         channel = await _get_board_or_404(conn, channel_id)
-        breadcrumbs = await board_breadcrumbs(conn, channel, script_root=request.script_root)
+        breadcrumbs = await board_breadcrumbs(conn, channel)
         total = await queries.count_messages_before(
             conn, channel_id=channel_id, since=since, until=until, reaction=reaction
         )
@@ -330,7 +353,7 @@ async def board_week_page(channel_id: int, week_id: str, page: int):
             conn, channel_id=channel_id, since=since, until=until
         )
 
-    total_pages = page_number_for_offset(total - 1, page_size=g.posts_per_page) if total > 0 else 1
+    total_pages = pagination.total_pages(total, page_size=g.posts_per_page)
 
     def page_url(n: int) -> str:
         return url_for(

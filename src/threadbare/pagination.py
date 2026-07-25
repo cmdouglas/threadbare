@@ -10,6 +10,20 @@ def page_number_for_offset(preceding: int, page_size: int = DEFAULT_PAGE_SIZE) -
     return preceding // page_size + 1
 
 
+def total_pages(total: int, page_size: int = DEFAULT_PAGE_SIZE) -> int:
+    """How many pages `total` items span, with an empty container reporting 1
+    page rather than 0 (there's still a page to render, it's just empty).
+
+    Exists because every view was open-coding
+    `page_number_for_offset(total - 1, ...) if total > 0 else 1` -- the
+    off-by-one and the empty-container special case are easy to get subtly
+    wrong, and were repeated at eight call sites.
+    """
+    if total <= 0:
+        return 1
+    return page_number_for_offset(total - 1, page_size=page_size)
+
+
 def page_window(
     current: int, total_pages: int, *, edge: int = 3, spread: int = 2
 ) -> list[int | None]:

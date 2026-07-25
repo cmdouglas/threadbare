@@ -1,8 +1,14 @@
 """Reads/writes for the first-run setup wizard -- separate from
-db/admin_queries.py (which is itself already separate from the read-only,
-member-safe db/queries.py for the same reason): wizard routes run with no
-session/auth at all, an even wider trust boundary than mod-only, so keeping
-them in their own module makes that boundary auditable at a glance.
+db/admin_queries.py (which is itself already separate from the member-safe
+db/queries.py for the same reason): wizard routes run with no session/auth at
+all, an even wider trust boundary than mod-only, so keeping them in their own
+module makes that boundary auditable at a glance.
+
+Note the import direction below: this is a db/ module reaching into
+sync_worker/repository, the opposite of the layering everywhere else. It's
+deliberate -- the wizard seeds guild/channel rows and those upserts already
+exist there, correct and tested, so duplicating them here to satisfy a layering
+rule would be the worse trade. Called out rather than left to be noticed.
 """
 
 import psycopg

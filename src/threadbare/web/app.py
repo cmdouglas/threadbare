@@ -11,6 +11,7 @@ from threadbare.db import queries
 from threadbare.rendering import avatars, emoji, relative_time, user_display
 from threadbare.web import authz, board_tree, preferences, theme_storage, themes
 from threadbare.web.views.admin import bp as admin_bp
+from threadbare.web.views.admin_themes import bp as admin_themes_bp
 from threadbare.web.views.attachments import bp as attachments_bp
 from threadbare.web.views.auth import bp as auth_bp
 from threadbare.web.views.board import bp as board_bp
@@ -88,8 +89,25 @@ def create_app(settings: Settings, pool) -> Flask:
     app.jinja_env.globals["board_tree"] = board_tree
     app.jinja_env.globals["guild_id"] = settings.discord_guild_id
 
+    def _serves_a_static_asset() -> bool:
+        """True for the two endpoints that send a file off disk and read nothing
+        from `g` (see web/views/themes.py's custom_asset).
+
+        The DB-touching hooks below skip these. web/db.py opens a brand-new
+        connection per .connection() call -- no pool survives Flask's
+        async_to_sync bridge -- so the three of them cost three connections and
+        ~7 queries. Paying that per *asset* is the part that actually bites: a
+        custom theme is deliberately a "maximalist" media bundle (Phase 3), so
+        one page paint can pull twenty images, fonts and audio files, and each
+        one was running the full Phase-2 per-user visibility computation to
+        serve a PNG.
+        """
+        return request.endpoint in ("static", "themes.custom_asset")
+
     @app.before_request
     async def resolve_current_theme():
+        if _serves_a_static_asset():
+            return
         # Custom themes are merged in from the DB, filtered to those whose
         # bundle actually exists on the themes volume -- so a lost/rebuilt
         # volume (the DB dump doesn't capture it) degrades to the built-in
@@ -131,6 +149,8 @@ def create_app(settings: Settings, pool) -> Flask:
 
     @app.before_request
     async def resolve_site_title():
+        if _serves_a_static_asset():
+            return
         # Queried fresh per request rather than cached, so a guild rename is
         # reflected immediately -- one extra trivial single-row-PK lookup on
         # the request's own connection, consistent with this app's existing
@@ -156,7 +176,7 @@ def create_app(settings: Settings, pool) -> Flask:
         # every before_request hook regardless of login state. So this
         # hook needs its own guard despite running last, or an anonymous
         # visit to /login would KeyError on session["user_id"].
-        if not authz.is_logged_in():
+        if _serves_a_static_asset() or not authz.is_logged_in():
             return None
         async with pool.connection() as conn:
             g.visible_channel_ids = await authz.resolve_visible_channel_ids(
@@ -184,8 +204,11 @@ def create_app(settings: Settings, pool) -> Flask:
     def persist_theme_choice(response):
         requested = request.args.get("theme")
         # Accept any currently-valid slug (built-in or a registered custom
-        # theme), so a custom ?theme= persists too. getattr guards the case
-        # where an earlier before_request hook errored before g was populated.
+        # theme), so a custom ?theme= persists too. The getattr default is
+        # load-bearing, not defensive noise: if resolve_current_theme raises
+        # (a DB hiccup, say), Flask still runs after_request over the error
+        # handler's response, and g never got populated -- without it a 500
+        # page would itself die with an AttributeError.
         if requested in getattr(g, "available_theme_slugs", ()):
             response.set_cookie(
                 themes.THEME_COOKIE_NAME,
@@ -224,6 +247,7 @@ def create_app(settings: Settings, pool) -> Flask:
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(admin_bp)
+    app.register_blueprint(admin_themes_bp)
     app.register_blueprint(board_index_bp)
     app.register_blueprint(preferences_bp)
     app.register_blueprint(board_bp)

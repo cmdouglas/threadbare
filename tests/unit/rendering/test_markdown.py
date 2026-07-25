@@ -90,12 +90,31 @@ def test_render_message_content_unresolved_user_mention_falls_back():
     assert html == 'hi <span class="mention mention-user">@unknown user</span>'
 
 
-def test_render_message_content_role_mention_always_unresolved():
+def test_render_message_content_resolves_a_role_mention_to_its_name():
+    """A `roles` table arrived with Phase 2's permission mirroring, so role
+    mentions resolve like user and channel mentions instead of always
+    rendering the inert placeholder this test used to pin in place.
+    """
     refs = ResolvedRefs(users={}, channels={}, roles={5: "moderators"})
 
     html = render_message_content("hi <@&5>", refs=refs)
 
+    assert html == 'hi <span class="mention mention-role">@moderators</span>'
+
+
+def test_render_message_content_unresolved_role_mention_falls_back():
+    html = render_message_content("hi <@&999>", refs=EMPTY_REFS)
+
     assert html == 'hi <span class="mention mention-role">@unknown role</span>'
+
+
+def test_render_message_content_escapes_a_role_name():
+    refs = ResolvedRefs(users={}, channels={}, roles={5: "<script>"})
+
+    html = render_message_content("hi <@&5>", refs=refs)
+
+    assert "<script>" not in html
+    assert "&lt;script&gt;" in html
 
 
 def test_render_message_content_resolves_known_channel_mention():

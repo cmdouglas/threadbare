@@ -1453,8 +1453,14 @@ async def test_get_read_markers_returns_empty_for_empty_input(db_conn):
     assert await queries.get_read_markers(db_conn, user_id=1, channel_ids=[], thread_ids=[]) == {}
 
 
-async def test_has_unread_is_true_with_no_marker_and_a_nonempty_container(db_conn):
-    assert await queries.has_unread(db_conn, user_id=1, channel_id=10, total=5) is True
+async def test_has_unread_is_false_with_no_marker_even_when_the_container_is_nonempty(db_conn):
+    """has_unread answers "should we offer a jump-to-first-unread link", not
+    "is anything unread". With no marker the first unread post is the first
+    post, so the link would be a no-op -- matching the rule the listing pages
+    already applied. count_unread still reports the true unread count here.
+    """
+    assert await queries.has_unread(db_conn, user_id=1, channel_id=10, total=5) is False
+    assert await queries.count_unread(db_conn, marker=None, total=5, channel_id=10) == 5
 
 
 async def test_has_unread_is_false_with_no_marker_and_an_empty_container(db_conn):

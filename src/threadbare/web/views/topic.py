@@ -12,6 +12,7 @@ from flask import (
     url_for,
 )
 
+from threadbare import pagination
 from threadbare.db import queries
 from threadbare.pagination import page_number_for_offset
 from threadbare.rendering.render_service import render_message_for_display
@@ -97,7 +98,7 @@ async def topic_page(thread_id: int, page: int):
             conn, thread_id=thread_id
         )
 
-    total_pages = page_number_for_offset(total - 1, page_size=g.posts_per_page) if total > 0 else 1
+    total_pages = pagination.total_pages(total, page_size=g.posts_per_page)
 
     def page_url(n: int) -> str:
         return url_for("topic.topic_page", thread_id=thread_id, page=n, reaction=reaction)
@@ -163,6 +164,11 @@ async def topic_tree_view(thread_id: int):
 
         tree = [await render_node(node) for node in build_reply_tree(rows)]
 
+        # Unconditional, unlike the flat view's `if rows and reaction is None`:
+        # the tree view has no reaction filter (it shows the whole thread by
+        # construction), so there's no filtered-page case where rows[-1] would
+        # not be the thread's real last message. If a filter is ever added here,
+        # this needs the same guard.
         if rows:
             last = rows[-1]
             await queries.mark_read(
@@ -226,6 +232,6 @@ async def topic_jump_to_unread(thread_id: int):
                 before=(marker["last_read_posted_at"], marker["last_read_message_id"]),
             )
             page = page_number_for_offset(preceding + 1, page_size=g.posts_per_page)
-    total_pages = page_number_for_offset(total - 1, page_size=g.posts_per_page) if total > 0 else 1
+    total_pages = pagination.total_pages(total, page_size=g.posts_per_page)
     page = min(page, total_pages)
     return redirect(url_for("topic.topic_page", thread_id=thread_id, page=page))

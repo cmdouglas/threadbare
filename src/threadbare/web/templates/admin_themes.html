@@ -23,7 +23,7 @@
     an optional <code>assets/</code> folder of media (images, fonts, audio, video)
     referenced by relative path. Download a built-in theme below as a starting template.
   </p>
-  <form method="post" action="{{ url_for('admin.register_theme') }}" enctype="multipart/form-data">
+  <form method="post" action="{{ url_for('admin_themes.register_theme') }}" enctype="multipart/form-data">
     <label>Theme name <input type="text" name="display_name" placeholder="My Cool Theme"></label>
     <label>Bundle <input type="file" name="bundle" accept=".zip"></label>
     <button type="submit">Register</button>
@@ -40,10 +40,10 @@
       <td class="admin-theme-name">{{ theme.display_name }}</td>
       <td class="admin-theme-slug">{{ theme.slug }}</td>
       <td>
-        <a href="{{ url_for('admin.download_theme', slug=theme.slug) }}">Download</a>
+        <a href="{{ url_for('admin_themes.download_theme', slug=theme.slug) }}">Download</a>
       </td>
       <td>
-        <form method="post" action="{{ url_for('admin.delete_theme', slug=theme.slug) }}">
+        <form method="post" action="{{ url_for('admin_themes.delete_theme', slug=theme.slug) }}">
           <button type="submit">Delete</button>
         </form>
       </td>
@@ -59,7 +59,7 @@
   <h2>Built-in themes</h2>
   <ul class="admin-theme-builtin-list">
     {% for slug in builtin_themes %}
-    <li>{{ slug }} — <a href="{{ url_for('admin.download_theme', slug=slug) }}">Download .css</a></li>
+    <li>{{ slug }} — <a href="{{ url_for('admin_themes.download_theme', slug=slug) }}">Download .css</a></li>
     {% endfor %}
   </ul>
 </section>

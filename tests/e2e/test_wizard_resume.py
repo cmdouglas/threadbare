@@ -26,6 +26,9 @@ def _stub_discord(monkeypatch):
     async def fake_get_bot_guilds(token, **kwargs):
         return [{"id": GUILD_ID, "name": "Test Guild"}]
 
+    async def fake_get_guild(token, guild_id, **kwargs):
+        return {"id": str(guild_id), "name": "E2E Test Guild", "icon": None}
+
     async def fake_get_guild_channels(token, guild_id, **kwargs):
         return [
             {
@@ -50,6 +53,7 @@ def _stub_discord(monkeypatch):
 
     monkeypatch.setattr(wizard_view, "get_bot_user", fake_get_bot_user)
     monkeypatch.setattr(wizard_view, "get_bot_guilds", fake_get_bot_guilds)
+    monkeypatch.setattr(wizard_view, "get_guild", fake_get_guild)
     monkeypatch.setattr(wizard_view, "get_guild_channels", fake_get_guild_channels)
     monkeypatch.setattr(wizard_view, "get_guild_roles", fake_get_guild_roles)
     monkeypatch.setattr(wizard_view, "get_guild_member", fake_get_guild_member)

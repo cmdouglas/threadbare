@@ -63,6 +63,47 @@ def parse_expiry_from_signed_url(url: str) -> datetime:
     return datetime.fromtimestamp(timestamp, tz=UTC)
 
 
+async def _request_json(
+    method: str,
+    path: str,
+    *,
+    error_cls: type[DiscordRestError],
+    bot_token: str | None = None,
+    access_token: str | None = None,
+    transport: httpx.BaseTransport | None = None,
+    **kwargs,
+):
+    """One HTTP call against Discord's REST API, returning parsed JSON.
+
+    Every wrapper below was the same fifteen lines -- open a client, catch
+    httpx.HTTPError into a typed error, parse JSON, catch ValueError into the
+    same typed error -- differing only in method, path, auth scheme and which
+    DiscordRestError subclass to raise. Those four things are the parameters.
+
+    Exactly one of bot_token/access_token: Discord uses `Bot <token>` for bot
+    credentials and `Bearer <token>` for a user's OAuth token, and several
+    endpoints here (notably /users/@me and /users/@me/guilds) are called both
+    ways, which is why the scheme has to be explicit rather than inferred.
+    """
+    assert (bot_token is None) != (access_token is None)
+    authorization = f"Bot {bot_token}" if bot_token is not None else f"Bearer {access_token}"
+    headers = {"Authorization": authorization, **kwargs.pop("headers", {})}
+
+    async with httpx.AsyncClient(transport=transport) as client:
+        try:
+            response = await client.request(
+                method, f"{DISCORD_API_BASE}{path}", headers=headers, **kwargs
+            )
+            response.raise_for_status()
+        except httpx.HTTPError as e:
+            raise error_cls(str(e)) from e
+
+        try:
+            return response.json()
+        except ValueError as e:
+            raise error_cls(f"unexpected response shape: {e}") from e
+
+
 async def refresh_attachment_urls(
     bot_token: str,
     urls_to_refresh: list[str],
@@ -95,22 +136,18 @@ async def refresh_attachment_urls(
     most likely real-world cause is the message/attachment having since
     vanished upstream, or (per the above) a token-scope mismatch.
     """
-    async with httpx.AsyncClient(transport=transport) as client:
-        try:
-            response = await client.post(
-                f"{DISCORD_API_BASE}/attachments/refresh-urls",
-                headers={"Authorization": f"Bot {bot_token}"},
-                json={"attachment_urls": urls_to_refresh},
-            )
-            response.raise_for_status()
-        except httpx.HTTPError as e:
-            raise AttachmentRefreshError(str(e)) from e
-
-        try:
-            data = response.json()
-            return {item["original"]: item["refreshed"] for item in data["refreshed_urls"]}
-        except (KeyError, TypeError, ValueError) as e:
-            raise AttachmentRefreshError(f"unexpected response shape: {e}") from e
+    data = await _request_json(
+        "POST",
+        "/attachments/refresh-urls",
+        error_cls=AttachmentRefreshError,
+        bot_token=bot_token,
+        transport=transport,
+        json={"attachment_urls": urls_to_refresh},
+    )
+    try:
+        return {item["original"]: item["refreshed"] for item in data["refreshed_urls"]}
+    except (KeyError, TypeError) as e:
+        raise AttachmentRefreshError(f"unexpected response shape: {e}") from e
 
 
 async def exchange_oauth_code(
@@ -125,6 +162,8 @@ async def exchange_oauth_code(
     token (POST /oauth2/token, grant_type=authorization_code). The client
     secret only ever leaves the web app process for this single call.
     """
+    # The only unauthenticated call here -- the credentials are the form body,
+    # not an Authorization header, so it doesn't go through _request_json.
     async with httpx.AsyncClient(transport=transport) as client:
         try:
             response = await client.post(
@@ -151,20 +190,13 @@ async def get_current_user(
     access_token: str, *, transport: httpx.BaseTransport | None = None
 ) -> dict:
     """GET /users/@me -- the logged-in Discord user's own profile."""
-    async with httpx.AsyncClient(transport=transport) as client:
-        try:
-            response = await client.get(
-                f"{DISCORD_API_BASE}/users/@me",
-                headers={"Authorization": f"Bearer {access_token}"},
-            )
-            response.raise_for_status()
-        except httpx.HTTPError as e:
-            raise OAuthExchangeError(str(e)) from e
-
-        try:
-            return response.json()
-        except ValueError as e:
-            raise OAuthExchangeError(f"unexpected response shape: {e}") from e
+    return await _request_json(
+        "GET",
+        "/users/@me",
+        error_cls=OAuthExchangeError,
+        access_token=access_token,
+        transport=transport,
+    )
 
 
 async def get_bot_user(bot_token: str, *, transport: httpx.BaseTransport | None = None) -> dict:
@@ -172,20 +204,13 @@ async def get_bot_user(bot_token: str, *, transport: httpx.BaseTransport | None 
     token variant) -- validates the bot token's shape/identity per
     DESIGN.md §8.2's "token pasted wrong" preflight gotcha.
     """
-    async with httpx.AsyncClient(transport=transport) as client:
-        try:
-            response = await client.get(
-                f"{DISCORD_API_BASE}/users/@me",
-                headers={"Authorization": f"Bot {bot_token}"},
-            )
-            response.raise_for_status()
-        except httpx.HTTPError as e:
-            raise BotIdentityError(str(e)) from e
-
-        try:
-            return response.json()
-        except ValueError as e:
-            raise BotIdentityError(f"unexpected response shape: {e}") from e
+    return await _request_json(
+        "GET",
+        "/users/@me",
+        error_cls=BotIdentityError,
+        bot_token=bot_token,
+        transport=transport,
+    )
 
 
 async def get_bot_guilds(
@@ -196,77 +221,54 @@ async def get_bot_guilds(
     never has to hand-type a numeric guild ID (which would require
     enabling Developer Mode first).
     """
-    async with httpx.AsyncClient(transport=transport) as client:
-        try:
-            response = await client.get(
-                f"{DISCORD_API_BASE}/users/@me/guilds",
-                headers={"Authorization": f"Bot {bot_token}"},
-            )
-            response.raise_for_status()
-        except httpx.HTTPError as e:
-            raise BotIdentityError(str(e)) from e
-
-        try:
-            return response.json()
-        except ValueError as e:
-            raise BotIdentityError(f"unexpected response shape: {e}") from e
+    return await _request_json(
+        "GET",
+        "/users/@me/guilds",
+        error_cls=BotIdentityError,
+        bot_token=bot_token,
+        transport=transport,
+    )
 
 
 async def get_guild(
     bot_token: str, guild_id: int, *, transport: httpx.BaseTransport | None = None
 ) -> dict:
-    async with httpx.AsyncClient(transport=transport) as client:
-        try:
-            response = await client.get(
-                f"{DISCORD_API_BASE}/guilds/{guild_id}",
-                headers={"Authorization": f"Bot {bot_token}"},
-            )
-            response.raise_for_status()
-        except httpx.HTTPError as e:
-            raise GuildFetchError(str(e)) from e
-
-        try:
-            return response.json()
-        except ValueError as e:
-            raise GuildFetchError(f"unexpected response shape: {e}") from e
+    """GET /guilds/{id} -- the guild's own name/icon. Used by the setup wizard's
+    /channels step to seed the real `guilds` row, so a fresh install's masthead
+    shows the server's actual name rather than a placeholder before the sync
+    worker's first discover_channels pass.
+    """
+    return await _request_json(
+        "GET",
+        f"/guilds/{guild_id}",
+        error_cls=GuildFetchError,
+        bot_token=bot_token,
+        transport=transport,
+    )
 
 
 async def get_guild_channels(
     bot_token: str, guild_id: int, *, transport: httpx.BaseTransport | None = None
 ) -> list[dict]:
-    async with httpx.AsyncClient(transport=transport) as client:
-        try:
-            response = await client.get(
-                f"{DISCORD_API_BASE}/guilds/{guild_id}/channels",
-                headers={"Authorization": f"Bot {bot_token}"},
-            )
-            response.raise_for_status()
-        except httpx.HTTPError as e:
-            raise GuildFetchError(str(e)) from e
-
-        try:
-            return response.json()
-        except ValueError as e:
-            raise GuildFetchError(f"unexpected response shape: {e}") from e
+    return await _request_json(
+        "GET",
+        f"/guilds/{guild_id}/channels",
+        error_cls=GuildFetchError,
+        bot_token=bot_token,
+        transport=transport,
+    )
 
 
 async def get_guild_roles(
     bot_token: str, guild_id: int, *, transport: httpx.BaseTransport | None = None
 ) -> list[dict]:
-    async with httpx.AsyncClient(transport=transport) as client:
-        try:
-            response = await client.get(
-                f"{DISCORD_API_BASE}/guilds/{guild_id}/roles",
-                headers={"Authorization": f"Bot {bot_token}"},
-            )
-            response.raise_for_status()
-        except httpx.HTTPError as e:
-            raise GuildFetchError(str(e)) from e
-
-        try:
-            return response.json()
-        except ValueError as e:
-            raise GuildFetchError(f"unexpected response shape: {e}") from e
+    return await _request_json(
+        "GET",
+        f"/guilds/{guild_id}/roles",
+        error_cls=GuildFetchError,
+        bot_token=bot_token,
+        transport=transport,
+    )
 
 
 async def get_guild_member(
@@ -276,20 +278,13 @@ async def get_guild_member(
     *,
     transport: httpx.BaseTransport | None = None,
 ) -> dict:
-    async with httpx.AsyncClient(transport=transport) as client:
-        try:
-            response = await client.get(
-                f"{DISCORD_API_BASE}/guilds/{guild_id}/members/{user_id}",
-                headers={"Authorization": f"Bot {bot_token}"},
-            )
-            response.raise_for_status()
-        except httpx.HTTPError as e:
-            raise GuildFetchError(str(e)) from e
-
-        try:
-            return response.json()
-        except ValueError as e:
-            raise GuildFetchError(f"unexpected response shape: {e}") from e
+    return await _request_json(
+        "GET",
+        f"/guilds/{guild_id}/members/{user_id}",
+        error_cls=GuildFetchError,
+        bot_token=bot_token,
+        transport=transport,
+    )
 
 
 async def get_recent_channel_message(
@@ -300,23 +295,15 @@ async def get_recent_channel_message(
     check, not a failure -- see wizard/preflight.py's
     message_content_intent_ok).
     """
-    async with httpx.AsyncClient(transport=transport) as client:
-        try:
-            response = await client.get(
-                f"{DISCORD_API_BASE}/channels/{channel_id}/messages",
-                headers={"Authorization": f"Bot {bot_token}"},
-                params={"limit": 1},
-            )
-            response.raise_for_status()
-        except httpx.HTTPError as e:
-            raise ChannelMessageFetchError(str(e)) from e
-
-        try:
-            messages = response.json()
-        except ValueError as e:
-            raise ChannelMessageFetchError(f"unexpected response shape: {e}") from e
-
-        return messages[0] if messages else None
+    messages = await _request_json(
+        "GET",
+        f"/channels/{channel_id}/messages",
+        error_cls=ChannelMessageFetchError,
+        bot_token=bot_token,
+        transport=transport,
+        params={"limit": 1},
+    )
+    return messages[0] if messages else None
 
 
 async def get_current_user_guilds(
@@ -327,17 +314,10 @@ async def get_current_user_guilds(
     (base @everyone permissions + their roles) -- no separate per-role
     lookup is needed to compute mod status from this alone.
     """
-    async with httpx.AsyncClient(transport=transport) as client:
-        try:
-            response = await client.get(
-                f"{DISCORD_API_BASE}/users/@me/guilds",
-                headers={"Authorization": f"Bearer {access_token}"},
-            )
-            response.raise_for_status()
-        except httpx.HTTPError as e:
-            raise OAuthExchangeError(str(e)) from e
-
-        try:
-            return response.json()
-        except ValueError as e:
-            raise OAuthExchangeError(f"unexpected response shape: {e}") from e
+    return await _request_json(
+        "GET",
+        "/users/@me/guilds",
+        error_cls=OAuthExchangeError,
+        access_token=access_token,
+        transport=transport,
+    )

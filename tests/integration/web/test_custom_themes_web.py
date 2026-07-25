@@ -121,3 +121,42 @@ def test_a_deleted_theme_cookie_falls_back_to_default(client, web_conn):
     resp = client.get("/")
 
     assert b"theme-subsilver.css" in resp.data
+
+
+def test_serving_a_theme_asset_runs_no_database_hooks(client, web_conn, monkeypatch, tmp_path):
+    """A custom theme is deliberately a maximalist media bundle, so one page
+    paint can pull many assets. Each used to run all three DB-touching
+    before_request hooks -- including the full Phase-2 per-user visibility
+    computation -- to send a PNG off disk.
+    """
+    from threadbare.db import queries
+
+    calls: list[str] = []
+
+    original_get_guild = queries.get_guild
+    original_get_custom_themes = queries.get_custom_themes
+
+    async def counting_get_guild(conn, guild_id):
+        calls.append("get_guild")
+        return await original_get_guild(conn, guild_id)
+
+    async def counting_get_custom_themes(conn):
+        calls.append("get_custom_themes")
+        return await original_get_custom_themes(conn)
+
+    monkeypatch.setattr(queries, "get_guild", counting_get_guild)
+    monkeypatch.setattr(queries, "get_custom_themes", counting_get_custom_themes)
+
+    # An ordinary page does run them...
+    client.get("/")
+    assert "get_guild" in calls
+    assert "get_custom_themes" in calls
+
+    calls.clear()
+
+    # ...an asset request does not, even for a slug that doesn't exist (the
+    # hooks are skipped before the 404).
+    resp = client.get("/themes/custom/whatever/assets/bg.png")
+
+    assert resp.status_code == 404
+    assert calls == []

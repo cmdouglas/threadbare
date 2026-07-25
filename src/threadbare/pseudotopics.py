@@ -12,9 +12,20 @@ year boundary (e.g. 2025-12-29 belongs to ISO week 1 of 2026).
 from datetime import UTC, date, datetime, timedelta
 
 
+def format_week_id(iso_year: int, iso_week: int) -> str:
+    """The canonical week-id string. Separate from week_id_for so callers that
+    already have an ISO year/week pair (db/queries.get_weeks_for_board gets
+    them straight out of Postgres's extract(isoyear/week)) format it through
+    the same code rather than re-deriving the f-string, which is how the two
+    representations previously drifted apart with only a prose comment linking
+    them.
+    """
+    return f"{iso_year:04d}-W{iso_week:02d}"
+
+
 def week_id_for(dt: datetime) -> str:
     iso_year, iso_week, _ = dt.astimezone(UTC).isocalendar()
-    return f"{iso_year:04d}-W{iso_week:02d}"
+    return format_week_id(iso_year, iso_week)
 
 
 def parse_week_id(week_id: str) -> tuple[int, int]:

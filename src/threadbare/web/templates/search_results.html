@@ -4,7 +4,14 @@
 <form class="search-page-form" method="get" action="{{ url_for('search.search') }}">
   <input type="search" name="q" value="{{ query }}" placeholder="Search…" aria-label="Search terms">
   <input type="text" name="author" value="{{ request.args.get('author', '') }}" placeholder="Author">
-  <input type="number" name="channel" value="{{ request.args.get('channel', '') }}" placeholder="Channel ID">
+  <label>Board
+    <select name="channel">
+      <option value="">All boards</option>
+      {% for c in channel_choices %}
+      <option value="{{ c.id }}"{% if c.id == channel_id %} selected{% endif %}>{{ c.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
   <label>After <input type="date" name="after" value="{{ request.args.get('after', '') }}"></label>
   <label>Before <input type="date" name="before" value="{{ request.args.get('before', '') }}"></label>
   <input type="text" name="reaction" value="{{ request.args.get('reaction', '') }}" placeholder="Reaction">

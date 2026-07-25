@@ -95,3 +95,17 @@ def test_logged_in_member_can_reach_board_index(client):
     resp = client.get("/")
 
     assert resp.status_code == 200
+
+
+def test_masthead_shows_the_logged_in_account_name(client, web_conn):
+    """session["display_name"] was written at login and read by nothing --
+    surfaced here rather than deleted, since a login-gated forum should say
+    which account it let in.
+    """
+    with client.session_transaction() as sess:
+        sess["display_name"] = "alice"
+
+    resp = client.get("/")
+
+    assert resp.status_code == 200
+    assert b'class="account-name">alice<' in resp.data

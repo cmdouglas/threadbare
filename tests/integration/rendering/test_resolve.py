@@ -28,6 +28,26 @@ async def test_build_resolved_refs_batches_user_and_channel_lookups(db_conn):
     assert refs.roles == {}
 
 
+async def test_build_resolved_refs_resolves_role_names(db_conn):
+    """role_ids were collected but never resolved until Phase 2's `roles` table
+    made it possible -- see markdown.py's ROLE render case.
+    """
+    await _seed_guild_and_channel(db_conn)
+    await db_conn.execute(
+        "INSERT INTO roles (id, guild_id, name, color, position, permissions) "
+        "VALUES (%s, %s, %s, 0, 0, 0), (%s, %s, %s, 0, 1, 0)",
+        (5, 1, "moderators", 6, 1, "members"),
+    )
+
+    ids = ReferencedIds(
+        user_ids=frozenset(), role_ids=frozenset({5, 6, 777}), channel_ids=frozenset()
+    )
+
+    refs = await build_resolved_refs(db_conn, ids)
+
+    assert refs.roles == {5: "moderators", 6: "members"}
+
+
 async def test_build_resolved_refs_handles_no_referenced_ids(db_conn):
     ids = ReferencedIds(user_ids=frozenset(), role_ids=frozenset(), channel_ids=frozenset())
 

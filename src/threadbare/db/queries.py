@@ -1,8 +1,13 @@
-"""Read-only queries for displaying mirrored content, as opposed to
-sync_worker/repository.py which is scoped to the sync worker's own writes.
-The forum web app (ROADMAP.md §4) will need many more read-only queries
-(board index, pagination, search) that don't belong under sync_worker/
-either — this module is where those grow from.
+"""Member-scoped queries for displaying mirrored content, as opposed to
+sync_worker/repository.py (scoped to the sync worker's own writes) and
+db/admin_queries.py (mod-only reads and writes).
+
+Almost entirely reads. The one exception is mark_read, which upserts the
+requesting member's own read_markers row -- a member recording their own
+reading progress, not a privileged write. Everything here must be safe to run
+for any logged-in member, which is the real boundary this module draws;
+"read-only" was the original wording and stopped being literally true when
+per-user read markers shipped (migration 0013).
 """
 
 from collections.abc import Iterable
@@ -12,6 +17,7 @@ import psycopg
 
 from threadbare.channel_types import CATEGORY, NON_CONTENT_TYPES, STAGE_VOICE, VOICE
 from threadbare.pagination import DEFAULT_PAGE_SIZE
+from threadbare.pseudotopics import format_week_id
 
 _MESSAGE_COLUMNS_SQL = """
     m.id, m.channel_id, m.thread_id, m.author_id, m.content,
@@ -288,6 +294,15 @@ async def get_thread_post_aggregates(
     """Structural twin of get_board_post_aggregates for a single board's
     topic list -- no UNION needed, thread messages are always thread_id-
     attached directly.
+
+    Uses the same LATERAL ... ORDER BY ... LIMIT 1 shape as its twin, and for
+    the same reason: a row_number() OVER (PARTITION BY thread_id ...) makes
+    Postgres sort every matching message before taking one row per thread. This
+    query kept the window-function shape for a while after the board version was
+    fixed, which is exactly the failure mode of maintaining two deliberately
+    parallel queries -- the docstring said "twin" while they had diverged. The
+    exposure was smaller here (one page of threads, not a whole board), but the
+    invisible divergence was the real problem.
     """
     thread_ids = list(thread_ids)
     if not thread_ids:
@@ -295,19 +310,24 @@ async def get_thread_post_aggregates(
     async with conn.cursor() as cur:
         await cur.execute(
             """
-            WITH ranked AS (
-                SELECT thread_id, id, posted_at, author_id,
-                    row_number() OVER (
-                        PARTITION BY thread_id ORDER BY posted_at DESC, id DESC
-                    ) AS rn,
-                    count(*) OVER (PARTITION BY thread_id) AS post_count
+            SELECT t.thread_id,
+                   coalesce(c.post_count, 0) AS post_count,
+                   top.id AS last_message_id,
+                   top.posted_at AS last_posted_at,
+                   top.author_id AS last_author_id
+            FROM unnest(%(thread_ids)s::bigint[]) AS t(thread_id)
+            LEFT JOIN (
+                SELECT thread_id, count(*) AS post_count
                 FROM messages
                 WHERE thread_id = ANY(%(thread_ids)s)
-            )
-            SELECT thread_id, post_count, id AS last_message_id,
-                   posted_at AS last_posted_at, author_id AS last_author_id
-            FROM ranked
-            WHERE rn = 1
+                GROUP BY thread_id
+            ) c ON c.thread_id = t.thread_id
+            LEFT JOIN LATERAL (
+                SELECT id, posted_at, author_id FROM messages
+                WHERE thread_id = t.thread_id
+                ORDER BY posted_at DESC, id DESC
+                LIMIT 1
+            ) top ON true
             """,
             {"thread_ids": thread_ids},
         )
@@ -499,7 +519,11 @@ _SEARCH_WHERE_SQL = f"""
     )
 """
 
-_SEARCH_FROM_SQL = """
+# The message -> author -> container(-> parent channel) join every query that
+# needs a message's owning channel shares: full-text search and the user
+# post-history queries alike. Named for the join it builds rather than for
+# search, which was only its first caller.
+_MESSAGE_WITH_CHANNEL_FROM_SQL = """
     FROM messages m
     JOIN users u ON u.id = m.author_id
     LEFT JOIN threads th ON th.id = m.thread_id
@@ -619,7 +643,7 @@ async def search_messages(
                        ts_headline('english', m.content, websearch_to_tsquery('english', %(q)s),
                                     'MaxFragments=1,MaxWords=35,MinWords=15') AS snippet,
                        ts_rank(m.tsv, websearch_to_tsquery('english', %(q)s)) AS rank
-                {_SEARCH_FROM_SQL}
+                {_MESSAGE_WITH_CHANNEL_FROM_SQL}
                 WHERE {_SEARCH_WHERE_SQL}
                 ORDER BY rank DESC, m.posted_at DESC
                 LIMIT %(limit)s OFFSET %(offset)s
@@ -729,7 +753,7 @@ async def count_search_results(
         await cur.execute(
             f"""
             SELECT count(*) AS n
-            {_SEARCH_FROM_SQL}
+            {_MESSAGE_WITH_CHANNEL_FROM_SQL}
             WHERE {_SEARCH_WHERE_SQL}
             """,
             params,
@@ -865,7 +889,7 @@ async def get_post_count_for_user(
         await cur.execute(
             f"""
             SELECT count(*) AS n
-            {_SEARCH_FROM_SQL}
+            {_MESSAGE_WITH_CHANNEL_FROM_SQL}
             WHERE m.author_id = %(user_id)s AND {_visibility_clause("c.")}
             """,
             {"user_id": user_id, "visible_channel_ids": list(visible_channel_ids)},
@@ -885,7 +909,7 @@ async def get_recent_posts_for_user(
         await cur.execute(
             f"""
             SELECT {_MESSAGE_COLUMNS_SQL}
-            {_SEARCH_FROM_SQL}
+            {_MESSAGE_WITH_CHANNEL_FROM_SQL}
             WHERE m.author_id = %(user_id)s AND {_visibility_clause("c.")}
             ORDER BY m.posted_at DESC, m.id DESC
             LIMIT %(limit)s
@@ -918,8 +942,9 @@ async def get_threads_for_board(
 
 async def get_weeks_for_board(conn: psycopg.AsyncConnection, channel_id: int) -> list[dict]:
     """Weekly pseudo-topic buckets for a freeform channel (ROADMAP.md §4),
-    newest first. ISO year/week (matches pseudotopics.week_id_for's UTC ISO
-    calendar convention exactly, so ids round-trip through week_bounds()).
+    newest first. Week ids are formatted by pseudotopics.format_week_id, the
+    same function week_id_for uses, so they round-trip through week_bounds()
+    by construction rather than by a matching-conventions comment.
     """
     async with conn.cursor() as cur:
         await cur.execute(
@@ -939,7 +964,7 @@ async def get_weeks_for_board(conn: psycopg.AsyncConnection, channel_id: int) ->
         rows = await cur.fetchall()
     return [
         {
-            "week_id": f"{row['iso_year']:04d}-W{row['iso_week']:02d}",
+            "week_id": format_week_id(row["iso_year"], row["iso_week"]),
             "post_count": row["post_count"],
             "last_posted_at": row["last_posted_at"],
         }
@@ -1148,9 +1173,9 @@ async def count_unread(
     find the first unread post, just subtracted from total instead of
     turned into a page number.
     """
+    assert (channel_id is None) != (thread_id is None)
     if marker is None:
         return total
-    assert (channel_id is None) != (thread_id is None)
     preceding = await count_messages_before(
         conn,
         channel_id=channel_id,
@@ -1168,15 +1193,27 @@ async def has_unread(
     thread_id: int | None = None,
     total: int,
 ) -> bool:
-    """Whether anything in this container is unread for user_id -- the
-    single-container, fetch-the-marker-myself sibling of count_unread for
-    a content page's own show/hide check, where there's no already-batched
+    """Whether to offer a "jump to first unread" affordance for this container
+    -- the single-container, fetch-the-marker-myself sibling of count_unread
+    for a content page's own show/hide check, where there's no already-batched
     marker to reuse.
+
+    Requires a marker to exist, not merely unread > 0. With no marker nothing
+    has been read, so the first unread post is the container's first post and
+    the jump would just re-land the reader where they already are -- a no-op
+    link is worse than no link. This is the same rule the listing pages apply
+    (`thread_id in markers and unread_threads.get(...)` in board.board_topics /
+    board_index), stated once here rather than duplicated as prose in two
+    places; the two used to disagree, which showed up as a live no-op link on
+    a reaction-filtered first visit (a reaction filter deliberately skips
+    mark_read, so no marker exists yet).
     """
     assert (channel_id is None) != (thread_id is None)
     marker = await get_read_marker(
         conn, user_id=user_id, channel_id=channel_id, thread_id=thread_id
     )
+    if marker is None:
+        return False
     unread = await count_unread(
         conn, marker=marker, total=total, channel_id=channel_id, thread_id=thread_id
     )
