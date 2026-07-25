@@ -249,6 +249,30 @@ def test_topic_list_shows_per_topic_pagination_control(page, live_server, seeded
     assert "topic message 25" in page.content()
 
 
+def test_topic_list_unread_dot_disappears_once_every_page_of_a_topic_is_read(
+    page, live_server, seeded
+):
+    page.goto(f"{live_server}/board/{CHANNEL_ID}/topics")
+    row = page.locator(".topic-row", has_text="e2e topic")
+    assert row.locator(".unread-dot").count() == 1
+
+    page.goto(f"{live_server}/topic/{THREAD_ID}/page/1")
+    page.goto(f"{live_server}/topic/{THREAD_ID}/page/2")
+    page.goto(f"{live_server}/board/{CHANNEL_ID}/topics")
+
+    row = page.locator(".topic-row", has_text="e2e topic")
+    assert row.locator(".unread-dot").count() == 0
+
+
+def test_jump_to_first_unread_link_lands_on_the_first_unread_page(page, live_server, seeded):
+    page.goto(f"{live_server}/topic/{THREAD_ID}/page/1")  # marks messages 0-24 as read
+
+    page.locator(".jump-to-unread").click()
+
+    assert page.url.endswith(f"/topic/{THREAD_ID}/page/2")
+    assert "topic message 25" in page.content()
+
+
 FORUM_CHANNEL_ID = 900600
 
 

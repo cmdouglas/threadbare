@@ -1,5 +1,6 @@
 from datetime import UTC, datetime, timedelta
 
+from threadbare.db import queries
 from threadbare.discord_permissions import READ_MESSAGE_HISTORY, VIEW_CHANNEL
 
 from .conftest import run
@@ -194,6 +195,39 @@ def test_board_topics_shows_topics_for_a_forum_channel(client, web_conn):
     assert b'class="jump-to-page" action="/board/10/topics"' in resp.data
 
 
+def test_board_topics_shows_unread_dot_for_a_topic_with_no_read_marker(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10, type=15, name="a forum"))
+    run(_seed_thread(web_conn, thread_id=3000, parent_channel_id=10, name="my topic"))
+    run(_seed_thread_message(web_conn, message_id=1, thread_id=3000, content="hello"))
+
+    resp = client.get("/board/10/topics")
+
+    assert b'class="unread-dot"' in resp.data
+
+
+def test_board_topics_hides_unread_dot_once_the_topic_is_marked_read(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10, type=15, name="a forum"))
+    run(_seed_thread(web_conn, thread_id=3000, parent_channel_id=10, name="my topic"))
+    run(_seed_thread_message(web_conn, message_id=1, thread_id=3000, content="hello"))
+    client.get("/topic/3000/page/1")
+
+    resp = client.get("/board/10/topics")
+
+    assert b'class="unread-dot"' not in resp.data
+
+
+def test_board_topics_shows_no_unread_dot_for_a_topic_with_no_posts(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10, type=15, name="a forum"))
+    run(_seed_thread(web_conn, thread_id=3000, parent_channel_id=10, name="my topic"))
+
+    resp = client.get("/board/10/topics")
+
+    assert b'class="unread-dot"' not in resp.data
+
+
 def test_board_topics_shows_column_headers(client, web_conn):
     run(_seed_guild(web_conn))
     run(_seed_board(web_conn, channel_id=10, type=15, name="a forum"))
@@ -363,6 +397,26 @@ def test_board_continuous_page_renders_messages(client, web_conn):
     assert b"hello there" in resp.data
 
 
+def test_board_continuous_page_marks_the_channel_read_up_to_the_last_message_shown(
+    client, web_conn
+):
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10))
+    run(_seed_user(web_conn))
+    run(_seed_message(web_conn, message_id=1, channel_id=10, content="hi", posted_at=T1))
+    run(
+        _seed_message(
+            web_conn, message_id=2, channel_id=10, content="hi again", posted_at=T1 + timedelta(1)
+        )
+    )
+
+    resp = client.get("/board/10/continuous/page/1")
+
+    assert resp.status_code == 200
+    marker = run(queries.get_read_marker(web_conn, user_id=1, channel_id=10))
+    assert marker == {"last_read_message_id": 2, "last_read_posted_at": T1 + timedelta(1)}
+
+
 def test_board_continuous_page_shows_bot_badge_for_a_bot_author(client, web_conn):
     run(_seed_guild(web_conn))
     run(_seed_board(web_conn, channel_id=10))
@@ -496,6 +550,70 @@ def test_board_continuous_jump_to_page_clamps_a_missing_or_zero_page_to_one(clie
     assert resp.headers["Location"] == "/board/10/continuous/page/1"
 
 
+def test_board_continuous_jump_to_unread_redirects_to_page_one_with_no_marker(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10))
+    run(_seed_user(web_conn))
+    run(_seed_message(web_conn, message_id=1, channel_id=10, posted_at=T1))
+
+    resp = client.get("/board/10/continuous/jump_to_unread")
+
+    assert resp.status_code == 302
+    assert resp.headers["Location"] == "/board/10/continuous/page/1"
+
+
+def test_board_continuous_jump_to_unread_lands_on_the_first_unread_message(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10))
+    run(_seed_user(web_conn))
+    for i in range(30):
+        run(
+            _seed_message(
+                web_conn,
+                message_id=i + 1,
+                channel_id=10,
+                content=f"message {i}",
+                posted_at=T1 + timedelta(days=i),
+            )
+        )
+    run(
+        queries.mark_read(
+            web_conn, user_id=1, channel_id=10, message_id=25, posted_at=T1 + timedelta(days=24)
+        )
+    )
+
+    resp = client.get("/board/10/continuous/jump_to_unread")
+
+    assert resp.status_code == 302
+    assert resp.headers["Location"] == "/board/10/continuous/page/2"
+
+
+def test_board_continuous_jump_to_unread_clamps_to_the_last_page_when_fully_read(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10))
+    run(_seed_user(web_conn))
+    for i in range(25):
+        run(
+            _seed_message(
+                web_conn,
+                message_id=i + 1,
+                channel_id=10,
+                content=f"message {i}",
+                posted_at=T1 + timedelta(days=i),
+            )
+        )
+    run(
+        queries.mark_read(
+            web_conn, user_id=1, channel_id=10, message_id=25, posted_at=T1 + timedelta(days=24)
+        )
+    )
+
+    resp = client.get("/board/10/continuous/jump_to_unread")
+
+    assert resp.status_code == 302
+    assert resp.headers["Location"] == "/board/10/continuous/page/1"
+
+
 def test_board_weeks_index_lists_weeks_with_counts(client, web_conn):
     run(_seed_guild(web_conn))
     run(_seed_board(web_conn, channel_id=10))
@@ -539,6 +657,24 @@ def test_board_week_page_shows_only_messages_in_that_week(client, web_conn):
     assert resp.status_code == 200
     assert b"in week 28" in resp.data
     assert b"in week 29" not in resp.data
+
+
+def test_board_week_page_marks_the_channel_read_up_to_the_last_message_shown(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10))
+    run(_seed_user(web_conn))
+    monday_week_28 = datetime(2026, 7, 6, tzinfo=UTC)
+    run(
+        _seed_message(
+            web_conn, message_id=1, channel_id=10, content="in week 28", posted_at=monday_week_28
+        )
+    )
+
+    resp = client.get("/board/10/week/2026-W28/page/1")
+
+    assert resp.status_code == 200
+    marker = run(queries.get_read_marker(web_conn, user_id=1, channel_id=10))
+    assert marker == {"last_read_message_id": 1, "last_read_posted_at": monday_week_28}
 
 
 def test_board_week_jump_to_page_redirects_to_the_requested_page(client, web_conn):

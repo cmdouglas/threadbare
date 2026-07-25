@@ -56,3 +56,10 @@ def test_user_role_badge_rule_exists(stylesheet):
     assert re.search(r"\.user-role-badge\s*\{", css) is not None, (
         f"{stylesheet} has no .user-role-badge rule"
     )
+
+
+@pytest.mark.parametrize("stylesheet", sorted(AVAILABLE_THEMES.values()))
+def test_unread_dot_rule_exists(stylesheet):
+    css = (STATIC_DIR / stylesheet).read_text()
+
+    assert re.search(r"\.unread-dot\s*\{", css) is not None, f"{stylesheet} has no .unread-dot rule"

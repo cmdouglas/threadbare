@@ -1,5 +1,6 @@
 from datetime import UTC, datetime, timedelta
 
+from threadbare.db import queries
 from threadbare.discord_permissions import READ_MESSAGE_HISTORY, VIEW_CHANNEL
 
 from .conftest import run
@@ -122,6 +123,24 @@ def test_topic_page_renders_messages_with_permalink_anchor(client, web_conn):
     assert b"my thread" in resp.data
     assert b"View on Discord" in resp.data
     assert b'class="jump-to-page" action="/topic/3000/jump_to_page"' in resp.data
+
+
+def test_topic_page_marks_the_thread_read_up_to_the_last_message_shown(client, web_conn):
+    run(_seed_guild_and_channel(web_conn))
+    run(_seed_thread(web_conn, thread_id=3000, parent_channel_id=10))
+    run(_seed_user(web_conn))
+    run(_seed_thread_message(web_conn, message_id=1, thread_id=3000, content="hi", posted_at=T1))
+    run(
+        _seed_thread_message(
+            web_conn, message_id=2, thread_id=3000, content="hi again", posted_at=T1 + timedelta(1)
+        )
+    )
+
+    resp = client.get("/topic/3000/page/1")
+
+    assert resp.status_code == 200
+    marker = run(queries.get_read_marker(web_conn, user_id=1, thread_id=3000))
+    assert marker == {"last_read_message_id": 2, "last_read_posted_at": T1 + timedelta(1)}
 
 
 def test_topic_page_shows_breadcrumb_to_home_and_channel(client, web_conn):
@@ -271,6 +290,50 @@ def test_topic_jump_to_page_clamps_a_missing_or_zero_page_to_one(client, web_con
 
     assert resp.status_code == 302
     assert resp.headers["Location"] == "/topic/3000/page/1"
+
+
+def test_topic_jump_to_unread_redirects_to_page_one_with_no_marker(client, web_conn):
+    run(_seed_guild_and_channel(web_conn))
+    run(_seed_thread(web_conn, thread_id=3000, parent_channel_id=10))
+    run(_seed_user(web_conn))
+    run(_seed_thread_message(web_conn, message_id=1, thread_id=3000, content="hi", posted_at=T1))
+
+    resp = client.get("/topic/3000/jump_to_unread")
+
+    assert resp.status_code == 302
+    assert resp.headers["Location"] == "/topic/3000/page/1"
+
+
+def test_topic_jump_to_unread_lands_on_the_first_unread_message(client, web_conn):
+    run(_seed_guild_and_channel(web_conn))
+    run(_seed_thread(web_conn, thread_id=3000, parent_channel_id=10))
+    run(_seed_user(web_conn))
+    for i in range(30):
+        run(
+            _seed_thread_message(
+                web_conn,
+                message_id=i + 1,
+                thread_id=3000,
+                content=f"message {i}",
+                posted_at=T1 + timedelta(days=i),
+            )
+        )
+    run(
+        queries.mark_read(
+            web_conn, user_id=1, thread_id=3000, message_id=25, posted_at=T1 + timedelta(days=24)
+        )
+    )
+
+    resp = client.get("/topic/3000/jump_to_unread")
+
+    assert resp.status_code == 302
+    assert resp.headers["Location"] == "/topic/3000/page/2"
+
+
+def test_topic_jump_to_unread_returns_404_for_unknown_thread(client, web_conn):
+    resp = client.get("/topic/999999/jump_to_unread")
+
+    assert resp.status_code == 404
 
     resp = client.get("/topic/3000/jump_to_page")
 

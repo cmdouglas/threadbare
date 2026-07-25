@@ -225,6 +225,16 @@ a:visited {
   color: var(--color-fg-muted);
 }
 
+.unread-dot {
+  display: inline-block;
+  width: 0.5em;
+  height: 0.5em;
+  border-radius: 50%;
+  background: var(--color-accent);
+  margin-right: 0.4em;
+  vertical-align: middle;
+}
+
 .bot-badge {
   display: inline-block;
   font-size: 0.7em;

@@ -1,6 +1,16 @@
 from datetime import UTC, datetime
 
-from flask import Blueprint, abort, current_app, g, redirect, render_template, request, url_for
+from flask import (
+    Blueprint,
+    abort,
+    current_app,
+    g,
+    redirect,
+    render_template,
+    request,
+    session,
+    url_for,
+)
 
 from threadbare.db import queries
 from threadbare.pagination import page_number_for_offset
@@ -42,6 +52,15 @@ async def topic_page(thread_id: int, page: int):
             )
             for row in rows
         ]
+        if rows:
+            last = rows[-1]
+            await queries.mark_read(
+                conn,
+                user_id=session["user_id"],
+                thread_id=thread_id,
+                message_id=last["id"],
+                posted_at=last["posted_at"],
+            )
 
     total_pages = page_number_for_offset(total - 1, page_size=g.posts_per_page) if total > 0 else 1
 
@@ -81,4 +100,33 @@ async def topic_jump(thread_id: int):
 @bp.route("/topic/<int:thread_id>/jump_to_page")
 async def topic_jump_to_page(thread_id: int):
     page = max(request.args.get("page", type=int) or 1, 1)
+    return redirect(url_for("topic.topic_page", thread_id=thread_id, page=page))
+
+
+@bp.route("/topic/<int:thread_id>/jump_to_unread")
+async def topic_jump_to_unread(thread_id: int):
+    """First-unread-post jump (DESIGN.md §7 Phase 3) -- thread-scoped twin
+    of board.board_continuous_jump_to_unread; see that docstring for the
+    (posted_at, id)-tuple reasoning shared by both.
+    """
+    pool = current_app.config["POOL"]
+    async with pool.connection() as conn:
+        thread = await queries.get_thread(conn, thread_id)
+        if thread is None:
+            abort(404)
+        total = await queries.count_messages_before(conn, thread_id=thread_id)
+        marker = await queries.get_read_marker(
+            conn, user_id=session["user_id"], thread_id=thread_id
+        )
+        if marker is None:
+            page = 1
+        else:
+            preceding = await queries.count_messages_before(
+                conn,
+                thread_id=thread_id,
+                before=(marker["last_read_posted_at"], marker["last_read_message_id"]),
+            )
+            page = page_number_for_offset(preceding + 1, page_size=g.posts_per_page)
+    total_pages = page_number_for_offset(total - 1, page_size=g.posts_per_page) if total > 0 else 1
+    page = min(page, total_pages)
     return redirect(url_for("topic.topic_page", thread_id=thread_id, page=page))

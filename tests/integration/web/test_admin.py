@@ -220,8 +220,8 @@ def test_admin_index_shows_app_version_and_latest_schema_migration(client, web_c
     assert threadbare.__version__ in body
     # The real test DB has every real migration applied (see
     # tests/integration/db/test_migrate.py's idempotency test) --
-    # 0012_channel_bot_can_read is the current latest by filename ordering.
-    assert "0012_channel_bot_can_read" in body
+    # 0013_read_markers is the current latest by filename ordering.
+    assert "0013_read_markers" in body
 
 
 def test_admin_index_shows_auto_index_setting_enabled_by_default(client, web_conn):

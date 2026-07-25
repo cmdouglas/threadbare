@@ -3,6 +3,7 @@
 {% block content %}
 {% include "_breadcrumbs.html" %}
 <h1 class="topic-title">{{ thread.name }}</h1>
+<a class="jump-to-unread" href="{{ url_for('topic.topic_jump_to_unread', thread_id=thread.id) }}">Jump to first unread</a>
 <form class="jump-to-date" action="{{ url_for('topic.topic_jump', thread_id=thread.id) }}" method="get">
   <label>Jump to date <input type="date" name="date"></label>
   <button type="submit">Go</button>

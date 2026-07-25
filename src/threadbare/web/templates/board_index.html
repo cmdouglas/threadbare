@@ -13,8 +13,9 @@
   {% for board in group.boards %}
   {% set agg = aggregates.get(board.id, {"post_count": 0, "last_message_id": None, "last_posted_at": None, "last_author_id": None}) %}
   {% set mode = board_tree.board_view_mode(board) %}
-  <tr class="board-row">
+  <tr class="board-row{% if unread_boards.get(board.id) %} board-row-unread{% endif %}">
     <td class="board-name">
+      {% if unread_boards.get(board.id) %}<span class="unread-dot" title="Unread posts" aria-label="Unread posts"></span>{% endif %}
       <a href="{{ request.script_root }}{{ urls.board_url(board.id) }}">
         {% if mode == "freeform" %}
         <span class="channel-icon channel-icon-text" aria-hidden="true">#</span>

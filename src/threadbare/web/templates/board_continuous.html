@@ -4,6 +4,7 @@
 {% include "_breadcrumbs.html" %}
 <h1 class="board-title">{{ heading }}</h1>
 {% include "_freeform_controls.html" %}
+<a class="jump-to-unread" href="{{ url_for('board.board_continuous_jump_to_unread', channel_id=channel.id) }}">Jump to first unread</a>
 <form class="jump-to-date" action="{{ url_for('board.board_continuous_jump', channel_id=channel.id) }}" method="get">
   <label>Jump to date <input type="date" name="date"></label>
   <button type="submit">Go</button>

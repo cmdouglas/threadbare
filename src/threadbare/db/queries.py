@@ -905,3 +905,115 @@ async def get_boards_and_categories(
             },
         )
         return await cur.fetchall()
+
+
+async def mark_read(
+    conn: psycopg.AsyncConnection,
+    *,
+    user_id: int,
+    channel_id: int | None = None,
+    thread_id: int | None = None,
+    message_id: int,
+    posted_at: datetime,
+) -> None:
+    """Advance user_id's read marker for this board/topic to
+    (posted_at, message_id) -- the same (posted_at, id) ordering key every
+    other query already sorts and compares on, rather than a bare timestamp
+    or a raw snowflake id alone. Forward-only: viewing an older page after
+    already reading further never rewinds progress, so the update only
+    takes effect when the new position actually sorts later than what's
+    stored (row-wise tuple comparison, not just posted_at, so two messages
+    landing in the same instant still resolve by id).
+    """
+    assert (channel_id is None) != (thread_id is None)
+    container_column = "channel_id" if channel_id is not None else "thread_id"
+    async with conn.cursor() as cur:
+        await cur.execute(
+            f"""
+            INSERT INTO read_markers
+                (user_id, {container_column}, last_read_message_id, last_read_posted_at)
+            VALUES (%(user_id)s, %(container_id)s, %(message_id)s, %(posted_at)s)
+            ON CONFLICT (user_id, {container_column}) WHERE {container_column} IS NOT NULL
+            DO UPDATE SET
+                last_read_message_id = EXCLUDED.last_read_message_id,
+                last_read_posted_at = EXCLUDED.last_read_posted_at,
+                updated_at = now()
+            WHERE (EXCLUDED.last_read_posted_at, EXCLUDED.last_read_message_id)
+                > (read_markers.last_read_posted_at, read_markers.last_read_message_id)
+            """,
+            {
+                "user_id": user_id,
+                "container_id": channel_id if channel_id is not None else thread_id,
+                "message_id": message_id,
+                "posted_at": posted_at,
+            },
+        )
+
+
+async def get_read_marker(
+    conn: psycopg.AsyncConnection,
+    *,
+    user_id: int,
+    channel_id: int | None = None,
+    thread_id: int | None = None,
+) -> dict | None:
+    assert (channel_id is None) != (thread_id is None)
+    condition = (
+        "channel_id = %(container_id)s"
+        if channel_id is not None
+        else "thread_id = %(container_id)s"
+    )
+    async with conn.cursor() as cur:
+        await cur.execute(
+            f"""
+            SELECT last_read_message_id, last_read_posted_at
+            FROM read_markers
+            WHERE user_id = %(user_id)s AND {condition}
+            """,
+            {
+                "user_id": user_id,
+                "container_id": channel_id if channel_id is not None else thread_id,
+            },
+        )
+        return await cur.fetchone()
+
+
+async def get_read_markers(
+    conn: psycopg.AsyncConnection,
+    *,
+    user_id: int,
+    channel_ids: Iterable[int],
+    thread_ids: Iterable[int],
+) -> dict[int, dict]:
+    """Batched sibling of get_read_marker for a listing page (board index's
+    boards, a board's topic list) that needs every visible container's
+    marker in one round trip rather than one query per row. Keyed by
+    channel_id or thread_id -- callers already know which container kind
+    each id is, same UNION ALL idiom search_messages already uses to
+    combine the channel/thread branches of one mutually-exclusive column.
+    """
+    channel_ids = list(channel_ids)
+    thread_ids = list(thread_ids)
+    if not channel_ids and not thread_ids:
+        return {}
+    async with conn.cursor() as cur:
+        await cur.execute(
+            """
+            SELECT channel_id AS container_id, last_read_message_id, last_read_posted_at
+            FROM read_markers
+            WHERE user_id = %(user_id)s AND channel_id = ANY(%(channel_ids)s)
+            UNION ALL
+            SELECT thread_id AS container_id, last_read_message_id, last_read_posted_at
+            FROM read_markers
+            WHERE user_id = %(user_id)s AND thread_id = ANY(%(thread_ids)s)
+            """,
+            {"user_id": user_id, "channel_ids": channel_ids, "thread_ids": thread_ids},
+        )
+        rows = await cur.fetchall()
+    return {
+        row["container_id"]: {
+            "last_read_message_id": row["last_read_message_id"],
+            "last_read_posted_at": row["last_read_posted_at"],
+        }
+        for row in rows
+    }

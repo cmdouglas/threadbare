@@ -203,6 +203,16 @@ a:visited {
   vertical-align: middle;
 }
 
+.unread-dot {
+  display: inline-block;
+  width: 0.5em;
+  height: 0.5em;
+  border-radius: 50%;
+  background: var(--color-accent);
+  margin-right: 0.4em;
+  vertical-align: middle;
+}
+
 .site-icon,
 .post-avatar,
 .user-avatar {

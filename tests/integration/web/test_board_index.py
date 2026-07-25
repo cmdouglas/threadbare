@@ -102,6 +102,36 @@ def test_board_index_shows_a_board_and_its_post_count(client, web_conn):
     assert b"alice" in resp.data
 
 
+def test_board_index_shows_unread_dot_for_a_freeform_board_with_no_read_marker(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10, name="general"))
+    run(_seed_message(web_conn, message_id=1000, channel_id=10))
+
+    resp = client.get("/")
+
+    assert b'class="unread-dot"' in resp.data
+
+
+def test_board_index_hides_unread_dot_once_the_board_is_marked_read(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10, name="general"))
+    run(_seed_message(web_conn, message_id=1000, channel_id=10))
+    client.get("/board/10/continuous/page/1")
+
+    resp = client.get("/")
+
+    assert b'class="unread-dot"' not in resp.data
+
+
+def test_board_index_shows_no_unread_dot_for_a_board_with_no_posts(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10, name="general"))
+
+    resp = client.get("/")
+
+    assert b'class="unread-dot"' not in resp.data
+
+
 def test_board_index_shows_column_headers_for_posts_and_last_post(client, web_conn):
     run(_seed_guild(web_conn))
     run(_seed_board(web_conn, channel_id=10, name="general"))

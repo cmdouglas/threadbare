@@ -1175,3 +1175,87 @@ async def test_get_channel_member_overwrites_filters_by_channel_and_user(db_conn
 
 async def test_get_channel_member_overwrites_returns_empty_for_empty_channel_ids(db_conn):
     assert await queries.get_channel_member_overwrites(db_conn, channel_ids=[], user_id=7) == []
+
+
+async def test_get_read_marker_returns_none_when_absent(db_conn):
+    assert await queries.get_read_marker(db_conn, user_id=1, channel_id=10) is None
+
+
+async def test_mark_read_then_get_read_marker_returns_it(db_conn):
+    await _seed_guild_and_channel(db_conn)
+    await _seed_user(db_conn, user_id=100, display_name="alice")
+    await _seed_message(db_conn, message_id=1000, channel_id=10, author_id=100)
+    posted_at = datetime(2024, 1, 1, tzinfo=UTC)
+
+    await queries.mark_read(db_conn, user_id=1, channel_id=10, message_id=1000, posted_at=posted_at)
+    marker = await queries.get_read_marker(db_conn, user_id=1, channel_id=10)
+
+    assert marker == {"last_read_message_id": 1000, "last_read_posted_at": posted_at}
+
+
+async def test_mark_read_advances_when_position_is_newer(db_conn):
+    await _seed_guild_and_channel(db_conn)
+    await _seed_user(db_conn, user_id=100, display_name="alice")
+    earlier = datetime(2024, 1, 1, tzinfo=UTC)
+    later = datetime(2024, 1, 2, tzinfo=UTC)
+    await queries.mark_read(db_conn, user_id=1, channel_id=10, message_id=1000, posted_at=earlier)
+
+    await queries.mark_read(db_conn, user_id=1, channel_id=10, message_id=1001, posted_at=later)
+    marker = await queries.get_read_marker(db_conn, user_id=1, channel_id=10)
+
+    assert marker == {"last_read_message_id": 1001, "last_read_posted_at": later}
+
+
+async def test_mark_read_is_forward_only_and_ignores_an_older_position(db_conn):
+    await _seed_guild_and_channel(db_conn)
+    earlier = datetime(2024, 1, 1, tzinfo=UTC)
+    later = datetime(2024, 1, 2, tzinfo=UTC)
+    await queries.mark_read(db_conn, user_id=1, channel_id=10, message_id=1001, posted_at=later)
+
+    await queries.mark_read(db_conn, user_id=1, channel_id=10, message_id=1000, posted_at=earlier)
+    marker = await queries.get_read_marker(db_conn, user_id=1, channel_id=10)
+
+    assert marker == {"last_read_message_id": 1001, "last_read_posted_at": later}
+
+
+async def test_mark_read_and_get_read_marker_work_for_a_thread(db_conn):
+    await _seed_guild_and_channel(db_conn)
+    await _seed_thread(db_conn, thread_id=20, parent_channel_id=10)
+    posted_at = datetime(2024, 1, 1, tzinfo=UTC)
+
+    await queries.mark_read(db_conn, user_id=1, thread_id=20, message_id=2000, posted_at=posted_at)
+    marker = await queries.get_read_marker(db_conn, user_id=1, thread_id=20)
+
+    assert marker == {"last_read_message_id": 2000, "last_read_posted_at": posted_at}
+    assert await queries.get_read_marker(db_conn, user_id=1, channel_id=10) is None
+
+
+async def test_mark_read_scopes_by_user(db_conn):
+    await _seed_guild_and_channel(db_conn)
+    posted_at = datetime(2024, 1, 1, tzinfo=UTC)
+
+    await queries.mark_read(db_conn, user_id=1, channel_id=10, message_id=1000, posted_at=posted_at)
+
+    assert await queries.get_read_marker(db_conn, user_id=2, channel_id=10) is None
+
+
+async def test_get_read_markers_batches_channels_and_threads(db_conn):
+    await _seed_guild_and_channel(db_conn, channel_id=10)
+    await _seed_channel(db_conn, channel_id=11, guild_id=1)
+    await _seed_thread(db_conn, thread_id=20, parent_channel_id=10)
+    posted_at = datetime(2024, 1, 1, tzinfo=UTC)
+    await queries.mark_read(db_conn, user_id=1, channel_id=10, message_id=1000, posted_at=posted_at)
+    await queries.mark_read(db_conn, user_id=1, thread_id=20, message_id=2000, posted_at=posted_at)
+
+    markers = await queries.get_read_markers(
+        db_conn, user_id=1, channel_ids=[10, 11], thread_ids=[20]
+    )
+
+    assert markers == {
+        10: {"last_read_message_id": 1000, "last_read_posted_at": posted_at},
+        20: {"last_read_message_id": 2000, "last_read_posted_at": posted_at},
+    }
+
+
+async def test_get_read_markers_returns_empty_for_empty_input(db_conn):
+    assert await queries.get_read_markers(db_conn, user_id=1, channel_ids=[], thread_ids=[]) == {}
