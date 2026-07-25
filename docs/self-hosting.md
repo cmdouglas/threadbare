@@ -267,7 +267,7 @@ resume state.
 ```
 docker compose stop web sync-worker migrate
 docker volume rm threadbare_threadbare-postgres   # check the real name first: docker volume ls
-sed -i.bak -E 's/^(DISCORD_BOT_TOKEN|DISCORD_CLIENT_ID|DISCORD_CLIENT_SECRET|DISCORD_OAUTH_REDIRECT_URI|DISCORD_TEST_GUILD_ID|FLASK_SECRET_KEY)=.*/\1=/' .env
+sed -i.bak -E 's/^(DISCORD_BOT_TOKEN|DISCORD_CLIENT_ID|DISCORD_CLIENT_SECRET|DISCORD_OAUTH_REDIRECT_URI|DISCORD_GUILD_ID|FLASK_SECRET_KEY)=.*/\1=/' .env
 docker compose up -d
 ```
 
@@ -283,6 +283,23 @@ Encrypt's production server on the next `docker compose up`, and doing that repe
 iterating is exactly what trips Let's Encrypt's rate limits (see **Browser shows a raw TLS
 handshake error** in Option B's Troubleshooting section above) — Postgres and Caddy's cert are
 unrelated pieces of state, so reset only the one you actually mean to.
+
+## Upgrading past the 2026-07-25 audit pass: rename one `.env` line
+
+`DISCORD_TEST_GUILD_ID` was renamed to `DISCORD_GUILD_ID`. Nothing about a real deployment's own
+guild is a test, and the old name had spread into the compose file, the CDK secret keys, and these
+docs. There's deliberately no fallback for the old name, so this is a one-time hand edit:
+
+```
+# in your .env, change this line:
+#   DISCORD_TEST_GUILD_ID=1234567890
+# to:
+DISCORD_GUILD_ID=1234567890
+```
+
+Then upgrade as normal (`./scripts/upgrade.sh`). If you forget, the container exits immediately
+with a message that names the rename explicitly — it won't start up half-working. Nothing else
+about your `.env` changes.
 
 ## Forcing a re-backfill
 

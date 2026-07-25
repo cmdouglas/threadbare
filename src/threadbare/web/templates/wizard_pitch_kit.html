@@ -4,17 +4,28 @@
 <h1>What Threadbare does</h1>
 <p>Hand this to the rest of your mod team.</p>
 <ul>
-  <li>Threadbare mirrors public (@everyone-readable) channels into a searchable,
-      paginated forum view. It's read-only -- it never posts, reacts, or writes back
-      to Discord.</li>
+  <li>Threadbare mirrors the channels you choose into a searchable, paginated forum
+      view. It's read-only -- it never posts, reacts, or writes back to Discord.</li>
   <li>Deletions on Discord are removed from the mirror within seconds via the gateway,
       and a nightly sweep catches anything missed during an outage.</li>
   <li>Stored per message: content, author display name/avatar, timestamps, attachments
       (proxied on demand, not mirrored to local storage), and aggregate reaction counts.
       No per-user reaction identity, no emails, no presence data.</li>
-  <li>Only channels you explicitly confirm as indexed are mirrored -- and if a channel's
-      permissions change so @everyone can no longer read it, its content is automatically
-      removed from the index.</li>
+  <li>Only channels you explicitly confirm as indexed are mirrored. Nothing is ever
+      shown to someone who couldn't already read it on Discord -- there are two ways a
+      channel qualifies, and they behave differently when permissions change:
+    <ul>
+      <li><strong>Public channels</strong> (@everyone can read them). If a channel's
+          permissions later change so @everyone can no longer read it, its mirrored
+          content is deleted automatically.</li>
+      <li><strong>Role-gated channels you enroll</strong> using the admin page's
+          "Visibility-enrolled" toggle. These stay mirrored even though @everyone can't
+          read them; instead, each logged-in member sees only the enrolled channels
+          their own Discord roles grant them access to, recomputed from Discord's
+          permissions on every page view. Enrolling a channel is always a deliberate
+          per-channel decision by a mod -- it never happens automatically.</li>
+    </ul>
+  </li>
   <li>There are no backups of mirrored message content. Discord remains the sole source
       of truth; the mirror can always be rebuilt from scratch.</li>
   <li>Any member of the server may log in and read. Per-channel indexing and sync health

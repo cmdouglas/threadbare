@@ -105,6 +105,20 @@ in [`DESIGN.md` §7](./DESIGN.md#upgrade-contract). In practice:
   deploys every stack, then automatically runs the migrate task via the run-command CDK
   already prints, instead of you having to copy-paste it by hand.
 
+### One-time manual step when upgrading past the 2026-07-25 audit pass
+
+`DISCORD_TEST_GUILD_ID` was renamed to `DISCORD_GUILD_ID` (nothing about a deployment's own
+guild is a test). There is deliberately **no fallback**, so this is the one upgrade that needs a
+hand edit before the stack will boot:
+
+- **Options A/B**: rename that one line in your `.env`, then upgrade as normal.
+- **Option C**: rename the `DISCORD_TEST_GUILD_ID` key to `DISCORD_GUILD_ID` inside your
+  `threadbare/app-config` Secrets Manager secret before `cdk deploy`.
+
+If you forget, the app exits with a message naming the rename rather than an opaque "required"
+error. Recorded as a deliberate departure from the upgrade contract in
+[`DESIGN.md` §7](./DESIGN.md#upgrade-contract).
+
 Either way, check the admin page's **Version** section (`/admin/`) afterward to confirm the
 running version and latest applied migration match what you expect.
 

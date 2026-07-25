@@ -153,7 +153,7 @@ Everything here targets a single Discord server, public (`@everyone`-readable) c
     the existing attachment-refresh error) and `web/views/auth.py` (`/login`, `/oauth/callback`,
     `/logout`). Flask's built-in signed-cookie session stores only `user_id`/`display_name`/
     `is_mod` — never the OAuth token. Login is rejected entirely (not just admin access) for
-    anyone who isn't a member of `DISCORD_TEST_GUILD_ID`. `web/app.py`'s global `before_request`
+    anyone who isn't a member of `DISCORD_GUILD_ID`. `web/app.py`'s global `before_request`
     gate covers every existing route for free. Unit, integration, and e2e tested (the e2e tier
     seeds a signed session cookie directly rather than faking a full Discord OAuth double — see
     `tests/e2e/conftest.py`'s `LiveServer.session_cookie`).
@@ -491,7 +491,7 @@ The defining feature of "full": index non-public channels and show each logged-i
   - **Real gap found live, immediately after the logging above pointed at it: enrolling a channel via the "Visibility-enrolled" toggle did nothing, because its content had never been synced into Postgres at all.** `sync_worker/permissions.py`'s `should_sync(*, is_public, indexed)` — the one gating predicate `backfill.py`/`events.py`/`discovery.py`/`reconciliation.py` all share to decide whether a channel's messages belong in the mirror — required `is_public`, and a role-gated channel is by definition never `@everyone`-readable. `visibility_enrolled` only ever gated *read-time* filtering of already-synced content; nothing wired it into the sync-scope decision itself, so Phase 2's stated goal ("index non-public channels," this section's own opening line) was structurally unreachable for a genuinely private channel. Fixed by extending `should_sync` to a third required kwarg, `visibility_enrolled: bool` (predicate becomes `indexed and (is_public or visibility_enrolled)`), threaded through `repository.get_channel_sync_flags`'s now-3-tuple return and every one of its five call sites. One bundled correctness fix: `refresh_channel_public_status`'s existing purge-on-losing-`is_public` safety net would otherwise wipe a `visibility_enrolled` channel's content the moment it lost `@everyone` access, defeating the very fix above — now conditioned on `not visibility_enrolled` too. Full account, including why the test suite never caught it, in `RESOLVED_ISSUES.md`.
   - **Second real gap found live, immediately after deploying the fix above: the sync worker's next backfill attempt for the same channel failed with `discord.errors.Forbidden: 403 Missing Access`, silently — an ERROR line in container logs, with zero surfacing anywhere in the app.** Distinct bug: `should_sync` now correctly decides a channel *should* sync, but that's Threadbare's own policy, not a guarantee Discord will cooperate — the bot's own Discord account is itself subject to Discord's permission system, independent of any member's access or of `visibility_enrolled`. New `channels.bot_can_read` column (migration `0012_channel_bot_can_read.sql`), kept fresh by new `permissions.refresh_channel_bot_access` — computed via discord.py's own `channel.permissions_for(guild.me)` rather than duplicating `discord_permissions.py`'s hand-rolled resolution for this identity — wired into the same three refresh points `refresh_channel_public_status` already uses. Deliberately never gates `should_sync` itself (purely informational), so access regained on Discord's side resumes syncing automatically with no separate toggle. Surfaced on the admin page (new "Bot access" column plus a warning banner naming the exact Discord-side fix: grant the bot View Channel + Read Message History) and in the setup wizard's channel step (already computed a per-channel bot-permission check for `bot_ok`/`overwrite_denied` but rendered a bare "denied" with no next step; also gained a note that a non-public channel needs the separate admin-page "Visibility-enrolled" step to become visible to any member). Unit and integration tested across `permissions.py`/`discovery.py`/`events.py`/admin/wizard; full account in `RESOLVED_ISSUES.md`.
 - [x] Golden/fixture-based permission tests exported from a real test server, covering the actual resolution edge cases (explicit deny overrides allow, category-vs-channel precedence, multiple roles combined, admin short-circuit). The highest test-coverage bar in the codebase, per `DESIGN.md` §7 — this is the one place a bug is a disclosure bug, not a rendering bug.
-  - The bot's own minimal permissions can't create roles/overwrites itself (deliberate design), so this needed a purpose-built layout on the real `DISCORD_TEST_GUILD_ID` server, set up by hand: a second role (`threadbare_testing_2`, held by the bot alongside its existing `threadbare_testing`) plus four channels, each isolating one edge case — a category with a role-level deny overridden by a channel-level allow (precedence), a channel with an `@everyone` deny overridden by a role-level allow (deny-vs-allow), a channel with two held roles disagreeing on the same bit (multiple roles combined), and a channel denying `@everyone` everything, resolved against a temporarily-Administrator role (short-circuit). Full setup documented in `scripts/export_permission_golden.py`'s docstring and `DEVELOPMENT.md`.
+  - The bot's own minimal permissions can't create roles/overwrites itself (deliberate design), so this needed a purpose-built layout on the real `DISCORD_GUILD_ID` server, set up by hand: a second role (`threadbare_testing_2`, held by the bot alongside its existing `threadbare_testing`) plus four channels, each isolating one edge case — a category with a role-level deny overridden by a channel-level allow (precedence), a channel with an `@everyone` deny overridden by a role-level allow (deny-vs-allow), a channel with two held roles disagreeing on the same bit (multiple roles combined), and a channel denying `@everyone` everything, resolved against a temporarily-Administrator role (short-circuit). Full setup documented in `scripts/export_permission_golden.py`'s docstring and `DEVELOPMENT.md`.
   - **Each edge case was live-verified twice before being trusted as a fixture**, not just eyeballed: once via discord.py's own `channel.permissions_for(bot_member)` with the admin role's Administrator permission off (confirming the three non-admin scenarios resolve correctly on their own, not merely because admin was short-circuiting everything), and once with it back on (confirming the admin scenario specifically). This caught a real methodological trap along the way: the first live check ran with Administrator already enabled, which silently made every scenario report "visible" regardless of whether the other three channels' overwrites were even configured correctly — admin short-circuits before overwrite-tier resolution ever runs. Re-verifying with it off first is what actually exercises the precedence/deny-vs-allow/multi-role logic.
   - New `scripts/export_permission_golden.py` (dev-only, not in CI) connects live, validates the expected role/channel/category layout exists, and writes real role permission bitfields + channel/category overwrite `allow`/`deny` ints to `tests/fixtures/permission_golden.json` — regenerable any time the fixture server layout changes, rather than a one-off manual export. The committed fixture deliberately captures `threadbare_testing_2` with **no** permissions of its own (Administrator was disabled again before the final capture): Discord can't scope Administrator to a single channel, so leaving the disposable test server permanently elevated just for one fixture role wasn't worth it — the admin scenario's test instead ORs in `discord_permissions.ADMINISTRATOR` explicitly when building that one case's `base_permissions`, documented inline as a deliberate modeling choice, not an inconsistency with the "real, exported data" framing (the overwrite data itself is still real; only that one role's *own* base grant is modeled rather than kept live-elevated).
   - New `tests/unit/test_permission_golden.py`: loads the fixture once at import time, adapts its role-name-keyed overwrite rows into `OverwriteTier`s (the same caller-filters-first construction `channel_visibility.py`/`wizard/preflight.py` already do for their own DB-row/REST-JSON shapes, just adapted to this fixture's JSON), and resolves each scenario through `compute_effective_permissions` — the one shared implementation every real caller (`compute_is_public`, the wizard's bot-permission check, `channel_visibility.compute_visible_channel_ids`) already delegates to. Nine tests, a positive and negative case per edge case (four paired, plus a third for the admin scenario: denied without Administrator for both a plain member and the role that later gets it) — every case reuses the exact same real overwrite data, varying only which roles the hypothetical identity holds.
@@ -607,3 +607,125 @@ Small, unscheduled fixes/improvements surfaced from using the app. Not phase-sco
   - `get_messages_page` gained a required `total` kwarg (every caller already had this count from `count_messages_before`) and picks direction per call: `ASC OFFSET` from the front, or `DESC OFFSET` from the back with the fetched rows reversed in Python, whichever walks fewer index entries. Last page of a real 1,000,000-row board: ~850-960ms → ~65-70ms (offset-from-end is 0 for the very last page). A page near the middle of a huge board is still `O(min(offset-from-start, offset-from-end))` — roughly half the old cost, not eliminated; genuinely cheap arbitrary-middle-page access isn't possible without a denormalized per-row rank, out of scope here.
   - `search_messages`'s per-result `preceding_count` got the same nearest-end idea (batched once per distinct container among a result page, not once per row) plus a real, separate bug fix: `IS NOT DISTINCT FROM` (needed for the nullable, mutually-exclusive `channel_id`/`thread_id` columns) turned out not to be sargable, so Postgres fell back to a full `Seq Scan` even with a matching composite index — EXPLAIN ANALYZE caught it. Switched to plain `=` (safe, since `messages_container_check` already guarantees `channel_id` and `thread_id` are never both set) and the index was used correctly. Measured: ~2-4s → ~75-80ms.
   - The two `tests/performance/test_browse_performance.py` cases that were `xfail` now pass as plain assertions — the concrete "done" signal for this item, confirmed across multiple clean runs.
+
+## Code-quality audit pass (2026-07-25)
+
+Not a feature milestone: a deliberate sweep for debt accumulated across v1 → Phase 2 → Phase 3,
+where changing requirements left superseded abstractions in place, drifted deliberately-parallel
+code apart, and made a number of comments describe work that had since shipped. Test coverage was
+already good (516 unit tests passing, `ruff` clean at the start), so the target was specifically
+the debt tests can't catch. 1194 unit+integration and 43 e2e tests pass at the end.
+
+**Behaviour fixes (each TDD'd — failing test first):**
+
+- **Four read paths were missing the Phase-2 visibility gate.** `/topic/<id>/jump`,
+  `/topic/<id>/jump_to_unread` and `/board/<id>/continuous/jump` never called
+  `authz.channel_passes_visibility_gate`, so for a `visibility_enrolled` channel they leaked an
+  approximate message count via the redirect's page number. Worse, `/att/<attachment_id>` applied
+  **no** visibility check at all — it looked an attachment up by id and 302'd to the real Discord
+  CDN URL, so a logged-in member who knew an id got the actual file from a channel they can't read.
+  Fixed with a `_get_thread_or_404` helper in `topic.py` (thread-scoped twin of `board.py`'s
+  existing `_get_board_or_404`, so the gate is structural rather than remembered per route), and by
+  making `queries.get_attachment_by_id` resolve through its message's container under the strict
+  `_visibility_clause` — the same rule the listings and search use, since this endpoint serves real
+  content. `tests/integration/web/test_authz.py` had zero coverage of any `/jump*` route; that and
+  the attachment cases are now covered at both the route and query level.
+- **One raising channel silently killed nightly reconciliation until the next process restart.**
+  `backfill_guild` has isolated per-channel failures since its own milestone; `reconcile_guild` and
+  `reconcile_guild_threads` — its documented "structural twins" — never grew the same guard, and
+  `bot.py` only creates the reconciliation task `if self._reconciliation_task is None`, so a dead
+  task was never recreated. This directly undermined §6's "kill the worker for an hour and restart"
+  acceptance criterion. Added per-channel and per-thread isolation plus a guard around
+  `reconciliation_loop`'s sweep (`CancelledError` deliberately still propagates, so shutdown works).
+- **"Jump to first unread" was two incompatible rules.** Listing pages required a marker to exist;
+  content pages used `has_unread` alone, which returns True with no marker. Normally masked because
+  `mark_read` runs first — but a reaction filter deliberately skips `mark_read`, so a filtered first
+  visit rendered a link pointing at the page you were already on. `has_unread` now holds the single
+  rule and its reasoning, instead of prose in one of two divergent implementations.
+- **A freshly-wizarded install titled itself `guild-1234567890`.** The wizard seeded a fabricated
+  `guilds.name`, which `resolve_site_title` renders into every masthead — and the sync worker that
+  would correct it isn't started until the operator restarts it by hand. Now fetches the real
+  name/icon (giving `discord_rest.get_guild`, previously dead, an actual caller).
+- `wizard.oauth`'s POST branches never passed `oauth_verified`, hiding the "Continue to finish
+  setup" button after a secret re-save until a manual reload.
+- "Posts per page" silently didn't apply to topic lists (`board_topics` hardcoded the default while
+  the same template used the preference for each thread's page count). Also collapsed
+  `preferences.DEFAULT_POSTS_PER_PAGE` and `pagination.DEFAULT_PAGE_SIZE` into one constant.
+- Role mentions now resolve to role names. `markdown.py` said "no `roles` table exists to resolve
+  against" — Phase 2 added one; `ReferencedIds.role_ids` was collected and never read, and a test
+  actively pinned the placeholder in place.
+
+**Removed (verified no production callers):** `sync_worker/permissions.py`'s re-export shim (only
+tests imported the re-exported names), `repository.get_channel_is_public`/`get_channel_bot_can_read`
+(test-only — assertions repointed at the unified `get_channel_sync_flags`), `diff_message_sets` (a
+one-line alias for set difference), `channel_types.FREEFORM_TYPES`, `breadcrumbs.board_breadcrumbs`'s
+never-read `script_root` parameter, three dead wizard template kwargs and an impossible
+`"wizard.static"` endpoint.
+
+**Unified what had drifted:** one `RawOverwrite` replacing a duplicated Protocol and three identical
+private adapters; `get_channel_sync_flags` → a `NamedTuple` plus a `channel_should_sync` helper,
+collapsing five call sites that each re-spelled `flags[0]/flags[1]/flags[2]`;
+`refresh_channel_permission_state` replacing a three-way copy-paste **whose copies had already
+diverged** on whether to re-sync overwrite rows (they were right to differ — that's now an explicit,
+documented parameter); `discord_rest.py`'s nine identical httpx blocks → one `_request_json`;
+`sync_worker/channel_type_sets.py` giving the three genuinely-different channel-type predicates one
+home where the differences are visible; a named `_handles()` predicate replacing 18 copies of the
+cross-guild scoping check; `pagination.total_pages()` replacing an off-by-one idiom open-coded at
+eight sites; `views/admin_themes.py` split out of `admin.py`; `argparse` replacing hand-rolled argv
+scanning (which also silently ignored typo'd flags).
+
+**`get_thread_post_aggregates` had silently stopped being its twin.** Its docstring called it a
+"structural twin of `get_board_post_aggregates`", but the board version's `row_number() OVER
+(PARTITION BY ...)` was replaced with LATERAL `ORDER BY ... LIMIT 1` during the million-row
+performance work and the thread version was left behind. Now genuinely matches.
+
+**Perf:** theme-asset requests no longer run the three DB-touching `before_request` hooks. A custom
+theme is deliberately a maximalist media bundle, so one paint can pull twenty assets, and each was
+running the full per-user visibility computation to serve a PNG. Also merged `search.py`'s two
+per-request connections into one.
+
+**CSS drift across the four hand-synced themes:** `.board-row-visited` used the same colour as the
+zebra stripe *and* lost to it on specificity, so "visited" was invisible on even rows and
+indistinguishable from an ordinary even row on odd ones — fixed with a new (optional, fallback-safe)
+`--color-bg-visited` plus `:not()` exclusions, which also stops a multi-page board's pagination row
+shifting every subsequent row's stripe parity. `.board-row-unread`/`.topic-row-unread` were emitted
+by the templates and styled by no theme at all. `--color-danger` was declared by all four themes and
+**required of every uploaded bundle** while being referenced by nothing — now used for the stale-
+heartbeat, bundle-validation-error and bot-blocked states. `.avatar-toggle`/`.posts-per-page-switcher`
+were unstyled everywhere and `.theme-switcher` was missing from `theme-plain.css`, despite this
+roadmap claiming the `/preferences` consolidation kept all four themes applying unchanged. Also
+dropped a permanently-redundant `.post-reply-quote blockquote` selector, normalised two
+specificity drifts, renamed `.preference-current` → `.current-option` (the reaction filter and the
+flat/tree toggle both use it and neither is a preference), and gave `board_weeks.html` the friendly
+timestamps every sibling listing already had.
+
+`tests/unit/web/test_theme_css.py` gained the test that would have caught most of the above: all
+four themes must declare an identical `:root` property set, and every selector the templates emit
+must be styled by every theme. `theme_bundle`'s contract is now documented as a *minimum* with an
+explicit `OPTIONAL_CUSTOM_PROPERTIES` list, so `--embed-color` and `--color-bg-visited` are
+discoverable by bundle authors instead of invisible.
+
+**Visible behaviour changes to be aware of:** the four newly-gated routes now 404 where they
+previously answered; topic lists honour posts-per-page; role mentions render real names; the
+masthead shows the logged-in account name (`session["display_name"]` was written at login and read
+by nothing — surfaced rather than deleted); search's channel filter is a board `<select>` instead of
+a raw numeric "Channel ID" box.
+
+**Two deliberate departures from `DESIGN.md` §7's upgrade contract**, recorded there in full rather
+than left implicit — migration `0015_drop_dead_columns.sql` (drops `messages.flags`, written as a
+literal `0` on every insert and never selected, plus two dead `heartbeat_at` columns) breaks
+additive-only and therefore rollback-by-redeploy; and `DISCORD_TEST_GUILD_ID` → `DISCORD_GUILD_ID`
+is a hard rename with no fallback, needing a one-line `.env` edit on upgrade. Both are only
+acceptable because no release has ever been tagged. `config.load_settings` detects the old-name-only
+case and names the rename explicitly, which is the whole of the guided upgrade step; see
+`docs/self-hosting.md` and `README.md`'s Upgrading sections.
+
+**Found along the way:** migration files are effectively immutable — `db/migrate.py` checksums
+applied migrations and refuses to boot if one changed — so `0001_initial_schema.sql`'s now-inaccurate
+comment about how `indexed` gets its value *cannot* be corrected. The accurate description lives in
+`repository.upsert_channel`/`insert_new_channel`, which now say so. Treat shipped migration comments
+as a historical record, not documentation.
+
+**Not verified in this environment:** the `DISCORD_GUILD_ID` rename's effect on a real upgrade
+(Options A/B `.env`, and Option C's `threadbare/app-config` secret, which an operator must rekey by
+hand) — flagged in `DESIGN.md` §10 per this project's convention rather than assumed working.
