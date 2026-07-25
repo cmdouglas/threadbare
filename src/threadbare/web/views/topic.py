@@ -15,6 +15,7 @@ from flask import (
 from threadbare.db import queries
 from threadbare.pagination import page_number_for_offset
 from threadbare.rendering.render_service import render_message_for_display
+from threadbare.reply_tree import build_reply_tree
 from threadbare.web import authz
 from threadbare.web.breadcrumbs import topic_breadcrumbs
 
@@ -81,6 +82,68 @@ async def topic_page(thread_id: int, page: int):
         show_jump_to_unread=show_jump_to_unread,
         jump_action=url_for("topic.topic_jump_to_page", thread_id=thread_id),
     )
+
+
+@bp.route("/topic/<int:thread_id>/tree")
+async def topic_tree_view(thread_id: int):
+    """Reply-chain threading view (DESIGN.md §7 Phase 3): the same messages
+    as the flat paginated view, nested by messages.reply_to_id instead of
+    split across pages -- an alternative lens on one topic, not a separate
+    dataset. Deliberately unpaginated: a tree only makes sense shown whole,
+    and Discord threads are naturally bounded in a way freeform-channel
+    continuous browsing isn't, so loading every message in one request is
+    accepted here where it wouldn't be for a board.
+    """
+    pool = current_app.config["POOL"]
+    async with pool.connection() as conn:
+        thread = await queries.get_thread(conn, thread_id)
+        if thread is None:
+            abort(404)
+        channel = await queries.get_channel(conn, thread["parent_channel_id"])
+        if channel is None or not authz.channel_passes_visibility_gate(
+            channel, g.visible_channel_ids
+        ):
+            abort(404)
+        breadcrumbs = await topic_breadcrumbs(conn, thread, script_root=request.script_root)
+        total = await queries.count_messages_before(conn, thread_id=thread_id)
+        rows = await queries.get_messages_page(
+            conn, thread_id=thread_id, page=1, page_size=total, total=total
+        )
+        # A row's index in `rows` is exactly its own preceding-count, since
+        # both share the same chronological order -- reuses
+        # page_number_for_offset instead of a per-row count query, so a
+        # reply's permalink still lands on its real page in the flat view.
+        pages_by_id = {
+            row["id"]: page_number_for_offset(i, page_size=g.posts_per_page)
+            for i, row in enumerate(rows)
+        }
+
+        async def render_node(node):
+            row = node["row"]
+            rendered = await render_message_for_display(
+                conn, row, script_root=request.script_root, page_size=g.posts_per_page
+            )
+            children = [await render_node(child) for child in node["children"]]
+            return {
+                "row": row,
+                "rendered": rendered,
+                "page": pages_by_id[row["id"]],
+                "children": children,
+            }
+
+        tree = [await render_node(node) for node in build_reply_tree(rows)]
+
+        if rows:
+            last = rows[-1]
+            await queries.mark_read(
+                conn,
+                user_id=session["user_id"],
+                thread_id=thread_id,
+                message_id=last["id"],
+                posted_at=last["posted_at"],
+            )
+
+    return render_template("topic_tree.html", thread=thread, breadcrumbs=breadcrumbs, tree=tree)
 
 
 @bp.route("/topic/<int:thread_id>/jump")

@@ -142,6 +142,24 @@ a:visited {
   font-size: var(--font-size-small);
 }
 
+.thread-tree {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.thread-children {
+  list-style: none;
+  margin-top: var(--space-sm);
+  margin-left: var(--space-lg);
+  padding-left: var(--space-sm);
+  border-left: var(--border-width) solid var(--color-border);
+}
+
+.thread-node {
+  margin-top: var(--space-sm);
+}
+
 .category-heading {
   background: var(--color-bg-alt);
   padding: var(--space-md);

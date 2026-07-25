@@ -49,6 +49,7 @@ def _seed(conn):
             """,
             (900100 + i, THREAD_ID, USER_ID, f"topic message {i}", BASE + timedelta(seconds=i)),
         )
+    conn.execute("UPDATE messages SET reply_to_id = %s WHERE id = %s", (900100, 900101))
     conn.execute(
         """
         INSERT INTO messages (id, channel_id, author_id, content, posted_at)
@@ -302,6 +303,23 @@ def test_topic_list_row_gets_visited_style_and_unread_count_once_opened(page, li
     assert "topic-row-visited" in row.get_attribute("class")
     pagination_row = page.locator("tr.topic-pagination-row")
     assert pagination_row.locator(".unread-count").inner_text() == "(5)"
+
+
+def test_topic_tree_view_nests_a_reply_under_its_parent(page, live_server, seeded):
+    page.goto(f"{live_server}/topic/{THREAD_ID}/tree")
+
+    parent_node = page.locator(".thread-node", has=page.locator("#post-900100"))
+    assert parent_node.locator(".thread-children #post-900101").count() == 1
+
+
+def test_topic_view_toggle_links_switch_between_flat_and_tree_view(page, live_server, seeded):
+    page.goto(f"{live_server}/topic/{THREAD_ID}/page/1")
+
+    page.locator(".topic-view-controls a", has_text="Tree view").click()
+    assert page.url.endswith(f"/topic/{THREAD_ID}/tree")
+
+    page.locator(".topic-view-controls a", has_text="Flat view").click()
+    assert page.url.endswith(f"/topic/{THREAD_ID}/page/1")
 
 
 FORUM_CHANNEL_ID = 900600

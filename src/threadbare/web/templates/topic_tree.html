@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}{{ thread.name }} — {{ site_title }}{% endblock %}
+{% block content %}
+{% include "_breadcrumbs.html" %}
+<h1 class="topic-title">{{ thread.name }}</h1>
+{% with active = "tree" %}{% include "_topic_view_controls.html" %}{% endwith %}
+{% macro render_tree_node(node) %}
+<li class="thread-node">
+  {% set message_row = node.row %}
+  {% set rendered = node.rendered %}
+  {% set page = node.page %}
+  {% include "_post.html" %}
+  {% if node.children %}
+  <ul class="thread-children">
+    {% for child in node.children %}{{ render_tree_node(child) }}{% endfor %}
+  </ul>
+  {% endif %}
+</li>
+{% endmacro %}
+<ul class="thread-tree">
+  {% for node in tree %}{{ render_tree_node(node) }}{% endfor %}
+</ul>
+{% endblock %}

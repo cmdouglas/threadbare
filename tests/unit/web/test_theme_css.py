@@ -81,3 +81,13 @@ def test_unread_count_rule_exists(stylesheet):
     assert re.search(r"\.unread-count\s*\{", css) is not None, (
         f"{stylesheet} has no .unread-count rule"
     )
+
+
+@pytest.mark.parametrize("stylesheet", sorted(AVAILABLE_THEMES.values()))
+def test_thread_children_rule_is_indented(stylesheet):
+    css = (STATIC_DIR / stylesheet).read_text()
+
+    match = re.search(r"\.thread-children\s*\{([^}]*)\}", css)
+
+    assert match is not None, f"{stylesheet} has no .thread-children rule"
+    assert "margin-left" in match.group(1)

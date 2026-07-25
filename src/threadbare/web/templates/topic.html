@@ -3,6 +3,7 @@
 {% block content %}
 {% include "_breadcrumbs.html" %}
 <h1 class="topic-title">{{ thread.name }}</h1>
+{% with active = "flat" %}{% include "_topic_view_controls.html" %}{% endwith %}
 {% if show_jump_to_unread %}
 <a class="jump-to-unread" href="{{ url_for('topic.topic_jump_to_unread', thread_id=thread.id) }}">Jump to first unread</a>
 {% endif %}

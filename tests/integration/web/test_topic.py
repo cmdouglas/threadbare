@@ -59,13 +59,15 @@ async def _seed_user(conn, *, user_id=100, display_name="alice"):
     )
 
 
-async def _seed_thread_message(conn, *, message_id, thread_id, author_id=100, content, posted_at):
+async def _seed_thread_message(
+    conn, *, message_id, thread_id, author_id=100, content, posted_at, reply_to_id=None
+):
     await conn.execute(
         """
-        INSERT INTO messages (id, thread_id, author_id, content, posted_at)
-        VALUES (%s, %s, %s, %s, %s)
+        INSERT INTO messages (id, thread_id, author_id, content, posted_at, reply_to_id)
+        VALUES (%s, %s, %s, %s, %s, %s)
         """,
-        (message_id, thread_id, author_id, content, posted_at),
+        (message_id, thread_id, author_id, content, posted_at, reply_to_id),
     )
 
 
@@ -371,3 +373,133 @@ def test_topic_jump_to_unread_returns_404_for_unknown_thread(client, web_conn):
 
     assert resp.status_code == 302
     assert resp.headers["Location"] == "/topic/3000/page/1"
+
+
+def test_topic_tree_view_returns_404_for_unknown_thread(client):
+    resp = client.get("/topic/999999/tree")
+
+    assert resp.status_code == 404
+
+
+def test_topic_tree_view_returns_404_for_an_enrolled_channel_the_requester_cannot_see(
+    client, web_conn
+):
+    run(_seed_guild_and_channel(web_conn, is_public=False, visibility_enrolled=True))
+    run(_seed_role(web_conn, role_id=1))  # @everyone, no permissions
+    run(_seed_thread(web_conn, thread_id=3000, parent_channel_id=10))
+
+    resp = client.get("/topic/3000/tree")
+
+    assert resp.status_code == 404
+
+
+def test_topic_tree_view_renders_a_reply_nested_under_its_parent(client, web_conn):
+    run(_seed_guild_and_channel(web_conn))
+    run(_seed_thread(web_conn, thread_id=3000, parent_channel_id=10, name="my thread"))
+    run(_seed_user(web_conn))
+    run(
+        _seed_thread_message(
+            web_conn, message_id=1, thread_id=3000, content="root post", posted_at=T1
+        )
+    )
+    run(
+        _seed_thread_message(
+            web_conn,
+            message_id=2,
+            thread_id=3000,
+            content="a reply",
+            posted_at=T1 + timedelta(1),
+            reply_to_id=1,
+        )
+    )
+
+    resp = client.get("/topic/3000/tree")
+
+    assert resp.status_code == 200
+    assert b'id="post-1"' in resp.data
+    assert b'id="post-2"' in resp.data
+    assert b"root post" in resp.data
+    assert b"a reply" in resp.data
+    assert resp.data.index(b'id="post-1"') < resp.data.index(b'id="post-2"')
+
+
+def test_topic_tree_view_orders_top_level_messages_chronologically(client, web_conn):
+    run(_seed_guild_and_channel(web_conn))
+    run(_seed_thread(web_conn, thread_id=3000, parent_channel_id=10))
+    run(_seed_user(web_conn))
+    run(_seed_thread_message(web_conn, message_id=1, thread_id=3000, content="first", posted_at=T1))
+    run(
+        _seed_thread_message(
+            web_conn, message_id=2, thread_id=3000, content="second", posted_at=T1 + timedelta(1)
+        )
+    )
+
+    resp = client.get("/topic/3000/tree")
+
+    assert resp.status_code == 200
+    assert resp.data.index(b'id="post-1"') < resp.data.index(b'id="post-2"')
+
+
+def test_topic_tree_view_has_a_toggle_link_back_to_the_flat_view(client, web_conn):
+    run(_seed_guild_and_channel(web_conn))
+    run(_seed_thread(web_conn, thread_id=3000, parent_channel_id=10))
+    run(_seed_user(web_conn))
+    run(_seed_thread_message(web_conn, message_id=1, thread_id=3000, content="hi", posted_at=T1))
+
+    resp = client.get("/topic/3000/tree")
+
+    assert resp.status_code == 200
+    assert b'href="/topic/3000/page/1"' in resp.data
+
+
+def test_topic_page_has_a_toggle_link_to_the_tree_view(client, web_conn):
+    run(_seed_guild_and_channel(web_conn))
+    run(_seed_thread(web_conn, thread_id=3000, parent_channel_id=10))
+    run(_seed_user(web_conn))
+    run(_seed_thread_message(web_conn, message_id=1, thread_id=3000, content="hi", posted_at=T1))
+
+    resp = client.get("/topic/3000/page/1")
+
+    assert resp.status_code == 200
+    assert b'href="/topic/3000/tree"' in resp.data
+
+
+def test_topic_tree_view_marks_the_thread_fully_read(client, web_conn):
+    run(_seed_guild_and_channel(web_conn))
+    run(_seed_thread(web_conn, thread_id=3000, parent_channel_id=10))
+    run(_seed_user(web_conn))
+    run(_seed_thread_message(web_conn, message_id=1, thread_id=3000, content="hi", posted_at=T1))
+    run(
+        _seed_thread_message(
+            web_conn, message_id=2, thread_id=3000, content="hi again", posted_at=T1 + timedelta(1)
+        )
+    )
+
+    resp = client.get("/topic/3000/tree")
+
+    assert resp.status_code == 200
+    marker = run(queries.get_read_marker(web_conn, user_id=1, thread_id=3000))
+    assert marker == {"last_read_message_id": 2, "last_read_posted_at": T1 + timedelta(1)}
+
+
+def test_topic_tree_view_links_a_reply_to_the_correct_flat_view_page(client, web_conn):
+    run(_seed_guild_and_channel(web_conn))
+    run(_seed_thread(web_conn, thread_id=3000, parent_channel_id=10))
+    run(_seed_user(web_conn))
+    for i in range(30):
+        run(
+            _seed_thread_message(
+                web_conn,
+                message_id=i + 1,
+                thread_id=3000,
+                content=f"message {i}",
+                posted_at=T1 + timedelta(days=i),
+            )
+        )
+
+    resp = client.get("/topic/3000/tree")
+
+    assert resp.status_code == 200
+    # DEFAULT_PAGE_SIZE is 25, so message 30 (id=30, the 30th post) is the
+    # 5th post on page 2 -- its own permalink should reflect that, not page 1.
+    assert b"/topic/3000/page/2#post-30" in resp.data
