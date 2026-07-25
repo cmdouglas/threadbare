@@ -1,9 +1,55 @@
-/* Plain -- the reference theme (ROADMAP.md §4's CSS-custom-property
- * contract + §5's "Plain" theme fall out of the same file). Every other
- * theme overrides just the :root custom properties below; the semantic
- * classed markup (board-index, board-row, topic-row, post, post-meta,
- * post-content, reply-quote, ...) stays fixed across all themes.
- */
+/* ============================================================================
+ * Plain -- the reference theme.
+ *
+ * Read this file first if you are writing a theme. It is the plainest of the
+ * four built-ins on purpose: no gradients, no bevels, no ornament. What's left
+ * is exactly the structure every theme has to cover, and nothing else.
+ *
+ * HOW THEMING WORKS
+ *
+ * Threadbare renders one fixed set of semantic class names -- board-row,
+ * topic-row, post, post-meta, reply-quote, and so on. The templates are the
+ * same for every theme, and a theme never ships markup: it is one stylesheet
+ * plus optional media. So you write a theme by restyling the classes below,
+ * never by changing what the pages emit.
+ *
+ * Most of a theme is section 1. Every rule in this file is written in terms of
+ * the custom properties declared there, so overriding that block alone already
+ * gives you a complete, coherent theme. Sections 2-10 are where a theme spends
+ * its personality, and you only need the ones you actually want to change.
+ *
+ * WRITING YOUR OWN
+ *
+ * Copy this file, override what you like, and keep the section numbering. All
+ * four built-ins carry the same ten sections in the same order so they can be
+ * read side by side -- "how does terminal handle posts?" is answered by
+ * opening section 6 of that file -- and a unit test
+ * (tests/unit/web/test_theme_css.py) keeps them that way.
+ *
+ * Uploadable .zip bundles are validated against the same :root contract.
+ * threadbare/theme_bundle.py holds the authoritative required-property list
+ * and documents the bundle layout.
+ * ========================================================================= */
+
+
+/* == 1. Theme palette -- the :root contract =================================
+ *
+ * Required: every property below except --color-bg-visited. An uploaded bundle
+ * that omits one is rejected; theme_bundle.REQUIRED_CUSTOM_PROPERTIES is the
+ * authoritative list.
+ *
+ * Optional, but used by all four built-ins:
+ *
+ *   --color-bg-visited  Background of an already-visited row. Falls back to
+ *                       --color-bg-alt where it's used (section 5), so older
+ *                       bundles that predate it still work.
+ *
+ *   --embed-color       Deliberately NOT declared here. rendering/embeds.py
+ *                       sets it inline on each embed from Discord's own embed
+ *                       colour; section 7 only supplies a fallback for embeds
+ *                       that have none. Declaring a value here would override
+ *                       every embed's real colour with it.
+ * ========================================================================= */
 
 :root {
   --color-bg: #ffffff;
@@ -34,6 +80,15 @@
   --container-max-width: 960px;
 }
 
+
+/* == 2. User preferences ====================================================
+ *
+ * Re-declaring the palette inside a media query is the whole mechanism: no
+ * rule below needs to know a dark or high-contrast mode exists. A theme that
+ * is already dark by default still wants the first block -- see the note in
+ * theme-vbulletin-dark.css for how the dark-by-default themes handle it.
+ * ========================================================================= */
+
 @media (prefers-color-scheme: dark) {
   :root {
     --color-bg: #1a1a1a;
@@ -56,12 +111,17 @@
   }
 }
 
+/* Threadbare ships no animation of its own, but a custom theme may; honouring
+   the preference here means a bundle author gets it for free. */
 @media (prefers-reduced-motion: reduce) {
   * {
     animation-duration: 0.001ms !important;
     transition-duration: 0.001ms !important;
   }
 }
+
+
+/* == 3. Base elements ===================================================== */
 
 * {
   box-sizing: border-box;
@@ -76,6 +136,9 @@ body {
   line-height: var(--line-height-base);
 }
 
+/* Visited links carry real signal on a forum -- they're how a reader tracks
+   which threads they've opened -- so every theme gives them their own colour
+   rather than letting them inherit. */
 a {
   color: var(--color-link);
 }
@@ -83,6 +146,16 @@ a {
 a:visited {
   color: var(--color-link-visited);
 }
+
+
+/* == 4. Site chrome =========================================================
+ *
+ * The masthead (base.html): title, search box, and the Preferences and
+ * account navs. This theme leaves the header on --color-bg, so the section 3
+ * link colours still read correctly on it and need no correction. A theme that
+ * gives .site-header a background of its own must restate the nav link colour
+ * -- see the same section in the other three themes.
+ * ========================================================================= */
 
 .site-header {
   display: flex;
@@ -115,6 +188,22 @@ a:visited {
   color: var(--color-fg-muted);
 }
 
+
+/* == 5. Listing tables ======================================================
+ *
+ * Three tables share one row vocabulary: the board index, a board's topic
+ * list, and the weekly archive. Read/unread state lives here and is most of
+ * what makes a forum index usable, so it's worth styling all of it:
+ *
+ *   .board-row-visited / .topic-row-visited  reader has opened this row
+ *   .board-row-unread  / .topic-row-unread   it has posts they haven't seen
+ *   .unread-count                            how many, next to the name
+ *   .unread-dot                              the marker itself (section 6)
+ *
+ * This theme doesn't zebra-stripe. subsilver and vBulletin do, and their
+ * section 5 explains the two exclusions striping requires.
+ * ========================================================================= */
+
 .board-index,
 .board-topic-list,
 .board-week-list {
@@ -134,21 +223,19 @@ a:visited {
   padding: var(--space-sm);
 }
 
-/* Its own colour, not --color-bg-alt: that's the zebra-stripe colour, and
-   `.board-row:nth-child(even)` outranks `.board-row-visited` on specificity,
-   so visited rows were invisible on even rows and indistinguishable from an
-   ordinary even row on odd ones. The :not() exclusions on the zebra rule keep
-   the two from ever competing again. Falls back for custom-theme bundles that
-   predate this property (it's deliberately not in
-   theme_bundle.REQUIRED_CUSTOM_PROPERTIES, so old bundles still validate). */
+/* Visited rows need a colour of their own -- don't reuse --color-bg-alt.
+   That's the zebra-stripe colour in the themes that stripe, and
+   `:nth-child(even)` outranks a plain class selector, so a visited row painted
+   --color-bg-alt is overridden outright on even rows and indistinguishable
+   from an ordinary stripe on odd ones. */
 .board-row-visited,
 .topic-row-visited {
   background: var(--color-bg-visited, var(--color-bg-alt));
 }
 
-/* Unread rows: emphasise the row's own name link, the classic forum
-   treatment. Both classes were emitted by the listing templates and styled by
-   no theme at all -- the .unread-dot was carrying the entire signal. */
+/* Bolding the row's own name link is the classic forum treatment for unread.
+   It reads at a glance and survives a reader who can't distinguish the dot's
+   colour. */
 .board-row-unread td.board-name a,
 .topic-row-unread td.topic-name a {
   font-weight: bold;
@@ -159,24 +246,6 @@ a:visited {
   font-size: var(--font-size-small);
 }
 
-.thread-tree {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.thread-children {
-  list-style: none;
-  margin-top: var(--space-sm);
-  margin-left: var(--space-lg);
-  padding-left: var(--space-sm);
-  border-left: var(--border-width) solid var(--color-border);
-}
-
-.thread-node {
-  margin-top: var(--space-sm);
-}
-
 .category-heading {
   background: var(--color-bg-alt);
   padding: var(--space-md);
@@ -184,6 +253,8 @@ a:visited {
   font-size: 1.15em;
 }
 
+/* Scoped to td because board_index.html uses .board-name on its <th> too, and
+   an unscoped rule would catch a header link the day one is added. */
 td.board-name a,
 td.topic-name a {
   display: inline-flex;
@@ -191,6 +262,7 @@ td.topic-name a {
   gap: var(--space-xs);
 }
 
+/* Marks a board's Discord channel kind (text, forum, ...) beside its name. */
 .channel-icon {
   flex-shrink: 0;
   color: var(--color-fg-muted);
@@ -205,6 +277,8 @@ td.topic-name a {
   height: 14px;
 }
 
+/* A board row's most recent topic title. Clamped to one line: these come from
+   Discord and can be arbitrarily long. */
 .board-topic {
   max-width: 480px;
   overflow: hidden;
@@ -212,6 +286,33 @@ td.topic-name a {
   white-space: nowrap;
   font-size: var(--font-size-small);
   color: var(--color-fg-muted);
+}
+
+
+/* == 6. Posts ===============================================================
+ *
+ * One .post per message, in both the flat and the tree view of a topic. The
+ * .thread-* classes are the tree view's scaffolding and wrap the same .post.
+ * ========================================================================= */
+
+.thread-tree {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* The indent and the left border are what make reply depth legible; a theme
+   that drops them flattens the tree view back into the flat one. */
+.thread-children {
+  list-style: none;
+  margin-top: var(--space-sm);
+  margin-left: var(--space-lg);
+  padding-left: var(--space-sm);
+  border-left: var(--border-width) solid var(--color-border);
+}
+
+.thread-node {
+  margin-top: var(--space-sm);
 }
 
 .post {
@@ -235,6 +336,7 @@ td.topic-name a {
   color: var(--color-fg);
 }
 
+/* Marks a message posted by a Discord bot or webhook. */
 .bot-badge {
   display: inline-block;
   font-size: 0.7em;
@@ -258,6 +360,8 @@ td.topic-name a {
   vertical-align: middle;
 }
 
+/* All three are remote Discord CDN images of unpredictable dimensions, so the
+   fixed box plus object-fit matters more than the decoration. */
 .site-icon,
 .post-avatar,
 .user-avatar {
@@ -286,6 +390,16 @@ td.topic-name a {
   color: var(--color-fg-muted);
 }
 
+
+/* == 7. Post content ========================================================
+ *
+ * Everything inside a message body. These classes come from rendering/, not
+ * from the templates, so they appear wherever a message does.
+ * ========================================================================= */
+
+/* rendering/quotes.py emits <blockquote class="reply-quote"> for the message
+   being replied to. _post.html wraps it in .post-reply-quote, so style one or
+   the other -- both always match the same element. */
 .reply-quote {
   border-left: 3px solid var(--color-border);
   padding-left: var(--space-sm);
@@ -293,6 +407,7 @@ td.topic-name a {
   margin: var(--space-sm) 0;
 }
 
+/* @user, @role and #channel mentions. */
 .mention {
   color: var(--color-accent);
   background: var(--color-bg-alt);
@@ -300,6 +415,8 @@ td.topic-name a {
   padding: 0 0.25em;
 }
 
+/* Discord spoilers render as <details>, so they stay collapsed with CSS off --
+   don't make this rule load-bearing for hiding the content. */
 .spoiler summary {
   cursor: pointer;
   color: var(--color-fg-muted);
@@ -307,15 +424,6 @@ td.topic-name a {
 
 .reactions {
   margin-top: var(--space-sm);
-}
-
-.reaction-filter {
-  margin: var(--space-sm) 0;
-}
-
-.reaction-filter-option {
-  display: inline-block;
-  margin-right: var(--space-sm);
 }
 
 .reaction-badge {
@@ -327,6 +435,8 @@ td.topic-name a {
   font-size: var(--font-size-small);
 }
 
+/* --embed-color is set inline per embed (section 1); this only supplies the
+   fallback for embeds that carry no colour of their own. */
 .embed {
   border-left: 4px solid var(--embed-color, var(--color-border));
   padding: var(--space-sm);
@@ -335,6 +445,8 @@ td.topic-name a {
   border-radius: var(--radius);
 }
 
+/* Cap the height as well as the width: these are full-size Discord uploads,
+   and width alone lets a tall image push the rest of the thread off-screen. */
 .attachment img {
   max-width: 100%;
   max-height: 80vh;
@@ -358,10 +470,21 @@ td.topic-name a {
   border-radius: var(--radius);
 }
 
+/* Joins, pins, and other Discord system messages -- set apart from real posts
+   so they read as events rather than as something someone wrote. */
 .post-content-system {
   font-style: italic;
   color: var(--color-fg-muted);
 }
+
+
+/* == 8. Pagination and preference controls ==================================
+ *
+ * .current-option marks the active choice in every set of options on the site
+ * -- the three preference controls, the reaction filter, and the flat/tree
+ * topic toggle. It is the only thing distinguishing the active one, so a theme
+ * must give it some weight.
+ * ========================================================================= */
 
 .pagination-bar {
   display: flex;
@@ -393,6 +516,37 @@ td.topic-name a {
   font-weight: bold;
 }
 
+/* The three /preferences controls are all <nav>s of links with one
+   <strong class="current-option"> for the active value, so one rule serves
+   all three. */
+.theme-switcher,
+.avatar-toggle,
+.posts-per-page-switcher {
+  font-size: var(--font-size-small);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+}
+
+.preference {
+  margin-bottom: var(--space-md);
+}
+
+.reaction-filter {
+  margin: var(--space-sm) 0;
+}
+
+.reaction-filter-option {
+  display: inline-block;
+  margin-right: var(--space-sm);
+}
+
+
+/* == 9. Forms and code ====================================================== */
+
+/* `font: inherit` is the point of this rule: form controls otherwise ignore
+   --font-body and fall back to the browser's own, which is very visible in a
+   theme whose body font is distinctive. */
 .search-form input[type="search"] {
   font: inherit;
   padding: var(--space-xs) var(--space-sm);
@@ -413,28 +567,14 @@ pre {
   overflow-x: auto;
 }
 
-/* Preference controls (/preferences). All three are sibling <nav>s of links
-   with one <strong class="current-option"> for the active value, so they share
-   one rule -- .theme-switcher used to be styled alone (and in only three of the
-   four themes), while .avatar-toggle and .posts-per-page-switcher were styled
-   in none. */
-.theme-switcher,
-.avatar-toggle,
-.posts-per-page-switcher {
-  font-size: var(--font-size-small);
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-xs);
-}
 
-.preference {
-  margin-bottom: var(--space-md);
-}
+/* == 10. Admin and wizard states ============================================
+ *
+ * Only mods and operators see these. They are also the only use of
+ * --color-danger -- which is a required property, so this section is what
+ * every theme is being asked to supply it for.
+ * ========================================================================= */
 
-/* Error/attention states. --color-danger is declared by every theme and
-   required of every uploaded bundle (theme_bundle.REQUIRED_CUSTOM_PROPERTIES),
-   but nothing referenced it -- so these four states rendered unstyled while
-   third-party theme authors were still obliged to supply the colour. */
 .sync-health-stale,
 .wizard-intent-bad,
 .admin-theme-errors {

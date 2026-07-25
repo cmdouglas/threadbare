@@ -1,13 +1,35 @@
-/* Terminal -- green-on-black monospace BBS mode (DESIGN.md §6), the most
- * stylistically distinct of the four shipped themes: --font-body itself is
- * the monospace stack (every other theme only uses it for code/pre), so
- * the whole page reads like a terminal session, not just its code blocks.
- * No gradients, no drop shadows, no rounded corners -- real terminal UIs
- * don't have those, so headers/category bars use inverse video (green
- * background, black text) instead. Same CSS custom-property contract as
- * the other three themes; only the :root values below plus a couple of
- * monochrome-flavored overrides differ.
- */
+/* ============================================================================
+ * Terminal -- green-on-black monospace BBS mode (DESIGN.md §6).
+ *
+ * Read theme-plain.css first. It is the reference theme and documents how
+ * theming works, what the :root contract is, and what each of the ten sections
+ * below is for. This file carries the same sections in the same order; the
+ * notes here only cover where terminal deliberately differs.
+ *
+ * The most stylistically distinct of the four, and the best illustration of
+ * how far a theme can go without touching markup. Two choices do nearly all of
+ * it: --font-body is itself the monospace stack, so the whole page reads like
+ * a terminal session rather than just its code blocks; and there are no
+ * gradients, shadows, or rounded corners anywhere, because real terminals
+ * don't have them -- headers and category bars use inverse video instead.
+ *
+ * It also shows the one thing a theme can add beyond styling: ::before content
+ * (the "> " on the site title and on quotes). Keep it decorative -- screen
+ * readers may or may not announce it, so nothing a reader needs should live
+ * only there.
+ * ========================================================================= */
+
+
+/* == 1. Theme palette -- the :root contract =================================
+ *
+ * See theme-plain.css section 1 for which properties are required and why
+ * --embed-color isn't declared. Same property set, terminal's values.
+ *
+ * Note how few distinct colours a monochrome theme needs: --color-link,
+ * --color-accent and --color-fg are the same green, and the theme stays
+ * legible because it separates elements with borders and inverse video rather
+ * than with hue.
+ * ========================================================================= */
 
 :root {
   --color-bg: #0a0e0a;
@@ -20,6 +42,8 @@
   --color-link-visited: #26cc26;
   --color-accent: #33ff33;
   --color-accent-fg: #0a0e0a;
+  /* The one non-green in the palette: an error has to break the monochrome to
+     register as an error at all. */
   --color-danger: #ff5555;
 
   --font-body: ui-monospace, "Courier New", Consolas, monospace;
@@ -38,9 +62,15 @@
   --container-max-width: 960px;
 }
 
-/* Already dark-on-black by default -- a near-no-op pass-through, matching
- * the other two dark-by-default themes' own convention.
- */
+
+/* == 2. User preferences ====================================================
+ *
+ * Already dark on black, so the first block is a near-no-op pass-through, as
+ * in theme-vbulletin-dark.css. The contrast block does real work here: a
+ * reader who asks for more contrast gets a brighter green, which is the only
+ * lever a monochrome palette has.
+ * ========================================================================= */
+
 @media (prefers-color-scheme: dark) {
   :root {
     --color-bg: #0a0e0a;
@@ -62,6 +92,9 @@
   }
 }
 
+
+/* == 3. Base elements ===================================================== */
+
 * {
   box-sizing: border-box;
 }
@@ -75,6 +108,9 @@ body {
   line-height: var(--line-height-base);
 }
 
+/* Always underlined, and it carries more weight than usual: --color-link and
+   --color-fg are the same green, so the underline is the only thing marking a
+   link as a link. */
 a {
   color: var(--color-link);
   text-decoration: underline;
@@ -84,6 +120,11 @@ a:visited {
   color: var(--color-link-visited);
 }
 
+
+/* == 4. Site chrome ========================================================= */
+
+/* Inverse video -- green background, black text -- rather than a gradient or a
+   tint. This is what a terminal has instead of chrome. */
 .site-header {
   display: flex;
   align-items: center;
@@ -104,49 +145,20 @@ a:visited {
   text-decoration: none;
 }
 
+/* Decorative shell prompt. */
 .site-header .site-title::before {
   content: "> ";
 }
 
-/* Preference controls (/preferences). All three are sibling <nav>s of links
-   with one <strong class="current-option"> for the active value, so they share
-   one rule -- .theme-switcher used to be styled alone (and in only three of the
-   four themes), while .avatar-toggle and .posts-per-page-switcher were styled
-   in none. */
-.theme-switcher,
-.avatar-toggle,
-.posts-per-page-switcher {
-  font-size: var(--font-size-small);
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-xs);
-}
-
-.preference {
-  margin-bottom: var(--space-md);
-}
-
-/* Error/attention states. --color-danger is declared by every theme and
-   required of every uploaded bundle (theme_bundle.REQUIRED_CUSTOM_PROPERTIES),
-   but nothing referenced it -- so these four states rendered unstyled while
-   third-party theme authors were still obliged to supply the colour. */
-.sync-health-stale,
-.wizard-intent-bad,
-.admin-theme-errors {
-  color: var(--color-danger);
-}
-
-.admin-channel-row-bot-blocked td {
-  border-left: var(--border-width) solid var(--color-danger);
-}
-
+/* Required because .site-header has a background of its own, and this theme is
+   the extreme case: --color-link and --color-accent are the *same* green, so
+   without this the header's links are invisible against it. Any theme that
+   repaints the header owes these links the same correction (theme-plain.css
+   leaves the header alone, so it doesn't). */
 .preferences-nav a,
 .preferences-nav a:visited,
 .account-nav a,
 .account-nav a:visited {
-  /* These sit on the header's --color-accent background, same as
-     .site-title -- the default link color is identical to that
-     background here, so without this override the links are invisible. */
   color: var(--color-accent-fg);
 }
 
@@ -165,6 +177,14 @@ a:visited {
 .breadcrumb-sep {
   color: var(--color-fg-muted);
 }
+
+
+/* == 5. Listing tables ======================================================
+ *
+ * See theme-plain.css section 5 for the read/unread vocabulary. Like the
+ * reference theme, this one doesn't zebra-stripe -- character-grid alignment
+ * and hard borders do the separating, the way a real terminal table would.
+ * ========================================================================= */
 
 .board-index,
 .board-topic-list,
@@ -186,21 +206,14 @@ a:visited {
   padding: var(--space-xs) var(--space-sm);
 }
 
-/* Its own colour, not --color-bg-alt: that's the zebra-stripe colour, and
-   `.board-row:nth-child(even)` outranks `.board-row-visited` on specificity,
-   so visited rows were invisible on even rows and indistinguishable from an
-   ordinary even row on odd ones. The :not() exclusions on the zebra rule keep
-   the two from ever competing again. Falls back for custom-theme bundles that
-   predate this property (it's deliberately not in
-   theme_bundle.REQUIRED_CUSTOM_PROPERTIES, so old bundles still validate). */
+/* Its own colour, never --color-bg-alt: that's the zebra-stripe colour in the
+   themes that stripe, and `:nth-child(even)` would outrank this class. Kept
+   consistent across all four themes so the rule is safe to copy. */
 .board-row-visited,
 .topic-row-visited {
   background: var(--color-bg-visited, var(--color-bg-alt));
 }
 
-/* Unread rows: emphasise the row's own name link, the classic forum
-   treatment. Both classes were emitted by the listing templates and styled by
-   no theme at all -- the .unread-dot was carrying the entire signal. */
 .board-row-unread td.board-name a,
 .topic-row-unread td.topic-name a {
   font-weight: bold;
@@ -211,24 +224,7 @@ a:visited {
   font-size: var(--font-size-small);
 }
 
-.thread-tree {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.thread-children {
-  list-style: none;
-  margin-top: var(--space-sm);
-  margin-left: var(--space-lg);
-  padding-left: var(--space-sm);
-  border-left: var(--border-width) solid var(--color-border);
-}
-
-.thread-node {
-  margin-top: var(--space-sm);
-}
-
+/* Inverse video again, matching .site-header. */
 .category-heading {
   background: var(--color-accent);
   color: var(--color-accent-fg);
@@ -237,6 +233,7 @@ a:visited {
   font-size: 1.15em;
 }
 
+/* Scoped to td because board_index.html uses .board-name on its <th> too. */
 td.board-name a,
 td.topic-name a {
   display: inline-flex;
@@ -267,6 +264,28 @@ td.topic-name a {
   color: var(--color-fg-muted);
 }
 
+
+/* == 6. Posts =============================================================== */
+
+.thread-tree {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.thread-children {
+  list-style: none;
+  margin-top: var(--space-sm);
+  margin-left: var(--space-lg);
+  padding-left: var(--space-sm);
+  border-left: var(--border-width) solid var(--color-border);
+}
+
+.thread-node {
+  margin-top: var(--space-sm);
+}
+
+/* Flat panel, square corners, no bevel -- --radius is 0 here. */
 .post {
   border: var(--border-width) solid var(--color-border);
   padding: var(--space-md);
@@ -290,6 +309,8 @@ td.topic-name a {
   color: var(--color-fg);
 }
 
+/* Decorative, like the site title's prompt: the author's name is already in
+   the markup, so nothing is lost if this isn't announced. */
 .post-author::before {
   content: "@";
   color: var(--color-fg-muted);
@@ -346,6 +367,9 @@ td.topic-name a {
   color: var(--color-fg-muted);
 }
 
+
+/* == 7. Post content ======================================================== */
+
 .reply-quote {
   border-left: 2px solid var(--color-border);
   padding-left: var(--space-sm);
@@ -353,8 +377,8 @@ td.topic-name a {
   margin: var(--space-sm) 0;
 }
 
-.reply-quote::before,
-.post-reply-quote blockquote::before {
+/* Email-style quote marker, decorative like the other ::before content here. */
+.reply-quote::before {
   content: "> ";
 }
 
@@ -373,15 +397,6 @@ td.topic-name a {
   margin-top: var(--space-sm);
 }
 
-.reaction-filter {
-  margin: var(--space-sm) 0;
-}
-
-.reaction-filter-option {
-  display: inline-block;
-  margin-right: var(--space-sm);
-}
-
 .reaction-badge {
   display: inline-block;
   border: var(--border-width) solid var(--color-border);
@@ -390,6 +405,9 @@ td.topic-name a {
   font-size: var(--font-size-small);
 }
 
+/* The only theme that boxes the embed on all four sides with --embed-color
+   rather than edging it: with no fills or radii to work with, the full border
+   is what makes an embed read as a distinct block. */
 .embed {
   border: var(--border-width) solid var(--embed-color, var(--color-border));
   padding: var(--space-sm);
@@ -422,6 +440,9 @@ td.topic-name a {
   color: var(--color-fg-muted);
 }
 
+
+/* == 8. Pagination and preference controls ================================== */
+
 .pagination-bar {
   display: flex;
   flex-wrap: wrap;
@@ -452,6 +473,36 @@ td.topic-name a {
   font-weight: bold;
 }
 
+.theme-switcher,
+.avatar-toggle,
+.posts-per-page-switcher {
+  font-size: var(--font-size-small);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+}
+
+.preference {
+  margin-bottom: var(--space-md);
+}
+
+.reaction-filter {
+  margin: var(--space-sm) 0;
+}
+
+.reaction-filter-option {
+  display: inline-block;
+  margin-right: var(--space-sm);
+}
+
+
+/* == 9. Forms and code ======================================================
+ *
+ * `font: inherit` matters more here than in any other theme: --font-body is
+ * already the monospace stack, so a search box left on the browser default is
+ * the one proportional-font element on the page.
+ * ========================================================================= */
+
 .search-form input[type="search"] {
   font: inherit;
   padding: var(--space-xs) var(--space-sm);
@@ -460,6 +511,9 @@ td.topic-name a {
   color: var(--color-fg);
 }
 
+/* Same stack as --font-body. Kept as its own rule anyway: the contract says
+   code uses --font-mono, and a fork that gives --font-body a proportional face
+   shouldn't have to rediscover that. */
 code, pre {
   font-family: var(--font-mono);
 }
@@ -469,4 +523,20 @@ pre {
   border: var(--border-width) solid var(--color-border);
   padding: var(--space-sm);
   overflow-x: auto;
+}
+
+
+/* == 10. Admin and wizard states ============================================
+ *
+ * The only use of --color-danger. See theme-plain.css section 10.
+ * ========================================================================= */
+
+.sync-health-stale,
+.wizard-intent-bad,
+.admin-theme-errors {
+  color: var(--color-danger);
+}
+
+.admin-channel-row-bot-blocked td {
+  border-left: var(--border-width) solid var(--color-danger);
 }

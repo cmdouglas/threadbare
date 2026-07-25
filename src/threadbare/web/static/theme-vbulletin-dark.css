@@ -1,14 +1,24 @@
-/* vBulletin dark -- "the other half of forum nostalgia" (DESIGN.md §6):
- * dark charcoal/navy panels, a saturated blue gradient header/category bar,
- * rounded-cornered boxes with thin flat borders. Deliberately NOT a
- * subSilver reskin -- subSilver is light-by-default with beveled
- * (outset/inset) rectangular borders; this theme is dark-by-default with
- * flat borders and real border-radius, which is the actual visual
- * fingerprint that told the two forum families apart. Same CSS
- * custom-property contract as theme-plain.css/theme-subsilver.css -- every
- * theme only needs to override the :root values below over the same fixed
- * semantic classed markup.
- */
+/* ============================================================================
+ * vBulletin dark -- "the other half of forum nostalgia" (DESIGN.md §6).
+ *
+ * Read theme-plain.css first. It is the reference theme and documents how
+ * theming works, what the :root contract is, and what each of the ten sections
+ * below is for. This file carries the same sections in the same order; the
+ * notes here only cover where vBulletin deliberately differs.
+ *
+ * Deliberately NOT a subSilver reskin. subSilver is light by default with
+ * beveled (outset/inset) rectangular borders; this is dark by default with
+ * flat borders and real border-radius, which is the actual visual fingerprint
+ * that told the two forum families apart. Dark charcoal-navy panels, a
+ * saturated blue gradient on the header and category bars.
+ * ========================================================================= */
+
+
+/* == 1. Theme palette -- the :root contract =================================
+ *
+ * See theme-plain.css section 1 for which properties are required and why
+ * --embed-color isn't declared. Same property set, vBulletin's values.
+ * ========================================================================= */
 
 :root {
   --color-bg: #16191f;
@@ -34,16 +44,22 @@
   --space-md: 1rem;
   --space-lg: 2rem;
 
+  /* Rounded corners plus flat borders -- the split from subSilver. */
   --radius: 6px;
   --border-width: 1px;
   --container-max-width: 1000px;
 }
 
-/* Already dark by default -- this block is a near-no-op pass-through
- * (matching theme-subsilver.css's own convention of always defining the
- * block, even when there's little left to change) rather than a second,
- * darker palette on top of an already-dark one.
- */
+
+/* == 2. User preferences ====================================================
+ *
+ * This theme is already dark, so the block below re-declares the same values
+ * rather than darkening an already-dark palette. It's kept as a near-no-op on
+ * purpose: every theme defining the block makes the four readable side by
+ * side, and it's the obvious place to reach for if this theme ever grows a
+ * separate dark variant.
+ * ========================================================================= */
+
 @media (prefers-color-scheme: dark) {
   :root {
     --color-bg: #16191f;
@@ -65,6 +81,9 @@
   }
 }
 
+
+/* == 3. Base elements ===================================================== */
+
 * {
   box-sizing: border-box;
 }
@@ -78,6 +97,8 @@ body {
   line-height: var(--line-height-base);
 }
 
+/* Underline on hover rather than always -- the late-2000s convention, and the
+   clearest single difference from subSilver's link treatment. */
 a {
   color: var(--color-link);
   text-decoration: none;
@@ -91,6 +112,13 @@ a:visited {
   color: var(--color-link-visited);
 }
 
+
+/* == 4. Site chrome ========================================================= */
+
+/* Hard-coded gradient stops rather than var()s: --color-accent is one colour
+   and this needs two, and a gradient from --color-accent to a derived darker
+   shade isn't expressible in plain CSS. Keep them in step with the palette by
+   hand -- same applies to .category-heading in section 5. */
 .site-header {
   display: flex;
   align-items: center;
@@ -112,36 +140,16 @@ a:visited {
   text-decoration: none;
 }
 
-/* Preference controls (/preferences). All three are sibling <nav>s of links
-   with one <strong class="current-option"> for the active value, so they share
-   one rule -- .theme-switcher used to be styled alone (and in only three of the
-   four themes), while .avatar-toggle and .posts-per-page-switcher were styled
-   in none. */
-.theme-switcher,
-.avatar-toggle,
-.posts-per-page-switcher {
-  font-size: var(--font-size-small);
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-xs);
-}
-
-.preference {
-  margin-bottom: var(--space-md);
-}
-
-/* Error/attention states. --color-danger is declared by every theme and
-   required of every uploaded bundle (theme_bundle.REQUIRED_CUSTOM_PROPERTIES),
-   but nothing referenced it -- so these four states rendered unstyled while
-   third-party theme authors were still obliged to supply the colour. */
-.sync-health-stale,
-.wizard-intent-bad,
-.admin-theme-errors {
-  color: var(--color-danger);
-}
-
-.admin-channel-row-bot-blocked td {
-  border-left: var(--border-width) solid var(--color-danger);
+/* Required because .site-header has a background of its own: --color-link is
+   picked to read against --color-bg, and #5b9dd9 on the header's #3a7cbf is
+   barely a shade apart. Any theme that repaints the header owes these links
+   the same correction (theme-plain.css leaves the header alone, so it
+   doesn't). */
+.preferences-nav a,
+.preferences-nav a:visited,
+.account-nav a,
+.account-nav a:visited {
+  color: var(--color-accent-fg);
 }
 
 .site-main {
@@ -160,6 +168,16 @@ a:visited {
   color: var(--color-fg-muted);
 }
 
+
+/* == 5. Listing tables ======================================================
+ *
+ * See theme-plain.css section 5 for the read/unread vocabulary. vBulletin adds
+ * zebra striping, which the reference theme doesn't have -- see the note on
+ * the rule below before copying it.
+ * ========================================================================= */
+
+/* `separate` + `overflow: hidden` rather than `collapse`: a collapsed table
+   can't have rounded corners, and the radius is half this theme's identity. */
 .board-index,
 .board-topic-list,
 .board-week-list {
@@ -177,6 +195,14 @@ a:visited {
   border-bottom: var(--border-width) solid var(--color-border);
 }
 
+/* Zebra striping. Both :not()s are load-bearing:
+   - The visited exclusions, because --color-bg-alt is this stripe's colour
+     *and* the fallback for --color-bg-visited, and `:nth-child(even)` outranks
+     a plain class. Without them a visited row on an even index is painted the
+     stripe colour and reads as unvisited.
+   - The pagination exclusions, because a multi-page listing puts a real <tr>
+     for its pager inside the table (board_index.html, board_topic_list.html).
+     Counting it flips the parity of every row after it. */
 .board-row:nth-child(even):not(.board-row-visited):not(.board-pagination-row),
 .topic-row:nth-child(even):not(.topic-row-visited):not(.topic-pagination-row),
 .week-row:nth-child(even) {
@@ -189,21 +215,12 @@ a:visited {
   padding: var(--space-sm);
 }
 
-/* Its own colour, not --color-bg-alt: that's the zebra-stripe colour, and
-   `.board-row:nth-child(even)` outranks `.board-row-visited` on specificity,
-   so visited rows were invisible on even rows and indistinguishable from an
-   ordinary even row on odd ones. The :not() exclusions on the zebra rule keep
-   the two from ever competing again. Falls back for custom-theme bundles that
-   predate this property (it's deliberately not in
-   theme_bundle.REQUIRED_CUSTOM_PROPERTIES, so old bundles still validate). */
+/* Its own colour, never --color-bg-alt -- see the striping note above. */
 .board-row-visited,
 .topic-row-visited {
   background: var(--color-bg-visited, var(--color-bg-alt));
 }
 
-/* Unread rows: emphasise the row's own name link, the classic forum
-   treatment. Both classes were emitted by the listing templates and styled by
-   no theme at all -- the .unread-dot was carrying the entire signal. */
 .board-row-unread td.board-name a,
 .topic-row-unread td.topic-name a {
   font-weight: bold;
@@ -214,24 +231,8 @@ a:visited {
   font-size: var(--font-size-small);
 }
 
-.thread-tree {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.thread-children {
-  list-style: none;
-  margin-top: var(--space-sm);
-  margin-left: var(--space-lg);
-  padding-left: var(--space-sm);
-  border-left: var(--border-width) solid var(--color-border);
-}
-
-.thread-node {
-  margin-top: var(--space-sm);
-}
-
+/* Rounded only on top: this bar sits directly above its table, and the two
+   read as one panel. Hard-coded gradient stops, as in .site-header. */
 .category-heading {
   background: linear-gradient(to bottom, #3a7cbf, #1d3f63);
   color: var(--color-accent-fg);
@@ -241,6 +242,7 @@ a:visited {
   border-radius: var(--radius) var(--radius) 0 0;
 }
 
+/* Scoped to td because board_index.html uses .board-name on its <th> too. */
 td.board-name a,
 td.topic-name a {
   display: inline-flex;
@@ -271,6 +273,29 @@ td.topic-name a {
   color: var(--color-fg-muted);
 }
 
+
+/* == 6. Posts =============================================================== */
+
+.thread-tree {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.thread-children {
+  list-style: none;
+  margin-top: var(--space-sm);
+  margin-left: var(--space-lg);
+  padding-left: var(--space-sm);
+  border-left: var(--border-width) solid var(--color-border);
+}
+
+.thread-node {
+  margin-top: var(--space-sm);
+}
+
+/* Lifted off the page background rather than beveled: --color-bg-alt panel,
+   flat border, real radius. */
 .post {
   border: var(--border-width) solid var(--color-border);
   border-radius: var(--radius);
@@ -290,6 +315,8 @@ td.topic-name a {
   border-bottom: var(--border-width) solid var(--color-border);
 }
 
+/* --color-link, not --color-accent: on a dark panel the accent is a background
+   colour and too dark to set type in. */
 .post-author {
   font-weight: bold;
   color: var(--color-link);
@@ -346,6 +373,11 @@ td.topic-name a {
   color: var(--color-fg-muted);
 }
 
+
+/* == 7. Post content ======================================================== */
+
+/* Recessed rather than raised: --color-bg is darker than the .post panel it
+   sits on, so the quote reads as set into the message. */
 .reply-quote {
   border: var(--border-width) solid var(--color-border);
   border-left: 3px solid var(--color-accent);
@@ -372,15 +404,6 @@ td.topic-name a {
   margin-top: var(--space-sm);
 }
 
-.reaction-filter {
-  margin: var(--space-sm) 0;
-}
-
-.reaction-filter-option {
-  display: inline-block;
-  margin-right: var(--space-sm);
-}
-
 .reaction-badge {
   display: inline-block;
   border: var(--border-width) solid var(--color-border);
@@ -391,6 +414,7 @@ td.topic-name a {
   background: var(--color-bg);
 }
 
+/* Only the left edge takes --embed-color; the rest is a flat panel. */
 .embed {
   border-left: 4px solid var(--embed-color, var(--color-border));
   padding: var(--space-sm);
@@ -427,6 +451,9 @@ td.topic-name a {
   color: var(--color-fg-muted);
 }
 
+
+/* == 8. Pagination and preference controls ================================== */
+
 .pagination-bar {
   display: flex;
   flex-wrap: wrap;
@@ -457,6 +484,31 @@ td.topic-name a {
   font-weight: bold;
 }
 
+.theme-switcher,
+.avatar-toggle,
+.posts-per-page-switcher {
+  font-size: var(--font-size-small);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+}
+
+.preference {
+  margin-bottom: var(--space-md);
+}
+
+.reaction-filter {
+  margin: var(--space-sm) 0;
+}
+
+.reaction-filter-option {
+  display: inline-block;
+  margin-right: var(--space-sm);
+}
+
+
+/* == 9. Forms and code ====================================================== */
+
 .search-form input[type="search"] {
   font: inherit;
   padding: var(--space-xs) var(--space-sm);
@@ -470,10 +522,28 @@ code, pre {
   font-family: var(--font-mono);
 }
 
+/* --color-bg, not --color-bg-alt: a code block sits inside a .post, which is
+   already --color-bg-alt, so the alt shade would leave it invisible. */
 pre {
   background: var(--color-bg);
   border: var(--border-width) solid var(--color-border);
   border-radius: var(--radius);
   padding: var(--space-sm);
   overflow-x: auto;
+}
+
+
+/* == 10. Admin and wizard states ============================================
+ *
+ * The only use of --color-danger. See theme-plain.css section 10.
+ * ========================================================================= */
+
+.sync-health-stale,
+.wizard-intent-bad,
+.admin-theme-errors {
+  color: var(--color-danger);
+}
+
+.admin-channel-row-bot-blocked td {
+  border-left: var(--border-width) solid var(--color-danger);
 }

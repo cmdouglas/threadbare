@@ -149,6 +149,56 @@ def test_theme_styles_every_selector_the_templates_emit(stylesheet, selector):
     assert selector in css, f"{stylesheet} has no rule mentioning {selector}"
 
 
+_SECTION_RE = re.compile(r"/\*\s*==\s*(\d+)\.\s*(.+?)\s*={3,}")
+
+
+def _sections(stylesheet: str) -> list[tuple[str, str]]:
+    css = (STATIC_DIR / stylesheet).read_text()
+    return _SECTION_RE.findall(css)
+
+
+def test_every_theme_carries_the_identical_section_layout():
+    """The four built-ins double as reference implementations for theme
+    authors, and their value as a set is that they can be read side by side --
+    "how does terminal do posts?" should be answerable by jumping to the same
+    section number in another file. Nothing structural keeps them aligned, so
+    this is the test that does: same sections, same order, same names.
+    """
+    by_theme = {name: _sections(name) for name in sorted(AVAILABLE_THEMES.values())}
+    reference_name, reference = next(iter(by_theme.items()))
+
+    assert reference, f"{reference_name} declares no `/* == N. Title == */` sections"
+    for name, sections in by_theme.items():
+        assert sections == reference, (
+            f"{name}'s section layout differs from {reference_name}'s -- "
+            f"got {sections}, expected {reference}"
+        )
+
+
+@pytest.mark.parametrize("stylesheet", sorted(AVAILABLE_THEMES.values()))
+def test_theme_that_repaints_the_header_also_repaints_its_nav_links(stylesheet):
+    """--color-link is chosen to read against --color-bg. A theme that gives
+    .site-header a background of its own therefore has to restate the colour of
+    the links sitting on it (Preferences, Log in/out, Admin) or they keep a
+    colour picked for a different background -- which is how vBulletin dark
+    ended up with #5b9dd9 links on its #3a7cbf header gradient.
+
+    Themes that leave the header on --color-bg are exempt; there is nothing for
+    them to correct.
+    """
+    css = (STATIC_DIR / stylesheet).read_text()
+    header = re.search(r"\.site-header\s*\{([^}]*)\}", css)
+
+    assert header is not None, f"{stylesheet} has no .site-header rule"
+    if "background" not in header.group(1):
+        pytest.skip(f"{stylesheet} leaves the header on --color-bg")
+
+    assert ".preferences-nav a" in css and ".account-nav a" in css, (
+        f"{stylesheet} gives .site-header its own background but never restates "
+        f"the colour of the nav links sitting on it"
+    )
+
+
 def test_color_danger_is_actually_used_not_just_declared():
     """--color-danger is required of every uploaded bundle
     (theme_bundle.REQUIRED_CUSTOM_PROPERTIES), so the app has to honour it

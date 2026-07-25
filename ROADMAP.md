@@ -729,3 +729,49 @@ as a historical record, not documentation.
 **Not verified in this environment:** the `DISCORD_GUILD_ID` rename's effect on a real upgrade
 (Options A/B `.env`, and Option C's `threadbare/app-config` secret, which an operator must rekey by
 hand) — flagged in `DESIGN.md` §10 per this project's convention rather than assumed working.
+
+## Theme readability pass (2026-07-25)
+
+The four built-in stylesheets are the only worked examples a theme author gets, and custom bundles
+are validated against the same `:root` contract they demonstrate — so they're documentation as much
+as code, for an audience that may not be fluent in CSS. This pass rewrote them for that audience.
+No visual change beyond the one bug noted below: a declaration-level diff against the previous
+revision is empty for `theme-plain.css` and `theme-subsilver.css`, and shows only the two
+intentional edits for the other two.
+
+**All four now carry the identical ten numbered sections in the identical order.** The value of
+shipping four themes is that they can be read side by side — "how does terminal handle posts?"
+should be answerable by opening the same section number in that file. They had drifted apart
+instead: the audit pass above appended the shared preference-control and `--color-danger` rules
+wherever the old `.theme-switcher` rule happened to sit, which in three themes was the middle of
+the header block and in `theme-plain.css` was the end of the file.
+`test_every_theme_carries_the_identical_section_layout` now enforces it.
+
+**Comments were rewritten from incident reports into rules.** The audit pass left explanations
+phrased as history — "visited rows *were* invisible on even rows", ".theme-switcher *used to be*
+styled alone in only three of the four themes". That's addressed to whoever remembers the bug. A
+theme author needs the invariant prospectively: *don't* paint visited rows `--color-bg-alt`,
+because it's also the stripe colour and `:nth-child(even)` will outrank you; if you add striping,
+exclude the visited and pagination rows the way subsilver and vBulletin do.
+
+**The contract is now documented where it's used.** `theme-plain.css` opens with how theming works
+(fixed semantic classes, no per-theme markup, override `:root` and you already have a coherent
+theme), which properties are required versus optional, and — the genuinely confusing one —
+why `--embed-color` is `var()`'d by every theme and declared by none: `rendering/embeds.py` sets it
+inline per embed from Discord's own colour, so declaring a value would override every real embed
+colour with it. The other three now open by pointing at plain and describing only their own
+deviations, rather than each restating a slightly different version of the shared contract.
+
+**One real bug, found by writing the test for it:** vBulletin dark gives `.site-header` a blue
+gradient but never restated the colour of the nav links sitting on it, leaving `#5b9dd9` links on a
+`#3a7cbf` header. subsilver and terminal both correct this; vBulletin was missed when the
+`/preferences` links moved into the masthead.
+`test_theme_that_repaints_the_header_also_repaints_its_nav_links` states the invariant — a theme
+that repaints the header owes its nav links a colour, since `--color-link` is chosen against
+`--color-bg` — and exempts themes like plain that leave the header alone, so it can't be satisfied
+by adding a no-op rule.
+
+Also dropped `theme-terminal.css`'s `.post-reply-quote blockquote::before`, the last survivor of the
+redundant-selector pair the audit pass removed elsewhere: `rendering/quotes.py` emits
+`<blockquote class="reply-quote">` and `_post.html` wraps it in `.post-reply-quote`, and the snippet
+inside is `html.escape`d, so both halves could only ever match the same element.

@@ -1,11 +1,24 @@
-/* subSilver-ish -- a loving, not pixel-exact, recreation of the 2004 phpBB2
- * default theme: beveled gradients, table-dense layouts, tiny pagination
- * links. Same CSS custom-property contract as theme-plain.css (every other
- * theme, including this one, only needs to override the :root values below
- * plus a handful of subSilver-specific flourishes) -- the semantic classed
- * markup itself (board-index, board-row, topic-row, post, post-meta,
- * post-content, reply-quote, ...) stays fixed across all themes.
- */
+/* ============================================================================
+ * subSilver-ish -- a loving, not pixel-exact, recreation of the 2004 phpBB2
+ * default: beveled gradients, table-dense layouts, tiny pagination links.
+ *
+ * Read theme-plain.css first. It is the reference theme and documents how
+ * theming works, what the :root contract is, and what each of the ten sections
+ * below is for. This file carries the same sections in the same order; the
+ * notes here only cover where subSilver deliberately differs.
+ *
+ * The look comes from three things, and they're worth naming because they're
+ * what any period-accurate phpBB2 revival needs: `border-style: outset/inset`
+ * for the beveled panels, a hard-edged palette with --radius: 0, and much
+ * tighter spacing than a modern theme would use.
+ * ========================================================================= */
+
+
+/* == 1. Theme palette -- the :root contract =================================
+ *
+ * See theme-plain.css section 1 for which properties are required and why
+ * --embed-color isn't declared. Same property set, subSilver's values.
+ * ========================================================================= */
 
 :root {
   --color-bg: #ebebeb;
@@ -31,10 +44,19 @@
   --space-md: 0.8rem;
   --space-lg: 1.6rem;
 
+  /* Square corners and small Verdana are most of the period feel. */
   --radius: 0px;
   --border-width: 1px;
   --container-max-width: 1000px;
 }
+
+
+/* == 2. User preferences ====================================================
+ *
+ * A dark subSilver is an anachronism, but a reader who asked their OS for dark
+ * mode gets one anyway -- the retro styling is in the borders and the density,
+ * both of which survive the palette swap.
+ * ========================================================================= */
 
 @media (prefers-color-scheme: dark) {
   :root {
@@ -65,6 +87,9 @@
   }
 }
 
+
+/* == 3. Base elements ===================================================== */
+
 * {
   box-sizing: border-box;
 }
@@ -78,6 +103,7 @@ body {
   line-height: var(--line-height-base);
 }
 
+/* Always-underlined links: 2004 forums didn't reveal them on hover. */
 a {
   color: var(--color-link);
   text-decoration: underline;
@@ -86,6 +112,9 @@ a {
 a:visited {
   color: var(--color-link-visited);
 }
+
+
+/* == 4. Site chrome ========================================================= */
 
 .site-header {
   display: flex;
@@ -108,44 +137,14 @@ a:visited {
   text-decoration: none;
 }
 
-/* Preference controls (/preferences). All three are sibling <nav>s of links
-   with one <strong class="current-option"> for the active value, so they share
-   one rule -- .theme-switcher used to be styled alone (and in only three of the
-   four themes), while .avatar-toggle and .posts-per-page-switcher were styled
-   in none. */
-.theme-switcher,
-.avatar-toggle,
-.posts-per-page-switcher {
-  font-size: var(--font-size-small);
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-xs);
-}
-
-.preference {
-  margin-bottom: var(--space-md);
-}
-
-/* Error/attention states. --color-danger is declared by every theme and
-   required of every uploaded bundle (theme_bundle.REQUIRED_CUSTOM_PROPERTIES),
-   but nothing referenced it -- so these four states rendered unstyled while
-   third-party theme authors were still obliged to supply the colour. */
-.sync-health-stale,
-.wizard-intent-bad,
-.admin-theme-errors {
-  color: var(--color-danger);
-}
-
-.admin-channel-row-bot-blocked td {
-  border-left: var(--border-width) solid var(--color-danger);
-}
-
+/* Required because .site-header has a background of its own: --color-link is
+   picked to read against --color-bg, and it's far too close to --color-accent
+   to be legible on it. Any theme that repaints the header owes these links the
+   same correction (theme-plain.css leaves the header alone, so it doesn't). */
 .preferences-nav a,
 .preferences-nav a:visited,
 .account-nav a,
 .account-nav a:visited {
-  /* These sit on the header's --color-accent background, same as
-     .site-title -- the default link color is too close to it to read. */
   color: var(--color-accent-fg);
 }
 
@@ -165,6 +164,14 @@ a:visited {
   color: var(--color-fg-muted);
 }
 
+
+/* == 5. Listing tables ======================================================
+ *
+ * See theme-plain.css section 5 for the read/unread vocabulary. subSilver adds
+ * zebra striping, which the reference theme doesn't have -- see the note on
+ * the rule below before copying it.
+ * ========================================================================= */
+
 .board-index,
 .board-topic-list,
 .board-week-list {
@@ -179,6 +186,14 @@ a:visited {
   border-bottom: var(--border-width) solid var(--color-border);
 }
 
+/* Zebra striping. Both :not()s are load-bearing:
+   - The visited exclusions, because --color-bg-alt is this stripe's colour
+     *and* the fallback for --color-bg-visited, and `:nth-child(even)` outranks
+     a plain class. Without them a visited row on an even index is painted the
+     stripe colour and reads as unvisited.
+   - The pagination exclusions, because a multi-page listing puts a real <tr>
+     for its pager inside the table (board_index.html, board_topic_list.html).
+     Counting it flips the parity of every row after it. */
 .board-row:nth-child(even):not(.board-row-visited):not(.board-pagination-row),
 .topic-row:nth-child(even):not(.topic-row-visited):not(.topic-pagination-row),
 .week-row:nth-child(even) {
@@ -191,21 +206,12 @@ a:visited {
   padding: var(--space-xs) var(--space-sm);
 }
 
-/* Its own colour, not --color-bg-alt: that's the zebra-stripe colour, and
-   `.board-row:nth-child(even)` outranks `.board-row-visited` on specificity,
-   so visited rows were invisible on even rows and indistinguishable from an
-   ordinary even row on odd ones. The :not() exclusions on the zebra rule keep
-   the two from ever competing again. Falls back for custom-theme bundles that
-   predate this property (it's deliberately not in
-   theme_bundle.REQUIRED_CUSTOM_PROPERTIES, so old bundles still validate). */
+/* Its own colour, never --color-bg-alt -- see the striping note above. */
 .board-row-visited,
 .topic-row-visited {
   background: var(--color-bg-visited, var(--color-bg-alt));
 }
 
-/* Unread rows: emphasise the row's own name link, the classic forum
-   treatment. Both classes were emitted by the listing templates and styled by
-   no theme at all -- the .unread-dot was carrying the entire signal. */
 .board-row-unread td.board-name a,
 .topic-row-unread td.topic-name a {
   font-weight: bold;
@@ -216,24 +222,8 @@ a:visited {
   font-size: var(--font-size-small);
 }
 
-.thread-tree {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.thread-children {
-  list-style: none;
-  margin-top: var(--space-sm);
-  margin-left: var(--space-lg);
-  padding-left: var(--space-sm);
-  border-left: var(--border-width) solid var(--color-border);
-}
-
-.thread-node {
-  margin-top: var(--space-sm);
-}
-
+/* The blue gradient bar over each category -- the single most recognisable
+   piece of phpBB2 chrome. */
 .category-heading {
   background: linear-gradient(to bottom, var(--color-accent), #1f3868);
   color: var(--color-accent-fg);
@@ -242,6 +232,9 @@ a:visited {
   font-size: 1.15em;
 }
 
+/* Scoped to td because board_index.html uses .board-name on its <th> too.
+   The font-size bump is deliberate: --font-size-base is small enough here that
+   board and topic names need to stay at a readable 1rem. */
 td.board-name a,
 td.topic-name a {
   display: inline-flex;
@@ -273,6 +266,30 @@ td.topic-name a {
   color: var(--color-fg-muted);
 }
 
+
+/* == 6. Posts =============================================================== */
+
+.thread-tree {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.thread-children {
+  list-style: none;
+  margin-top: var(--space-sm);
+  margin-left: var(--space-lg);
+  padding-left: var(--space-sm);
+  border-left: var(--border-width) solid var(--color-border);
+}
+
+.thread-node {
+  margin-top: var(--space-sm);
+}
+
+/* `border-style: outset` is the beveled panel -- the browser derives the light
+   and dark edges from --color-border, which is why this works across the
+   palette swap in section 2. */
 .post {
   border: var(--border-width) solid var(--color-border);
   border-style: outset;
@@ -320,6 +337,8 @@ td.topic-name a {
   vertical-align: middle;
 }
 
+/* Square, hard-bordered avatars rather than the reference theme's rounded
+   ones -- --radius is 0 here, so a border does the work instead. */
 .site-icon,
 .post-avatar,
 .user-avatar {
@@ -348,6 +367,10 @@ td.topic-name a {
   color: var(--color-fg-muted);
 }
 
+
+/* == 7. Post content ======================================================== */
+
+/* The boxed, accent-edged quote block phpBB2 used for its [quote] tag. */
 .reply-quote {
   border: var(--border-width) solid var(--color-border);
   border-left: 3px solid var(--color-accent);
@@ -373,15 +396,6 @@ td.topic-name a {
   margin-top: var(--space-xs);
 }
 
-.reaction-filter {
-  margin: var(--space-sm) 0;
-}
-
-.reaction-filter-option {
-  display: inline-block;
-  margin-right: var(--space-sm);
-}
-
 .reaction-badge {
   display: inline-block;
   border: var(--border-width) solid var(--color-border);
@@ -392,6 +406,8 @@ td.topic-name a {
   background: var(--color-bg-alt);
 }
 
+/* Spelled out edge by edge because only the left one takes --embed-color; a
+   `border:` shorthand here would paint all four with it. */
 .embed {
   border-left: 4px solid var(--embed-color, var(--color-border));
   border-top: var(--border-width) solid var(--color-border);
@@ -428,6 +444,9 @@ td.topic-name a {
   color: var(--color-fg-muted);
 }
 
+
+/* == 8. Pagination and preference controls ================================== */
+
 .pagination-bar {
   display: flex;
   flex-wrap: wrap;
@@ -450,6 +469,7 @@ td.topic-name a {
   font-size: var(--font-size-small);
 }
 
+/* The cramped, closely-set page numbers of a phpBB2 pager. */
 .pagination a,
 .pagination span {
   padding: 0 3px;
@@ -463,6 +483,33 @@ td.topic-name a {
   font-weight: bold;
 }
 
+.theme-switcher,
+.avatar-toggle,
+.posts-per-page-switcher {
+  font-size: var(--font-size-small);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+}
+
+.preference {
+  margin-bottom: var(--space-md);
+}
+
+.reaction-filter {
+  margin: var(--space-sm) 0;
+}
+
+.reaction-filter-option {
+  display: inline-block;
+  margin-right: var(--space-sm);
+}
+
+
+/* == 9. Forms and code ====================================================== */
+
+/* `border-style: inset` is the beveled counterpart to the post's outset -- the
+   sunken input well of a 2004 form. */
 .search-form input[type="search"] {
   font: inherit;
   padding: var(--space-xs) var(--space-sm);
@@ -481,4 +528,20 @@ pre {
   border: var(--border-width) solid var(--color-border);
   padding: var(--space-sm);
   overflow-x: auto;
+}
+
+
+/* == 10. Admin and wizard states ============================================
+ *
+ * The only use of --color-danger. See theme-plain.css section 10.
+ * ========================================================================= */
+
+.sync-health-stale,
+.wizard-intent-bad,
+.admin-theme-errors {
+  color: var(--color-danger);
+}
+
+.admin-channel-row-bot-blocked td {
+  border-left: var(--border-width) solid var(--color-danger);
 }
