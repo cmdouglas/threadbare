@@ -36,7 +36,9 @@ MOD_PERMISSIONS = MANAGE_GUILD | ADMINISTRATOR
 
 # Routes that must stay reachable while logged out: the login gate itself
 # would otherwise redirect a user trying to log in back to the login page.
-LOGIN_EXEMPT_ENDPOINTS = frozenset({"auth.login", "auth.oauth_callback", "static"})
+LOGIN_EXEMPT_ENDPOINTS = frozenset(
+    {"auth.login", "auth.oauth_callback", "static", "themes.custom_asset"}
+)
 
 
 def has_mod_permissions(permissions: int) -> bool:

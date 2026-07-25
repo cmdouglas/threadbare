@@ -42,6 +42,11 @@
   </form>
 </section>
 
+<section class="admin-themes">
+  <h2>Themes</h2>
+  <p><a href="{{ url_for('admin.themes_index') }}">Manage custom themes</a></p>
+</section>
+
 <section class="admin-channels">
   <h2>Channels</h2>
   {% if channels | selectattr("bot_can_read", "equalto", False) | list %}

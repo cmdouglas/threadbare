@@ -100,6 +100,18 @@ def test_load_settings_rejects_blank_flask_secret_key():
         load_settings(env)
 
 
+def test_theme_storage_dir_defaults_when_absent():
+    settings = load_settings(VALID_ENV)
+
+    assert settings.theme_storage_dir == "/app/theme_storage"
+
+
+def test_theme_storage_dir_reads_from_env():
+    env = dict(VALID_ENV, THEME_STORAGE_DIR="/data/themes")
+
+    assert load_settings(env).theme_storage_dir == "/data/themes"
+
+
 def test_get_database_url_returns_value_when_present():
     env = {"DATABASE_URL": "postgresql://threadbare:threadbare@localhost:5432/threadbare_dev"}
 

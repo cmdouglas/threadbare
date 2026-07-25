@@ -5,9 +5,9 @@
 <section class="preference">
   <h2>Theme</h2>
   <nav class="theme-switcher">
-    {% for name in themes_available %}
-      {% if name == theme %}<strong class="preference-current">{{ name }}</strong>
-      {% else %}<a href="{{ theme_switch_url(name) }}">{{ name }}</a>{% endif %}
+    {% for item in themes_available %}
+      {% if item.slug == theme %}<strong class="preference-current">{{ item.label }}</strong>
+      {% else %}<a href="{{ theme_switch_url(item.slug) }}">{{ item.label }}</a>{% endif %}
     {% endfor %}
   </nav>
 </section>

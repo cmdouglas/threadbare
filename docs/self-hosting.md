@@ -162,7 +162,11 @@ Gotchas worth knowing before you go further:
   content is never backed up by design (Discord is the source of truth), but the small
   Threadbare-native config isn't backed up automatically either yet. An occasional VPS
   snapshot (most providers offer one-click snapshots in their dashboard) is a reasonable
-  stopgap in the meantime.
+  stopgap in the meantime. **Custom themes need special care**: their metadata is in Postgres,
+  but the uploaded bundle files (CSS + images/fonts/audio/video) live on the `threadbare-themes`
+  Docker volume, which a database dump does **not** capture. A VPS snapshot covers it; a
+  Postgres-only backup does not, so a mod would have to re-upload any custom themes after a
+  DB-only restore. See "Custom themes" below.
 - If the domain ever changes, update `THREADBARE_DOMAIN` in `.env` **and** the OAuth redirect
   URI registered in the Discord developer portal — they have to match exactly.
 
@@ -306,3 +310,40 @@ docker compose restart sync-worker
 The reset itself is just a database update and finishes instantly — the actual re-fetch happens
 on restart and re-walks the channel's *entire* history from Discord, so it's rate-limited and can
 take a while on a large channel. Existing rows are updated in place, not duplicated.
+
+## Custom themes
+
+Beyond the four built-in themes, a mod can register custom themes from the admin page
+(**Admin → Themes → Manage custom themes**). A theme is uploaded as a single `.zip` bundle with
+this layout:
+
+```
+my-theme.zip
+├── theme.css        (required — the stylesheet; must define the theme custom-property contract)
+├── theme.json       (optional — {"display_name": "...", "author": "...", "version": "..."})
+└── assets/          (optional — media referenced by theme.css via relative paths)
+    ├── background.png
+    ├── heading.woff2
+    └── theme-song.mp3
+```
+
+`theme.css` references media by relative path, e.g. `background: url(assets/background.png)`. To
+get the custom-property contract right, download a built-in theme from the same page as a starting
+template — `theme.css` must define every `--color-*` / `--font-*` / `--space-*` / etc. property the
+built-ins do, or the upload is rejected with the missing ones named. The uploader also checks that
+every `url(assets/…)` reference actually resolves to a file in the bundle (so broken/misspelled
+image paths are caught up front).
+
+Allowed asset types: images (png, jpg, gif, webp, avif), fonts (woff, woff2, ttf, otf), audio
+(mp3, ogg, wav, m4a, aac, flac), and video (mp4, webm, ogv). **SVG, HTML, and JavaScript are
+deliberately not allowed** — they can execute script from the site's own origin, so they're
+excluded for safety. There's a per-bundle size cap (tens of MB); keep large video/audio modest.
+
+Two operational notes:
+
+- **Storage & backups**: bundles are extracted onto the `threadbare-themes` Docker volume, not into
+  Postgres. Add that volume to your backup routine (or take VPS snapshots) — a database dump alone
+  won't restore your custom themes, and a rebuilt/lost volume silently falls every viewer back to
+  the default theme.
+- **Trust**: only mods can register themes, and a theme is CSS that runs on every page. Treat an
+  uploaded theme like any other code you'd run — only register bundles from people you trust.

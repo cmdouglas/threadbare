@@ -732,6 +732,21 @@ async def get_user(conn: psycopg.AsyncConnection, user_id: int) -> dict | None:
         return await cur.fetchone()
 
 
+async def get_custom_themes(conn: psycopg.AsyncConnection) -> list[dict]:
+    """Registered custom themes' metadata, for the theme switcher and
+    per-request resolution -- a member read (not admin-only), since every
+    logged-in visitor can pick one. The bundle files live on the themes
+    volume; web/app.py filters this list to themes whose theme.css actually
+    exists on disk before offering them, so a lost/rebuilt volume degrades
+    to the built-in themes rather than broken stylesheet links.
+    """
+    async with conn.cursor() as cur:
+        await cur.execute(
+            "SELECT slug, display_name, updated_at FROM custom_themes ORDER BY display_name, slug"
+        )
+        return await cur.fetchall()
+
+
 async def get_roles_by_ids(conn: psycopg.AsyncConnection, role_ids: list[int]) -> list[dict]:
     if not role_ids:
         return []

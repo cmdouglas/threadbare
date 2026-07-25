@@ -47,7 +47,7 @@ def web_conn(test_database_url):
 
 
 @pytest.fixture
-def app(web_conn):
+def app(web_conn, tmp_path):
     settings = Settings(
         discord_bot_token="test-bot-token",
         discord_guild_id=1,
@@ -56,6 +56,7 @@ def app(web_conn):
         discord_client_secret="test-client-secret",
         discord_oauth_redirect_uri="http://localhost:5000/oauth/callback",
         flask_secret_key="test-secret-key",
+        theme_storage_dir=str(tmp_path / "themes"),
     )
     return create_app(settings, FakePool(web_conn))
 

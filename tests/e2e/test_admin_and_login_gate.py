@@ -1,4 +1,61 @@
+import io
+import os
+import shutil
+import zipfile
+
+from threadbare.theme_bundle import REQUIRED_CUSTOM_PROPERTIES
+
 from .conftest import E2E_GUILD_ID
+
+
+def _theme_bundle_bytes() -> bytes:
+    props = "\n".join(f"  {p}: initial;" for p in sorted(REQUIRED_CUSTOM_PROPERTIES))
+    css = ":root {\n" + props + "\n}\nbody { background: url(assets/bg.png); }\n"
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("theme.css", css)
+        zf.writestr("assets/bg.png", b"\x89PNG\r\n\x1a\n")
+    return buf.getvalue()
+
+
+def test_mod_registers_a_custom_theme_then_it_renders_and_downloads(
+    anonymous_page, live_server, seed_conn
+):
+    anonymous_page.context.add_cookies(
+        [live_server.session_cookie(user_id=1, display_name="mod", is_mod=True)]
+    )
+    theme_dir = live_server.app.config["SETTINGS"].theme_storage_dir
+    try:
+        # Upload a real bundle through the admin page's file input.
+        anonymous_page.goto(f"{live_server}/admin/themes")
+        anonymous_page.locator("input[name=display_name]").fill("E2E Theme")
+        anonymous_page.locator("input[name=bundle]").set_input_files(
+            {"name": "e2e.zip", "mimeType": "application/zip", "buffer": _theme_bundle_bytes()}
+        )
+        anonymous_page.locator(".admin-theme-register button[type=submit]").click()
+        assert "E2E Theme" in anonymous_page.content()  # now listed
+
+        # It appears in the preferences switcher...
+        anonymous_page.goto(f"{live_server}/preferences")
+        assert "E2E Theme" in anonymous_page.content()
+
+        # ...and selecting it links the served stylesheet, whose referenced
+        # asset actually loads.
+        anonymous_page.goto(f"{live_server}/?theme=e2e-theme")
+        assert "/themes/custom/e2e-theme/theme.css" in anonymous_page.content()
+        asset = anonymous_page.request.get(f"{live_server}/themes/custom/e2e-theme/assets/bg.png")
+        assert asset.status == 200
+
+        # Download round-trips as a .zip.
+        download = anonymous_page.request.get(f"{live_server}/admin/themes/e2e-theme/download")
+        assert download.status == 200
+        assert download.headers["content-type"] == "application/zip"
+    finally:
+        with seed_conn.cursor() as cur:
+            cur.execute("DELETE FROM custom_themes WHERE slug = 'e2e-theme'")
+        seed_conn.commit()
+        shutil.rmtree(os.path.join(theme_dir, "e2e-theme"), ignore_errors=True)
+
 
 CHANNEL_ID = 900300
 GATED_CHANNEL_ID = 900301

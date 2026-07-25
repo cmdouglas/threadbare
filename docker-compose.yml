@@ -41,6 +41,11 @@ services:
     environment:
       HOST: 0.0.0.0
       DATABASE_URL: postgresql://threadbare:${POSTGRES_PASSWORD}@postgres:5432/threadbare
+      # Custom-theme bundles (theme.css + media) are extracted here, onto the
+      # threadbare-themes volume below. Back this volume up separately -- the
+      # DB dump doesn't capture it (DESIGN.md §9). Only `web` serves themes;
+      # sync-worker doesn't need it.
+      THEME_STORAGE_DIR: /app/theme_storage
     env_file:
       - .env
     # Read-write: the first-run setup wizard writes Discord config directly
@@ -52,6 +57,7 @@ services:
     # yet, which silently breaks this.
     volumes:
       - ./.env:/app/.env
+      - threadbare-themes:/app/theme_storage
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -97,5 +103,6 @@ services:
 
 volumes:
   threadbare-postgres:
+  threadbare-themes:
   caddy-data:
   caddy-config:

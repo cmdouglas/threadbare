@@ -89,7 +89,7 @@ class LiveServer:
 
 
 @pytest.fixture(scope="session")
-def live_server():
+def live_server(tmp_path_factory):
     settings = Settings(
         discord_bot_token="e2e-test-token",
         discord_guild_id=E2E_GUILD_ID,
@@ -98,6 +98,7 @@ def live_server():
         discord_client_secret="e2e-client-secret",
         discord_oauth_redirect_uri="http://127.0.0.1/oauth/callback",
         flask_secret_key="e2e-test-secret-key",
+        theme_storage_dir=str(tmp_path_factory.mktemp("themes")),
     )
     pool = PerRequestConnectionSource(TEST_DATABASE_URL)
     app = create_app(settings, pool)

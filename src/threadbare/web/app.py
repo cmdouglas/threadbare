@@ -5,11 +5,11 @@ Views live under web/views/ and register themselves as blueprints here.
 from flask import Flask, g, redirect, request, session, url_for
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-from threadbare import pagination, urls
+from threadbare import pagination, theme_bundle, urls
 from threadbare.config import Settings
 from threadbare.db import queries
 from threadbare.rendering import avatars, emoji, relative_time, user_display
-from threadbare.web import authz, board_tree, preferences, themes
+from threadbare.web import authz, board_tree, preferences, theme_storage, themes
 from threadbare.web.views.admin import bp as admin_bp
 from threadbare.web.views.attachments import bp as attachments_bp
 from threadbare.web.views.auth import bp as auth_bp
@@ -17,6 +17,7 @@ from threadbare.web.views.board import bp as board_bp
 from threadbare.web.views.board_index import bp as board_index_bp
 from threadbare.web.views.preferences import bp as preferences_bp
 from threadbare.web.views.search import bp as search_bp
+from threadbare.web.views.themes import bp as themes_bp
 from threadbare.web.views.topic import bp as topic_bp
 from threadbare.web.views.user import bp as user_bp
 
@@ -51,11 +52,27 @@ def _posts_per_page_switch_url(value: int) -> str:
     return url_for(request.endpoint, **args)
 
 
+def _theme_stylesheet_url() -> str:
+    """The href for the resolved theme's stylesheet: Flask's static handler
+    for a built-in, or the DB/volume-backed serving route for a custom theme
+    (cache-busted by the theme's updated_at so a re-upload is picked up).
+    """
+    slug = g.theme
+    if slug in themes.AVAILABLE_THEMES:
+        return url_for("static", filename=themes.AVAILABLE_THEMES[slug])
+    version = int(g.custom_theme_meta[slug]["updated_at"].timestamp())
+    return url_for("themes.custom_asset", slug=slug, asset_path="theme.css", v=version)
+
+
 def create_app(settings: Settings, pool) -> Flask:
     app = Flask(__name__)
     app.config["SETTINGS"] = settings
     app.config["POOL"] = pool
     app.secret_key = settings.flask_secret_key
+    # Cap request bodies so a giant custom-theme upload is rejected by
+    # Werkzeug before the handler ever reads it into memory (a small margin
+    # over the bundle cap for multipart overhead). Every other POST is tiny.
+    app.config["MAX_CONTENT_LENGTH"] = theme_bundle.MAX_BUNDLE_BYTES + (1 << 20)
     # Trusts X-Forwarded-Prefix from Caddy so url_for(...) emits correctly
     # prefixed links when self-hosting.md's subpath deployment option is in
     # use -- a no-op (SCRIPT_NAME stays "") when the header isn't sent, so
@@ -72,10 +89,30 @@ def create_app(settings: Settings, pool) -> Flask:
     app.jinja_env.globals["guild_id"] = settings.discord_guild_id
 
     @app.before_request
-    def resolve_current_theme():
+    async def resolve_current_theme():
+        # Custom themes are merged in from the DB, filtered to those whose
+        # bundle actually exists on the themes volume -- so a lost/rebuilt
+        # volume (the DB dump doesn't capture it) degrades to the built-in
+        # themes rather than emitting broken stylesheet links. Fetched fresh
+        # per request, same no-caching cost model as resolve_site_title.
+        async with pool.connection() as conn:
+            custom = await queries.get_custom_themes(conn)
+        custom_meta = {
+            t["slug"]: t
+            for t in custom
+            if theme_storage.theme_css_exists(settings.theme_storage_dir, t["slug"])
+        }
+        g.custom_theme_meta = custom_meta
+        g.available_theme_slugs = set(themes.AVAILABLE_THEMES) | set(custom_meta)
+        # Built-ins first (label == slug), then custom themes (label ==
+        # display_name) -- the shape the preferences switcher iterates.
+        g.theme_options = [{"slug": s, "label": s} for s in themes.AVAILABLE_THEMES] + [
+            {"slug": s, "label": custom_meta[s]["display_name"]} for s in custom_meta
+        ]
         g.theme = themes.resolve_theme(
             query_param=request.args.get("theme"),
             cookie_value=request.cookies.get(themes.THEME_COOKIE_NAME),
+            available=g.available_theme_slugs,
         )
 
     @app.before_request
@@ -131,8 +168,8 @@ def create_app(settings: Settings, pool) -> Flask:
     def inject_theme_context():
         return {
             "theme": g.theme,
-            "theme_stylesheet": themes.AVAILABLE_THEMES[g.theme],
-            "themes_available": list(themes.AVAILABLE_THEMES),
+            "theme_stylesheet_url": _theme_stylesheet_url(),
+            "themes_available": g.theme_options,
             "theme_switch_url": _theme_switch_url,
             "site_title": g.site_title,
             "site_icon_url": g.site_icon_url,
@@ -146,7 +183,10 @@ def create_app(settings: Settings, pool) -> Flask:
     @app.after_request
     def persist_theme_choice(response):
         requested = request.args.get("theme")
-        if requested in themes.AVAILABLE_THEMES:
+        # Accept any currently-valid slug (built-in or a registered custom
+        # theme), so a custom ?theme= persists too. getattr guards the case
+        # where an earlier before_request hook errored before g was populated.
+        if requested in getattr(g, "available_theme_slugs", ()):
             response.set_cookie(
                 themes.THEME_COOKIE_NAME,
                 requested,
@@ -191,5 +231,6 @@ def create_app(settings: Settings, pool) -> Flask:
     app.register_blueprint(search_bp)
     app.register_blueprint(user_bp)
     app.register_blueprint(attachments_bp)
+    app.register_blueprint(themes_bp)
 
     return app

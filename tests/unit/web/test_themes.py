@@ -33,3 +33,21 @@ def test_resolve_theme_ignores_invalid_query_param_and_uses_cookie():
 
 def test_resolve_theme_ignores_invalid_query_param_with_no_cookie():
     assert resolve_theme(query_param="bogus", cookie_value=None) == DEFAULT_THEME
+
+
+def test_resolve_theme_accepts_a_custom_slug_present_in_available():
+    available = set(AVAILABLE_THEMES) | {"my-custom"}
+    assert (
+        resolve_theme(query_param="my-custom", cookie_value=None, available=available)
+        == "my-custom"
+    )
+
+
+def test_resolve_theme_falls_back_when_a_custom_slug_is_no_longer_available():
+    # e.g. a custom theme the cookie still names was deleted -- not in the
+    # current available set, so it degrades to the default (a built-in).
+    available = set(AVAILABLE_THEMES)
+    assert (
+        resolve_theme(query_param=None, cookie_value="deleted-theme", available=available)
+        == DEFAULT_THEME
+    )

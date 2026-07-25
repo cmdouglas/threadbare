@@ -105,6 +105,42 @@ async def set_auto_index_new_channels(conn: psycopg.AsyncConnection, value: bool
     )
 
 
+async def insert_custom_theme(
+    conn: psycopg.AsyncConnection, *, slug: str, display_name: str
+) -> None:
+    """Register (or replace) a custom theme's metadata row. The bundle files
+    themselves live on the themes volume (web/theme_storage.py); this is only
+    the registration record. ON CONFLICT replaces so re-uploading a slug
+    updates its display name and bumps updated_at (driving the stylesheet
+    cache-buster).
+    """
+    await conn.execute(
+        """
+        INSERT INTO custom_themes (slug, display_name) VALUES (%s, %s)
+        ON CONFLICT (slug) DO UPDATE
+            SET display_name = EXCLUDED.display_name, updated_at = now()
+        """,
+        (slug, display_name),
+    )
+
+
+async def get_custom_theme(conn: psycopg.AsyncConnection, slug: str) -> dict | None:
+    async with conn.cursor() as cur:
+        await cur.execute(
+            "SELECT slug, display_name, created_at, updated_at FROM custom_themes WHERE slug = %s",
+            (slug,),
+        )
+        return await cur.fetchone()
+
+
+async def delete_custom_theme(conn: psycopg.AsyncConnection, slug: str) -> None:
+    await conn.execute("DELETE FROM custom_themes WHERE slug = %s", (slug,))
+
+
+async def touch_custom_theme(conn: psycopg.AsyncConnection, slug: str) -> None:
+    await conn.execute("UPDATE custom_themes SET updated_at = now() WHERE slug = %s", (slug,))
+
+
 async def get_latest_migration_version(conn: psycopg.AsyncConnection) -> str | None:
     """The most recently applied migration's version string -- the
     concrete way an operator confirms an upgrade's migration step actually

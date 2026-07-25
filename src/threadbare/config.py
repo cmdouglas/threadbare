@@ -7,6 +7,9 @@ class ConfigError(Exception):
     pass
 
 
+DEFAULT_THEME_STORAGE_DIR = "/app/theme_storage"
+
+
 @dataclass(frozen=True)
 class Settings:
     discord_bot_token: str
@@ -16,6 +19,11 @@ class Settings:
     discord_client_secret: str
     discord_oauth_redirect_uri: str
     flask_secret_key: str
+    # Where custom-theme bundles are extracted and served from (a Docker
+    # named volume mounted into the web container). Has a default so it isn't
+    # a newly-required env var for existing installs; the volume must be
+    # backed up separately (DESIGN.md §9) -- the DB dump doesn't capture it.
+    theme_storage_dir: str = DEFAULT_THEME_STORAGE_DIR
 
 
 def reload_env_file(dotenv_path: str | os.PathLike | None = None) -> None:
@@ -96,6 +104,8 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
     if errors:
         raise ConfigError("Invalid configuration:\n" + "\n".join(f"  - {e}" for e in errors))
 
+    theme_storage_dir = env.get("THEME_STORAGE_DIR", "").strip() or DEFAULT_THEME_STORAGE_DIR
+
     assert guild_id is not None
     return Settings(
         discord_bot_token=bot_token,
@@ -105,6 +115,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         discord_client_secret=client_secret,
         discord_oauth_redirect_uri=oauth_redirect_uri,
         flask_secret_key=flask_secret_key,
+        theme_storage_dir=theme_storage_dir,
     )
 
 
