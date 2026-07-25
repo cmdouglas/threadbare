@@ -413,15 +413,30 @@ async def get_messages_page(
     return rows
 
 
-async def get_attachment_by_id(conn: psycopg.AsyncConnection, attachment_id: int) -> dict | None:
+async def get_attachment_by_id(
+    conn: psycopg.AsyncConnection, attachment_id: int, *, visible_channel_ids: set[int]
+) -> dict | None:
+    """Looks an attachment up through its message's container, filtered by the
+    same _visibility_clause the listings and search use -- not the laxer
+    web/authz.py::channel_passes_visibility_gate. The proxy this backs hands
+    back real file content, so an unguessable snowflake id is not an access
+    check: an attachment must be unreachable exactly when the message carrying
+    it is. A thread message resolves through threads.parent_channel_id, since
+    threads hold no overwrites of their own.
+    """
     async with conn.cursor() as cur:
         await cur.execute(
-            """
-            SELECT id, message_id, filename, content_type, size, cached_url, url_expires_at
-            FROM attachments
-            WHERE id = %s
+            f"""
+            SELECT a.id, a.message_id, a.filename, a.content_type, a.size,
+                   a.cached_url, a.url_expires_at
+            FROM attachments a
+            JOIN messages m ON m.id = a.message_id
+            LEFT JOIN threads th ON th.id = m.thread_id
+            JOIN channels c ON c.id = COALESCE(m.channel_id, th.parent_channel_id)
+            WHERE a.id = %(attachment_id)s
+              AND {_visibility_clause("c.")}
             """,
-            (attachment_id,),
+            {"attachment_id": attachment_id, "visible_channel_ids": list(visible_channel_ids)},
         )
         return await cur.fetchone()
 

@@ -619,14 +619,62 @@ async def test_get_attachment_by_id_returns_row(db_conn):
         (2000, 1000, "cat.png", "image/png", 100, "https://example.com/cat.png", expires_at),
     )
 
-    row = await queries.get_attachment_by_id(db_conn, 2000)
+    row = await queries.get_attachment_by_id(db_conn, 2000, visible_channel_ids=set())
 
     assert row["filename"] == "cat.png"
     assert row["cached_url"] == "https://example.com/cat.png"
 
 
 async def test_get_attachment_by_id_returns_none_for_unknown_id(db_conn):
-    assert await queries.get_attachment_by_id(db_conn, 999999) is None
+    assert await queries.get_attachment_by_id(db_conn, 999999, visible_channel_ids=set()) is None
+
+
+async def _seed_attachment_in_channel(conn, *, channel_id):
+    await _seed_user(conn, user_id=100, display_name="alice")
+    await _seed_message(conn, message_id=1000, channel_id=channel_id, author_id=100)
+    await conn.execute(
+        """
+        INSERT INTO attachments (
+            id, message_id, filename, content_type, size, cached_url, url_expires_at
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        """,
+        (
+            2000,
+            1000,
+            "cat.png",
+            "image/png",
+            100,
+            "https://example.com/cat.png",
+            datetime(2026, 1, 2, tzinfo=UTC),
+        ),
+    )
+
+
+async def test_get_attachment_by_id_hides_an_enrolled_channel_not_in_the_visible_set(db_conn):
+    await _seed_guild_and_channel(db_conn, is_public=False)
+    await db_conn.execute("UPDATE channels SET visibility_enrolled = true WHERE id = 10")
+    await _seed_attachment_in_channel(db_conn, channel_id=10)
+
+    assert await queries.get_attachment_by_id(db_conn, 2000, visible_channel_ids=set()) is None
+
+
+async def test_get_attachment_by_id_returns_an_enrolled_channel_in_the_visible_set(db_conn):
+    await _seed_guild_and_channel(db_conn, is_public=False)
+    await db_conn.execute("UPDATE channels SET visibility_enrolled = true WHERE id = 10")
+    await _seed_attachment_in_channel(db_conn, channel_id=10)
+
+    row = await queries.get_attachment_by_id(db_conn, 2000, visible_channel_ids={10})
+
+    assert row["filename"] == "cat.png"
+
+
+async def test_get_attachment_by_id_hides_an_unindexed_channel(db_conn):
+    await _seed_guild_and_channel(db_conn, is_public=True)
+    await db_conn.execute("UPDATE channels SET indexed = false WHERE id = 10")
+    await _seed_attachment_in_channel(db_conn, channel_id=10)
+
+    assert await queries.get_attachment_by_id(db_conn, 2000, visible_channel_ids={10}) is None
 
 
 async def test_update_attachment_cache_updates_url_and_expiry(db_conn):
@@ -649,7 +697,7 @@ async def test_update_attachment_cache_updates_url_and_expiry(db_conn):
         db_conn, 2000, cached_url="https://example.com/new.png", url_expires_at=new_expires_at
     )
 
-    row = await queries.get_attachment_by_id(db_conn, 2000)
+    row = await queries.get_attachment_by_id(db_conn, 2000, visible_channel_ids=set())
     assert row["cached_url"] == "https://example.com/new.png"
     assert row["url_expires_at"] == new_expires_at
 

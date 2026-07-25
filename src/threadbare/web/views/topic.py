@@ -22,8 +22,29 @@ from threadbare.web.breadcrumbs import topic_breadcrumbs
 bp = Blueprint("topic", __name__)
 
 
+async def _get_thread_or_404(conn, thread_id: int) -> tuple[dict, dict]:
+    """Thread-scoped twin of board.py's _get_board_or_404: a thread stores no
+    permission overwrites of its own, so its visibility is entirely its parent
+    channel's (see sync_worker/events.handle_thread_upsert for the same fact on
+    the write side). Every route that reads a thread -- including the /jump*
+    redirects, whose page numbers are derived from real message counts -- must
+    go through this rather than gating by hand, which is how three routes ended
+    up ungated.
+    """
+    thread = await queries.get_thread(conn, thread_id)
+    if thread is None:
+        abort(404)
+    channel = await queries.get_channel(conn, thread["parent_channel_id"])
+    if channel is None or not authz.channel_passes_visibility_gate(channel, g.visible_channel_ids):
+        abort(404)
+    return thread, channel
+
+
 @bp.route("/topic/<int:thread_id>")
 async def topic_index(thread_id: int):
+    # No gate needed: a bare redirect reveals nothing the target page won't
+    # gate itself. Reachable only by hand-typed URL -- nothing in the app
+    # links here.
     return redirect(url_for("topic.topic_page", thread_id=thread_id, page=1))
 
 
@@ -32,14 +53,7 @@ async def topic_page(thread_id: int, page: int):
     reaction = request.args.get("reaction") or None
     pool = current_app.config["POOL"]
     async with pool.connection() as conn:
-        thread = await queries.get_thread(conn, thread_id)
-        if thread is None:
-            abort(404)
-        channel = await queries.get_channel(conn, thread["parent_channel_id"])
-        if channel is None or not authz.channel_passes_visibility_gate(
-            channel, g.visible_channel_ids
-        ):
-            abort(404)
+        thread, _channel = await _get_thread_or_404(conn, thread_id)
         breadcrumbs = await topic_breadcrumbs(conn, thread, script_root=request.script_root)
         total = await queries.count_messages_before(conn, thread_id=thread_id, reaction=reaction)
         rows = await queries.get_messages_page(
@@ -119,14 +133,7 @@ async def topic_tree_view(thread_id: int):
     """
     pool = current_app.config["POOL"]
     async with pool.connection() as conn:
-        thread = await queries.get_thread(conn, thread_id)
-        if thread is None:
-            abort(404)
-        channel = await queries.get_channel(conn, thread["parent_channel_id"])
-        if channel is None or not authz.channel_passes_visibility_gate(
-            channel, g.visible_channel_ids
-        ):
-            abort(404)
+        thread, _channel = await _get_thread_or_404(conn, thread_id)
         breadcrumbs = await topic_breadcrumbs(conn, thread, script_root=request.script_root)
         total = await queries.count_messages_before(conn, thread_id=thread_id)
         rows = await queries.get_messages_page(
@@ -180,6 +187,7 @@ async def topic_jump(thread_id: int):
 
     pool = current_app.config["POOL"]
     async with pool.connection() as conn:
+        await _get_thread_or_404(conn, thread_id)
         preceding = await queries.count_messages_before(
             conn, thread_id=thread_id, before=target_date
         )
@@ -189,6 +197,8 @@ async def topic_jump(thread_id: int):
 
 @bp.route("/topic/<int:thread_id>/jump_to_page")
 async def topic_jump_to_page(thread_id: int):
+    # No gate needed: this reads nothing -- it just reshapes a query-param
+    # page number into the path-segment form topic_page uses, which gates.
     page = max(request.args.get("page", type=int) or 1, 1)
     reaction = request.args.get("reaction") or None
     return redirect(url_for("topic.topic_page", thread_id=thread_id, page=page, reaction=reaction))
@@ -202,9 +212,7 @@ async def topic_jump_to_unread(thread_id: int):
     """
     pool = current_app.config["POOL"]
     async with pool.connection() as conn:
-        thread = await queries.get_thread(conn, thread_id)
-        if thread is None:
-            abort(404)
+        await _get_thread_or_404(conn, thread_id)
         total = await queries.count_messages_before(conn, thread_id=thread_id)
         marker = await queries.get_read_marker(
             conn, user_id=session["user_id"], thread_id=thread_id

@@ -116,6 +116,9 @@ async def board_topics(channel_id: int):
 
 @bp.route("/board/<int:channel_id>/continuous")
 async def board_continuous_index(channel_id: int):
+    # No gate needed: a bare redirect reveals nothing the target page won't
+    # gate itself. Reachable only by hand-typed URL -- nothing in the app
+    # links here (board_landing is what dispatches by view mode).
     return redirect(url_for("board.board_continuous_page", channel_id=channel_id, page=1))
 
 
@@ -217,6 +220,8 @@ async def board_continuous_jump(channel_id: int):
 
 @bp.route("/board/<int:channel_id>/continuous/jump_to_page")
 async def board_continuous_jump_to_page(channel_id: int):
+    # No gate needed: this reads nothing -- it just reshapes a query-param page
+    # number into the path-segment form board_continuous_page uses, which gates.
     page = max(request.args.get("page", type=int) or 1, 1)
     reaction = request.args.get("reaction") or None
     return redirect(

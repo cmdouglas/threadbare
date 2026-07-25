@@ -786,6 +786,28 @@ def test_board_continuous_jump_redirects_to_the_right_page(client, web_conn):
     assert resp.headers["Location"] == "/board/10/continuous/page/2"
 
 
+def test_board_continuous_jump_returns_404_for_unknown_channel(client, web_conn):
+    resp = client.get("/board/999999/continuous/jump?date=2026-01-01")
+
+    assert resp.status_code == 404
+
+
+def test_board_continuous_jump_returns_404_for_an_enrolled_channel_the_requester_cannot_see(
+    client, web_conn
+):
+    """The redirect's page number is derived from a real message count, so an
+    ungated jump leaks roughly how much traffic a channel the requester can't
+    read has had -- see the sibling gate test on /continuous/page/.
+    """
+    run(_seed_guild(web_conn))
+    run(_seed_role(web_conn, role_id=1))  # @everyone, no permissions
+    run(_seed_board(web_conn, channel_id=10, is_public=False, visibility_enrolled=True))
+
+    resp = client.get("/board/10/continuous/jump?date=2026-01-01")
+
+    assert resp.status_code == 404
+
+
 def test_board_continuous_jump_to_page_redirects_to_the_requested_page(client, web_conn):
     run(_seed_guild(web_conn))
     run(_seed_board(web_conn, channel_id=10))

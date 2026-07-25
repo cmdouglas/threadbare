@@ -1,6 +1,6 @@
 from datetime import UTC, datetime, timedelta
 
-from flask import Blueprint, current_app, redirect, render_template
+from flask import Blueprint, current_app, g, redirect, render_template
 
 from threadbare.db import queries
 from threadbare.web.discord_rest import (
@@ -22,8 +22,14 @@ REFRESH_MARGIN = timedelta(minutes=5)
 async def attachment_proxy(attachment_id: int):
     pool = current_app.config["POOL"]
     async with pool.connection() as conn:
-        attachment = await queries.get_attachment_by_id(conn, attachment_id)
+        attachment = await queries.get_attachment_by_id(
+            conn, attachment_id, visible_channel_ids=g.visible_channel_ids
+        )
         if attachment is None:
+            # Covers "no such attachment" and "not visible to this requester"
+            # with the same response deliberately -- distinguishing them would
+            # confirm the existence of content in a channel the requester
+            # can't read.
             return render_template("attachment_unavailable.html"), 404
 
         if attachment["url_expires_at"] > datetime.now(UTC) + REFRESH_MARGIN:

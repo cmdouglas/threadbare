@@ -458,10 +458,47 @@ def test_topic_jump_to_unread_returns_404_for_unknown_thread(client, web_conn):
 
     assert resp.status_code == 404
 
+
+def test_topic_jump_to_page_defaults_to_page_one_with_no_page_argument(client, web_conn):
+    run(_seed_guild_and_channel(web_conn))
+    run(_seed_thread(web_conn, thread_id=3000, parent_channel_id=10))
+
     resp = client.get("/topic/3000/jump_to_page")
 
     assert resp.status_code == 302
     assert resp.headers["Location"] == "/topic/3000/page/1"
+
+
+def test_topic_jump_returns_404_for_unknown_thread(client, web_conn):
+    resp = client.get("/topic/999999/jump?date=2026-01-01")
+
+    assert resp.status_code == 404
+
+
+def test_topic_jump_returns_404_for_an_enrolled_channel_the_requester_cannot_see(client, web_conn):
+    """The redirect's page number is derived from a real message count, so an
+    ungated jump leaks roughly how much traffic a channel the requester can't
+    read has had -- see the sibling gate tests on /page/ and /tree.
+    """
+    run(_seed_guild_and_channel(web_conn, is_public=False, visibility_enrolled=True))
+    run(_seed_role(web_conn, role_id=1))  # @everyone, no permissions
+    run(_seed_thread(web_conn, thread_id=3000, parent_channel_id=10))
+
+    resp = client.get("/topic/3000/jump?date=2026-01-01")
+
+    assert resp.status_code == 404
+
+
+def test_topic_jump_to_unread_returns_404_for_an_enrolled_channel_the_requester_cannot_see(
+    client, web_conn
+):
+    run(_seed_guild_and_channel(web_conn, is_public=False, visibility_enrolled=True))
+    run(_seed_role(web_conn, role_id=1))  # @everyone, no permissions
+    run(_seed_thread(web_conn, thread_id=3000, parent_channel_id=10))
+
+    resp = client.get("/topic/3000/jump_to_unread")
+
+    assert resp.status_code == 404
 
 
 def test_topic_tree_view_returns_404_for_unknown_thread(client):
