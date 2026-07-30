@@ -138,6 +138,12 @@ _SELECTORS_EVERY_THEME_MUST_STYLE = [
     ".posts-per-page-switcher",
     ".current-option",
     ".unread-dot",
+    # Merged-post segments. Unstyled, a merged post's messages run together
+    # into one undifferentiated wall of text with no visible boundary and no
+    # reachable per-message permalink -- and only on installs that turned
+    # merging on, which is exactly the kind of thing that ships broken.
+    ".post-segment",
+    ".post-segment-meta",
 ]
 
 

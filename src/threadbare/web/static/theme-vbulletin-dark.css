@@ -373,6 +373,25 @@ td.topic-name a {
   color: var(--color-fg-muted);
 }
 
+/* Merged-post segments. No panel background or radius of their own -- they
+   sit inside the post's panel, and giving them one would read as nested
+   boxes. Solid divider, matching this theme's .post-meta rule; see
+   theme-plain.css section 6 for why it sits on `+ .post-segment`. */
+.post-segment + .post-segment {
+  margin-top: var(--space-md);
+  padding-top: var(--space-md);
+  border-top: var(--border-width) solid var(--color-border);
+}
+
+.post-segment-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-top: var(--space-xs);
+  color: var(--color-fg-muted);
+  font-size: var(--font-size-small);
+}
+
 
 /* == 7. Post content ======================================================== */
 

@@ -367,6 +367,25 @@ td.topic-name a {
   color: var(--color-fg-muted);
 }
 
+/* Merged-post segments. Dashed divider, matching this theme's .post-meta
+   rule; see theme-plain.css section 6 for why it sits on `+ .post-segment`.
+   No border box of their own -- this theme's posts are already flat panels,
+   and a second rectangle inside one reads as a nested post. */
+.post-segment + .post-segment {
+  margin-top: var(--space-md);
+  padding-top: var(--space-md);
+  border-top: var(--border-width) dashed var(--color-border);
+}
+
+.post-segment-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-top: var(--space-xs);
+  color: var(--color-fg-muted);
+  font-size: var(--font-size-small);
+}
+
 
 /* == 7. Post content ======================================================== */
 

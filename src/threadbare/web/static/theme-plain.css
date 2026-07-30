@@ -390,6 +390,32 @@ td.topic-name a {
   color: var(--color-fg-muted);
 }
 
+/* A merged post's segments (one per original message). Deliberately *not*
+   given a border or background of their own: that would rebuild the visual
+   boundary merging exists to remove, and the post would read as several posts
+   in a box. A rule on the divider between them is all the separation needed.
+
+   The divider is on `+ .post-segment`, not `.post-segment`, so the first
+   segment doesn't get a stray line immediately under the author header. */
+.post-segment + .post-segment {
+  margin-top: var(--space-md);
+  padding-top: var(--space-md);
+  border-top: var(--border-width) solid var(--color-border);
+}
+
+/* Each segment keeps its own timestamp, permalink and "view on Discord" link
+   -- that's how a reader still gets a per-message anchor inside a merged post.
+   Quiet, but never display:none: hiding it removes the only route to a
+   permalink for every message that isn't a post's first. */
+.post-segment-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-top: var(--space-xs);
+  color: var(--color-fg-muted);
+  font-size: var(--font-size-small);
+}
+
 
 /* == 7. Post content ========================================================
  *

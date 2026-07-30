@@ -367,6 +367,25 @@ td.topic-name a {
   color: var(--color-fg-muted);
 }
 
+/* Merged-post segments. No bevel of their own -- an `outset` border here
+   would read as several stacked posts, undoing the merge. The dotted divider
+   matches this theme's .post-meta rule above; see theme-plain.css section 6
+   for why it sits on `+ .post-segment`. */
+.post-segment + .post-segment {
+  margin-top: var(--space-sm);
+  padding-top: var(--space-sm);
+  border-top: var(--border-width) dotted var(--color-border);
+}
+
+.post-segment-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-top: var(--space-xs);
+  color: var(--color-fg-muted);
+  font-size: var(--font-size-small);
+}
+
 
 /* == 7. Post content ======================================================== */
 
