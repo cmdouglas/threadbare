@@ -91,9 +91,27 @@ async def search():
                 visible_channel_ids=g.visible_channel_ids,
             )
             for row in results:
-                row["page"] = page_number_for_offset(
-                    row["preceding_count"], page_size=g.posts_per_page
-                )
+                if g.merge_posts:
+                    # search_messages computes preceding_count in messages,
+                    # inline and carefully optimised (see its docstring). With
+                    # merging on that count is in the wrong unit *and* needs
+                    # group-head resolution, so it's recomputed here per row
+                    # rather than growing a second variant of that query --
+                    # bounded by the page size (25 by default) and only paid
+                    # when a mod has actually enabled merging. Folding it back
+                    # into the search SQL is a worthwhile optimisation if
+                    # search latency ever shows up on a merged install.
+                    preceding = await queries.count_posts_before_message(
+                        conn,
+                        thread_id=row["thread_id"],
+                        channel_id=row["channel_id"],
+                        posted_at=row["posted_at"],
+                        message_id=row["id"],
+                        merged=True,
+                    )
+                else:
+                    preceding = row["preceding_count"]
+                row["page"] = page_number_for_offset(preceding, page_size=g.posts_per_page)
 
     total_pages = pagination.total_pages(total, page_size=g.posts_per_page)
 

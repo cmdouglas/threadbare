@@ -1,17 +1,17 @@
-{# Expects: message_row (dict), rendered (RenderedMessage), page (current page, for the permalink) #}
-<article class="post" id="post-{{ message_row.id }}">
-  <div class="post-meta">
-    {% if show_avatars %}
-    <img class="post-avatar" src="{{ avatars.avatar_url(message_row.author_id, message_row.author_avatar_hash) }}" alt="">
-    {% endif %}
-    {% set role_color = user_display.role_color_hex(message_row.author_role_color) %}
-    <a class="post-author" href="{{ request.script_root }}{{ urls.user_url(message_row.author_id) }}"{% if role_color %} style="color: {{ role_color }}"{% endif %}>{{ message_row.author_display_name }}</a>
-    {% if message_row.author_is_bot %}<span class="bot-badge" title="Bot account">BOT</span>{% endif %}
-    <time class="post-time" datetime="{{ message_row.posted_at.isoformat() }}">{{ message_row.posted_at }}</time>
-    {% if message_row.edited_at %}<span class="post-edited">(edited)</span>{% endif %}
-    <a class="post-permalink" href="{{ request.script_root }}{{ urls.permalink_for_message(message_row, page=page) }}">#</a>
-    <a class="post-discord-link" href="{{ urls.discord_deep_link_url(guild_id=guild_id, message_row=message_row) }}" target="_blank" rel="noopener noreferrer">View on Discord</a>
-  </div>
+{# Expects: segments (list of (message_row, rendered)), page (current page, for permalinks).
+
+   A post is always a list of segments. With consecutive-post merging off
+   (the default) every post has exactly one, and this renders byte-identical
+   markup to what it emitted before merging existed -- no wrapper element, no
+   new classes. Third-party themes must see no DOM change unless a mod opts
+   in, per DESIGN.md §7's upgrade contract.
+
+   Merged, the author header appears once and each message becomes a
+   .post-segment carrying its own timestamp, permalink anchor, edited marker,
+   attachments, embeds, and reactions. The anchor moves from the <article> to
+   the segments so every message id stays addressable exactly once -- putting
+   it in both places would duplicate the head's id. #}
+{% macro post_body(message_row, rendered) %}
   {% if rendered.reply_quote_html %}
   <div class="post-reply-quote">{{ rendered.reply_quote_html | safe }}</div>
   {% endif %}
@@ -19,4 +19,32 @@
   {% if rendered.attachments_html %}<div class="post-attachments">{{ rendered.attachments_html | safe }}</div>{% endif %}
   {% if rendered.embeds_html %}<div class="post-embeds">{{ rendered.embeds_html | safe }}</div>{% endif %}
   {% if rendered.reactions_html %}{{ rendered.reactions_html | safe }}{% endif %}
+{% endmacro %}
+{% macro post_timing(message_row) %}
+    <time class="post-time" datetime="{{ message_row.posted_at.isoformat() }}">{{ message_row.posted_at }}</time>
+    {% if message_row.edited_at %}<span class="post-edited">(edited)</span>{% endif %}
+    <a class="post-permalink" href="{{ request.script_root }}{{ urls.permalink_for_message(message_row, page=page) }}">#</a>
+    <a class="post-discord-link" href="{{ urls.discord_deep_link_url(guild_id=guild_id, message_row=message_row) }}" target="_blank" rel="noopener noreferrer">View on Discord</a>
+{% endmacro %}
+{% set head_row = segments[0][0] %}
+<article class="post"{% if segments | length == 1 %} id="post-{{ head_row.id }}"{% endif %}>
+  <div class="post-meta">
+    {% if show_avatars %}
+    <img class="post-avatar" src="{{ avatars.avatar_url(head_row.author_id, head_row.author_avatar_hash) }}" alt="">
+    {% endif %}
+    {% set role_color = user_display.role_color_hex(head_row.author_role_color) %}
+    <a class="post-author" href="{{ request.script_root }}{{ urls.user_url(head_row.author_id) }}"{% if role_color %} style="color: {{ role_color }}"{% endif %}>{{ head_row.author_display_name }}</a>
+    {% if head_row.author_is_bot %}<span class="bot-badge" title="Bot account">BOT</span>{% endif %}
+    {% if segments | length == 1 %}{{ post_timing(head_row) }}{% endif %}
+  </div>
+  {% if segments | length == 1 %}
+  {{ post_body(head_row, segments[0][1]) }}
+  {% else %}
+  {% for message_row, rendered in segments %}
+  <div class="post-segment" id="post-{{ message_row.id }}">
+    {{ post_body(message_row, rendered) }}
+    <div class="post-segment-meta">{{ post_timing(message_row) }}</div>
+  </div>
+  {% endfor %}
+  {% endif %}
 </article>

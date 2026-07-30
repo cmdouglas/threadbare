@@ -13,7 +13,7 @@
   <button type="submit">Go</button>
 </form>
 {% include "_pagination.html" %}
-{% for message_row, rendered in posts %}
+{% for segments in posts %}
   {% include "_post.html" %}
 {% endfor %}
 {% include "_pagination.html" %}

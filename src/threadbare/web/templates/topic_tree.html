@@ -6,8 +6,10 @@
 {% with active = "tree" %}{% include "_topic_view_controls.html" %}{% endwith %}
 {% macro render_tree_node(node) %}
 <li class="thread-node">
-  {% set message_row = node.row %}
-  {% set rendered = node.rendered %}
+  {# The tree view is deliberately never merged (same exclusion reaction
+     filtering makes): a reply tree nests by reply_to_id, and a merged post
+     spanning several nodes has no single place to sit. One segment each. #}
+  {% set segments = [(node.row, node.rendered)] %}
   {% set page = node.page %}
   {% include "_post.html" %}
   {% if node.children %}

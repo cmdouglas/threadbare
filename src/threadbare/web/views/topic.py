@@ -17,8 +17,9 @@ from threadbare.db import queries
 from threadbare.pagination import page_number_for_offset
 from threadbare.rendering.render_service import render_message_for_display
 from threadbare.reply_tree import build_reply_tree
-from threadbare.web import authz
+from threadbare.web import authz, paging
 from threadbare.web.breadcrumbs import topic_breadcrumbs
+from threadbare.web.rendered_posts import render_posts
 
 bp = Blueprint("topic", __name__)
 
@@ -56,7 +57,13 @@ async def topic_page(thread_id: int, page: int):
     async with pool.connection() as conn:
         thread, _channel = await _get_thread_or_404(conn, thread_id)
         breadcrumbs = await topic_breadcrumbs(conn, thread, script_root=request.script_root)
-        total = await queries.count_messages_before(conn, thread_id=thread_id, reaction=reaction)
+        # Merging is suppressed while a reaction filter is active: a post
+        # whose segments were selectively removed isn't a post. Same
+        # deliberate exclusion the filter already makes for mark_read below.
+        merged = g.merge_posts and reaction is None
+        total = await queries.count_messages_before(
+            conn, thread_id=thread_id, reaction=reaction, merged=merged
+        )
         rows = await queries.get_messages_page(
             conn,
             thread_id=thread_id,
@@ -64,16 +71,15 @@ async def topic_page(thread_id: int, page: int):
             page_size=g.posts_per_page,
             total=total,
             reaction=reaction,
+            merged=merged,
         )
-        posts = [
-            (
-                row,
-                await render_message_for_display(
-                    conn, row, script_root=request.script_root, page_size=g.posts_per_page
-                ),
-            )
-            for row in rows
-        ]
+        posts = await render_posts(
+            conn,
+            rows,
+            script_root=request.script_root,
+            page_size=g.posts_per_page,
+            merged=merged,
+        )
         # Same reasoning as board_continuous_page: a reaction-filtered
         # page's rows[-1] isn't the thread's true last-shown message, so
         # mark_read is skipped while a filter is active.
@@ -86,9 +92,13 @@ async def topic_page(thread_id: int, page: int):
                 message_id=last["id"],
                 posted_at=last["posted_at"],
             )
+        # Read tracking stays in messages, never posts: "12 new messages" is
+        # the number a reader wants, and merging is a display choice that
+        # shouldn't move anyone's unread count. So this recounts unmerged
+        # whenever `total` above isn't already a plain message count.
         unread_total = (
             total
-            if reaction is None
+            if reaction is None and not merged
             else await queries.count_messages_before(conn, thread_id=thread_id)
         )
         show_jump_to_unread = await queries.has_unread(
@@ -136,18 +146,36 @@ async def topic_tree_view(thread_id: int):
     async with pool.connection() as conn:
         thread, _channel = await _get_thread_or_404(conn, thread_id)
         breadcrumbs = await topic_breadcrumbs(conn, thread, script_root=request.script_root)
-        total = await queries.count_messages_before(conn, thread_id=thread_id)
+        # The tree itself is never merged (a post spanning several nodes has
+        # nowhere to sit), but the pages it *links to* are, so the fetch
+        # follows the site setting purely to carry starts_group through.
+        # page_size=total with the merged total still yields every message,
+        # since a page of every post is a page of every message.
+        total = await queries.count_messages_before(conn, thread_id=thread_id, merged=g.merge_posts)
         rows = await queries.get_messages_page(
-            conn, thread_id=thread_id, page=1, page_size=total, total=total
+            conn,
+            thread_id=thread_id,
+            page=1,
+            page_size=max(total, 1),
+            total=total,
+            merged=g.merge_posts,
         )
         # A row's index in `rows` is exactly its own preceding-count, since
         # both share the same chronological order -- reuses
         # page_number_for_offset instead of a per-row count query, so a
         # reply's permalink still lands on its real page in the flat view.
-        pages_by_id = {
-            row["id"]: page_number_for_offset(i, page_size=g.posts_per_page)
-            for i, row in enumerate(rows)
-        }
+        # Merged, the flat view counts posts, so the index advances once per
+        # group head rather than once per message.
+        pages_by_id = {}
+        offset = -1
+        for i, row in enumerate(rows):
+            if g.merge_posts:
+                offset += 1 if row["starts_group"] else 0
+            else:
+                offset = i
+            pages_by_id[row["id"]] = page_number_for_offset(
+                max(offset, 0), page_size=g.posts_per_page
+            )
 
         async def render_node(node):
             row = node["row"]
@@ -194,8 +222,11 @@ async def topic_jump(thread_id: int):
     pool = current_app.config["POOL"]
     async with pool.connection() as conn:
         await _get_thread_or_404(conn, thread_id)
+        # A bare date needs no group-head resolution: "how many posts start
+        # before this date" is already the right question, and a post that
+        # straddles the date is the one the reader should land on.
         preceding = await queries.count_messages_before(
-            conn, thread_id=thread_id, before=target_date
+            conn, thread_id=thread_id, before=target_date, merged=g.merge_posts
         )
     page = page_number_for_offset(preceding, page_size=g.posts_per_page)
     return redirect(url_for("topic.topic_page", thread_id=thread_id, page=page))
@@ -219,19 +250,17 @@ async def topic_jump_to_unread(thread_id: int):
     pool = current_app.config["POOL"]
     async with pool.connection() as conn:
         await _get_thread_or_404(conn, thread_id)
-        total = await queries.count_messages_before(conn, thread_id=thread_id)
+        total = await queries.count_messages_before(conn, thread_id=thread_id, merged=g.merge_posts)
         marker = await queries.get_read_marker(
             conn, user_id=session["user_id"], thread_id=thread_id
         )
-        if marker is None:
-            page = 1
-        else:
-            preceding = await queries.count_messages_before(
-                conn,
-                thread_id=thread_id,
-                before=(marker["last_read_posted_at"], marker["last_read_message_id"]),
-            )
-            page = page_number_for_offset(preceding + 1, page_size=g.posts_per_page)
+        page = await paging.page_of_first_unread(
+            conn,
+            thread_id=thread_id,
+            marker=marker,
+            page_size=g.posts_per_page,
+            merged=g.merge_posts,
+        )
     total_pages = pagination.total_pages(total, page_size=g.posts_per_page)
     page = min(page, total_pages)
     return redirect(url_for("topic.topic_page", thread_id=thread_id, page=page))

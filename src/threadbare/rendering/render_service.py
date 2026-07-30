@@ -38,6 +38,7 @@ async def render_message_for_display(
     *,
     script_root: str = "",
     page_size: int = DEFAULT_PAGE_SIZE,
+    merged: bool = False,
 ) -> RenderedMessage:
     message_type = message_row.get("type", 0)
 
@@ -65,7 +66,7 @@ async def render_message_for_display(
 
     content_html = render_message_content(message_row["content"], refs=refs)
     reply_quote_html = await render_reply_quote(
-        conn, message_row, script_root=script_root, page_size=page_size
+        conn, message_row, script_root=script_root, page_size=page_size, merged=merged
     )
 
     attachments = await queries.get_attachments_for_message(conn, message_id)

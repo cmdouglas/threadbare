@@ -26,6 +26,7 @@ async def render_reply_quote(
     *,
     script_root: str = "",
     page_size: int = DEFAULT_PAGE_SIZE,
+    merged: bool = False,
 ) -> str | None:
     reply_to_id = message_row.get("reply_to_id")
     if reply_to_id is None:
@@ -38,11 +39,16 @@ async def render_reply_quote(
     if target is None:
         return None
 
-    preceding = await queries.count_messages_before(
+    # Through count_posts_before_message, not count_messages_before: with
+    # merging on, a quote pointing at a merged-in message must link to the
+    # page holding its *post*, not the page after it.
+    preceding = await queries.count_posts_before_message(
         conn,
         thread_id=target["thread_id"],
         channel_id=target["channel_id"],
-        before=(target["posted_at"], target["id"]),
+        posted_at=target["posted_at"],
+        message_id=target["id"],
+        merged=merged,
     )
     page = page_number_for_offset(preceding, page_size=page_size)
     # script_root prepended here, not in urls.py, which must stay importable

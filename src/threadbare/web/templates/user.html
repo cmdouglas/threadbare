@@ -23,7 +23,9 @@
   <button type="submit">Search</button>
 </form>
 <h2>Recent posts</h2>
-{% for message_row, rendered, page in posts %}
+{# One segment each: a user page lists a poster's messages from many
+   different containers, so consecutive-post merging has nothing to merge. #}
+{% for segments, page in posts %}
   {% include "_post.html" %}
 {% else %}
 <p class="user-no-posts">No posts yet.</p>

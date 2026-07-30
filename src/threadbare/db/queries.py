@@ -155,6 +155,7 @@ async def count_messages_before(
     since: datetime | None = None,
     until: datetime | None = None,
     reaction: str | None = None,
+    merged: bool = False,
 ) -> int:
     """The shared "how many messages precede this point" primitive behind
     permalinks (before=(posted_at, id) of a specific message), jump-to-date
@@ -162,11 +163,25 @@ async def count_messages_before(
     and weekly pseudo-topics (since/until window). Exactly one of
     thread_id/channel_id must be set, mirroring messages' own
     messages_container_check constraint.
+
+    `merged` switches the unit from messages to *posts* -- counting only
+    group heads, so a burst of six one-word messages occupies one slot in the
+    pager rather than six (DESIGN.md §5's consecutive-post merging). The
+    partial index migration 0016 adds over heads keeps that exactly as cheap
+    as the unmerged count.
+
+    **A `before` tuple must already name a group head when merged=True.**
+    Counting heads strictly before a merged-*in* message includes that
+    message's own head, which lands a page late at every boundary -- callers
+    resolve through get_group_head_for_message first, and that resolution is
+    the single easiest thing to forget in this whole feature.
     """
     assert (thread_id is None) != (channel_id is None)
     conditions = [
         "thread_id = %(thread_id)s" if thread_id is not None else "channel_id = %(channel_id)s"
     ]
+    if merged:
+        conditions.append("starts_group")
     params: dict = {"thread_id": thread_id, "channel_id": channel_id}
 
     if isinstance(before, tuple):
@@ -195,6 +210,125 @@ async def count_messages_before(
         )
         row = await cur.fetchone()
     return row["n"]
+
+
+async def get_merge_consecutive_posts(conn: psycopg.AsyncConnection) -> bool:
+    """The mod-set display toggle for consecutive-post merging (migration
+    0016). Falls back to False when no site_settings row exists yet -- the
+    same "no row means the column default" shape the sync worker's own
+    settings reads use, and the safe direction: an install that never opts in
+    reads exactly as it does today.
+    """
+    async with conn.cursor() as cur:
+        await cur.execute("SELECT merge_consecutive_posts FROM site_settings WHERE id = true")
+        row = await cur.fetchone()
+    return row["merge_consecutive_posts"] if row else False
+
+
+async def get_group_head_for_message(
+    conn: psycopg.AsyncConnection, *, message_id: int
+) -> dict | None:
+    """The head of the merged post a message belongs to: the latest
+    starts_group row at or before it in the same container. Returns the head's
+    id and posted_at (the (posted_at, id) ordering key every pagination call
+    compares on), or None if the message isn't indexed.
+
+    Every "which page is this message on" path goes through here when merging
+    is on -- permalinks, search context links, reply-quote hrefs, jump-to-date,
+    jump-to-first-unread, and the user page's recent posts. Skipping it doesn't
+    error, it just quietly returns the next page along, which is why it's
+    centralised in one function rather than open-coded per caller.
+
+    A message is always its own head when it starts a post, so this is safe
+    (and cheap) to call unconditionally.
+    """
+    async with conn.cursor() as cur:
+        await cur.execute(
+            """
+            SELECT head.id, head.posted_at
+              FROM messages target
+              JOIN messages head
+                ON head.channel_id IS NOT DISTINCT FROM target.channel_id
+               AND head.thread_id IS NOT DISTINCT FROM target.thread_id
+               AND (head.posted_at, head.id) <= (target.posted_at, target.id)
+               AND head.starts_group
+             WHERE target.id = %(message_id)s
+             ORDER BY head.posted_at DESC, head.id DESC
+             LIMIT 1
+            """,
+            {"message_id": message_id},
+        )
+        return await cur.fetchone()
+
+
+async def count_posts_before_message(
+    conn: psycopg.AsyncConnection,
+    *,
+    thread_id: int | None = None,
+    channel_id: int | None = None,
+    posted_at: datetime,
+    message_id: int,
+    merged: bool = False,
+) -> int:
+    """How many items precede the *page* a given message appears on -- the
+    single choke point for every "which page is this message on" path.
+
+    Unmerged this is just count_messages_before. Merged, it resolves the
+    message to its group head first, because counting heads strictly before a
+    merged-in message includes that message's own head and lands a page late
+    at every boundary. Routing permalinks, search context links, reply-quote
+    hrefs, and jump-to-unread through one function is what stops that bug
+    being reintroduced one call site at a time -- it fails silently, returning
+    a plausible neighbouring page rather than an error.
+    """
+    if merged:
+        head = await get_group_head_for_message(conn, message_id=message_id)
+        if head is not None:
+            posted_at, message_id = head["posted_at"], head["id"]
+    return await count_messages_before(
+        conn,
+        thread_id=thread_id,
+        channel_id=channel_id,
+        before=(posted_at, message_id),
+        merged=merged,
+    )
+
+
+async def get_first_message_after(
+    conn: psycopg.AsyncConnection,
+    *,
+    thread_id: int | None = None,
+    channel_id: int | None = None,
+    after: tuple[datetime, int],
+) -> dict | None:
+    """The earliest message strictly after an (posted_at, id) position -- what
+    "first unread" means once a read marker is in hand. None when the marker
+    is already at the end.
+
+    Needed only because merging makes "the page after the marker's page" and
+    "the page holding the first unread message" different questions: the
+    marker can sit mid-post, and the rest of that post is still unread.
+    """
+    assert (thread_id is None) != (channel_id is None)
+    container_sql = (
+        "thread_id = %(thread_id)s" if thread_id is not None else ("channel_id = %(channel_id)s")
+    )
+    async with conn.cursor() as cur:
+        await cur.execute(
+            f"""
+            SELECT id, posted_at FROM messages
+             WHERE {container_sql} AND (posted_at, id) > (%(after_posted_at)s, %(after_id)s)
+             ORDER BY posted_at, id
+             LIMIT 1
+            """,
+            {
+                "thread_id": thread_id,
+                "channel_id": channel_id,
+                "after_posted_at": after[0],
+                "after_id": after[1],
+            },
+        )
+        return await cur.fetchone()
 
 
 _ZERO_AGGREGATE = {
@@ -363,6 +497,7 @@ async def get_messages_page(
     since: datetime | None = None,
     until: datetime | None = None,
     reaction: str | None = None,
+    merged: bool = False,
 ) -> list[dict]:
     """One page of a topic/board's messages, in the same column shape as
     get_message_for_render so a page's rows drop straight into
@@ -383,8 +518,25 @@ async def get_messages_page(
     exact, arbitrary-page jumps can't be made cheap without a denormalized
     per-row rank, which is out of scope here (ROADMAP.md's keyset-cursor
     backlog item covers the sequential next/prev case this doesn't).
+
+    `merged` pages by *post* instead of by message, returning every message of
+    each post on the page -- so a page holds `page_size` posts and a variable
+    number of rows. `total` must then be the merged count from
+    count_messages_before(merged=True), since it's what decides both the page
+    count and which end to walk from.
     """
     assert (thread_id is None) != (channel_id is None)
+    if merged:
+        return await _get_merged_messages_page(
+            conn,
+            thread_id=thread_id,
+            channel_id=channel_id,
+            page=page,
+            page_size=page_size,
+            total=total,
+            since=since,
+            until=until,
+        )
     conditions = [
         "m.thread_id = %(thread_id)s" if thread_id is not None else "m.channel_id = %(channel_id)s"
     ]
@@ -431,6 +583,110 @@ async def get_messages_page(
     if fetch_backward:
         rows.reverse()
     return rows
+
+
+async def _get_merged_messages_page(
+    conn: psycopg.AsyncConnection,
+    *,
+    thread_id: int | None,
+    channel_id: int | None,
+    page: int,
+    page_size: int,
+    total: int,
+    since: datetime | None,
+    until: datetime | None,
+) -> list[dict]:
+    """A page of whole merged posts, in two steps.
+
+    1. Walk the *heads* with exactly the nearest-end logic get_messages_page
+       uses for messages -- the partial index migration 0016 adds over
+       `WHERE starts_group` makes that scan the same shape and cost. One extra
+       head beyond the page is fetched, because it is the exclusive upper
+       bound of the range in step 2; on the last page there is no extra head
+       and the range simply runs to the end of the container.
+    2. One range scan for every message from the first head up to that bound.
+
+    Splitting it this way is what keeps a page boundary between posts rather
+    than inside one, without a join or a per-post round trip. Dropping the
+    extra head silently truncates the last post on every page, which is the
+    mistake to watch for here.
+    """
+    container_sql = (
+        "thread_id = %(thread_id)s" if thread_id is not None else ("channel_id = %(channel_id)s")
+    )
+    window = []
+    params: dict = {"thread_id": thread_id, "channel_id": channel_id}
+    if since is not None:
+        window.append("posted_at >= %(since)s")
+        params["since"] = since
+    if until is not None:
+        window.append("posted_at < %(until)s")
+        params["until"] = until
+    window_sql = "".join(f" AND {clause}" for clause in window)
+
+    start = (page - 1) * page_size
+    end = min(page * page_size, total)
+    if end - start <= 0:
+        return []
+    trailing = total - end
+
+    # The head walk mirrors get_messages_page's own nearest-end choice. The
+    # page needs one head beyond its last, as the exclusive upper bound of the
+    # message range -- except on the final page, where the range just runs to
+    # the end of the container. `trailing` being zero is exactly that case, in
+    # both directions.
+    wants_bound = trailing > 0
+    fetch_backward = trailing < start
+    async with conn.cursor() as cur:
+        await cur.execute(
+            f"""
+            SELECT posted_at, id FROM messages
+             WHERE {container_sql} AND starts_group{window_sql}
+             ORDER BY {"posted_at DESC, id DESC" if fetch_backward else "posted_at, id"}
+             LIMIT %(limit)s OFFSET %(offset)s
+            """,
+            {
+                **params,
+                "limit": (end - start) + (1 if wants_bound else 0),
+                # Backward, the bound head sits one row *closer* to the end
+                # than the page's last, so the offset backs up by one to
+                # include it; the reverse below then leaves it last either way.
+                "offset": (trailing - 1 if wants_bound else 0) if fetch_backward else start,
+            },
+        )
+        heads = await cur.fetchall()
+
+    if not heads:
+        return []
+    if fetch_backward:
+        heads.reverse()
+    first = heads[0]
+    bound = heads[-1] if wants_bound else None
+
+    params["first_posted_at"], params["first_id"] = first["posted_at"], first["id"]
+    bound_sql = ""
+    if bound is not None:
+        params["bound_posted_at"], params["bound_id"] = bound["posted_at"], bound["id"]
+        bound_sql = " AND (m.posted_at, m.id) < (%(bound_posted_at)s, %(bound_id)s)"
+
+    member_container_sql = (
+        "m.thread_id = %(thread_id)s" if thread_id is not None else "m.channel_id = %(channel_id)s"
+    )
+    async with conn.cursor() as cur:
+        await cur.execute(
+            f"""
+            SELECT {_MESSAGE_COLUMNS_SQL}, m.starts_group
+            FROM messages m
+            JOIN users u ON u.id = m.author_id
+            WHERE {member_container_sql}
+              AND (m.posted_at, m.id) >= (%(first_posted_at)s, %(first_id)s)
+              {bound_sql}
+              {window_sql.replace("posted_at", "m.posted_at")}
+            ORDER BY m.posted_at, m.id
+            """,
+            params,
+        )
+        return await cur.fetchall()
 
 
 async def get_attachment_by_id(

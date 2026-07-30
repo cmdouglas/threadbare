@@ -161,6 +161,17 @@ def create_app(settings: Settings, pool) -> Flask:
         g.site_icon_url = avatars.guild_icon_url(guild["id"], guild["icon"]) if guild else None
 
     @app.before_request
+    async def resolve_merge_posts():
+        if _serves_a_static_asset():
+            return
+        # Site-wide and mod-set, so it rides along with resolve_site_title's
+        # existing per-request read rather than being cached: flipping the
+        # toggle takes effect on the next page load, which is the whole point
+        # of computing messages.starts_group at ingestion regardless of it.
+        async with pool.connection() as conn:
+            g.merge_posts = await queries.get_merge_consecutive_posts(conn)
+
+    @app.before_request
     def require_login():
         if not authz.requires_login(request.endpoint):
             return None

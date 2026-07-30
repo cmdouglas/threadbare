@@ -17,10 +17,10 @@ from threadbare.channel_types import NON_CONTENT_TYPES
 from threadbare.db import queries
 from threadbare.pagination import page_number_for_offset
 from threadbare.pseudotopics import week_bounds
-from threadbare.rendering.render_service import render_message_for_display
-from threadbare.web import authz
+from threadbare.web import authz, paging
 from threadbare.web.board_tree import board_view_mode
 from threadbare.web.breadcrumbs import board_breadcrumbs
+from threadbare.web.rendered_posts import render_posts
 
 bp = Blueprint("board", __name__)
 
@@ -151,7 +151,13 @@ async def board_continuous_page(channel_id: int, page: int):
     async with pool.connection() as conn:
         channel = await _get_board_or_404(conn, channel_id)
         breadcrumbs = await board_breadcrumbs(conn, channel)
-        total = await queries.count_messages_before(conn, channel_id=channel_id, reaction=reaction)
+        # Suppressed while a reaction filter is active: a post whose segments
+        # were selectively removed isn't a post. Same exclusion the filter
+        # already makes for mark_read below.
+        merged = g.merge_posts and reaction is None
+        total = await queries.count_messages_before(
+            conn, channel_id=channel_id, reaction=reaction, merged=merged
+        )
         rows = await queries.get_messages_page(
             conn,
             channel_id=channel_id,
@@ -159,16 +165,15 @@ async def board_continuous_page(channel_id: int, page: int):
             page_size=g.posts_per_page,
             total=total,
             reaction=reaction,
+            merged=merged,
         )
-        posts = [
-            (
-                row,
-                await render_message_for_display(
-                    conn, row, script_root=request.script_root, page_size=g.posts_per_page
-                ),
-            )
-            for row in rows
-        ]
+        posts = await render_posts(
+            conn,
+            rows,
+            script_root=request.script_root,
+            page_size=g.posts_per_page,
+            merged=merged,
+        )
         # A reaction-filtered page's rows[-1] is not the channel's true
         # last-shown message -- marking read to it would silently
         # fast-forward the marker past unfiltered messages the requester
@@ -183,9 +188,11 @@ async def board_continuous_page(channel_id: int, page: int):
                 message_id=last["id"],
                 posted_at=last["posted_at"],
             )
+        # Read tracking stays in messages, never posts -- see the same note in
+        # views/topic.py's topic_page.
         unread_total = (
             total
-            if reaction is None
+            if reaction is None and not merged
             else await queries.count_messages_before(conn, channel_id=channel_id)
         )
         show_jump_to_unread = await queries.has_unread(
@@ -234,8 +241,11 @@ async def board_continuous_jump(channel_id: int):
     pool = current_app.config["POOL"]
     async with pool.connection() as conn:
         await _get_board_or_404(conn, channel_id)
+        # A bare date needs no group-head resolution: "how many posts start
+        # before this date" is already the right question, and a post that
+        # straddles the date is the one the reader should land on.
         preceding = await queries.count_messages_before(
-            conn, channel_id=channel_id, before=target_date
+            conn, channel_id=channel_id, before=target_date, merged=g.merge_posts
         )
     page = page_number_for_offset(preceding, page_size=g.posts_per_page)
     return redirect(url_for("board.board_continuous_page", channel_id=channel_id, page=page))
@@ -267,19 +277,19 @@ async def board_continuous_jump_to_unread(channel_id: int):
     pool = current_app.config["POOL"]
     async with pool.connection() as conn:
         await _get_board_or_404(conn, channel_id)
-        total = await queries.count_messages_before(conn, channel_id=channel_id)
+        total = await queries.count_messages_before(
+            conn, channel_id=channel_id, merged=g.merge_posts
+        )
         marker = await queries.get_read_marker(
             conn, user_id=session["user_id"], channel_id=channel_id
         )
-        if marker is None:
-            page = 1
-        else:
-            preceding = await queries.count_messages_before(
-                conn,
-                channel_id=channel_id,
-                before=(marker["last_read_posted_at"], marker["last_read_message_id"]),
-            )
-            page = page_number_for_offset(preceding + 1, page_size=g.posts_per_page)
+        page = await paging.page_of_first_unread(
+            conn,
+            channel_id=channel_id,
+            marker=marker,
+            page_size=g.posts_per_page,
+            merged=g.merge_posts,
+        )
     total_pages = pagination.total_pages(total, page_size=g.posts_per_page)
     page = min(page, total_pages)
     return redirect(url_for("board.board_continuous_page", channel_id=channel_id, page=page))
@@ -306,8 +316,9 @@ async def board_week_page(channel_id: int, week_id: str, page: int):
     async with pool.connection() as conn:
         channel = await _get_board_or_404(conn, channel_id)
         breadcrumbs = await board_breadcrumbs(conn, channel)
+        merged = g.merge_posts and reaction is None
         total = await queries.count_messages_before(
-            conn, channel_id=channel_id, since=since, until=until, reaction=reaction
+            conn, channel_id=channel_id, since=since, until=until, reaction=reaction, merged=merged
         )
         rows = await queries.get_messages_page(
             conn,
@@ -318,16 +329,15 @@ async def board_week_page(channel_id: int, week_id: str, page: int):
             since=since,
             until=until,
             reaction=reaction,
+            merged=merged,
         )
-        posts = [
-            (
-                row,
-                await render_message_for_display(
-                    conn, row, script_root=request.script_root, page_size=g.posts_per_page
-                ),
-            )
-            for row in rows
-        ]
+        posts = await render_posts(
+            conn,
+            rows,
+            script_root=request.script_root,
+            page_size=g.posts_per_page,
+            merged=merged,
+        )
         # Same reasoning as board_continuous_page: a filtered page's
         # rows[-1] doesn't represent everything up to that point, so
         # mark_read is skipped while a reaction filter is active.
