@@ -165,18 +165,10 @@ Playwright), the test tiers and how to run them, and how to configure a test Dis
 
 ## Documentation
 
-- [`DESIGN.md`](./DESIGN.md) — architecture, data model, compliance rationale, and the migration
-  path beyond v1.
-- [`ROADMAP.md`](./ROADMAP.md) — what's built and in what order. v1, role-gated channels with
-  permission mirroring (Phase 2), and the reading-experience depth features (Phase 3) are all
-  shipped; a nightly backup job for Threadbare's own config tables is the main open item.
-- [`DEVELOPMENT.md`](./DEVELOPMENT.md) — dev environment, test suite, test Discord bot.
-- [`docs/self-hosting.md`](./docs/self-hosting.md) — deployment, operations, and troubleshooting.
+- [`docs/self-hosting.md`](./docs/self-hosting.md) — deployment, operations, and troubleshooting,
+  written for admins who haven't run a server before.
 - [`docs/theming.md`](./docs/theming.md) — writing a custom theme: the `:root` contract, the
   bundle format, and the mistakes that have actually bitten the built-in themes.
-- [`RESOLVED_ISSUES.md`](./RESOLVED_ISSUES.md) — a log of real bugs found and fixed, kept because
-  several of them are load-bearing lessons about this stack.
-- [`CLAUDE.md`](./CLAUDE.md) — repo conventions (stack choices, the theme readability bar, TDD).
 
 ## License
 
