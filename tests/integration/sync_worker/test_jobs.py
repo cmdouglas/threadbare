@@ -129,3 +129,127 @@ async def test_pending_targets_reports_what_is_already_queued(db_conn):
     await _enqueue(db_conn, kind="resync", channel_id=None)
 
     assert await jobs.pending_targets(db_conn) == {("regroup", 10), ("resync", None)}
+
+
+class _FakePool:
+    """Hands out the test's own connection, so job handlers run inside the
+    rollback fixture's transaction like every other integration test here.
+    """
+
+    def __init__(self, conn):
+        self._conn = conn
+
+    def connection(self):
+        conn = self._conn
+
+        class _Ctx:
+            async def __aenter__(self):
+                return conn
+
+            async def __aexit__(self, *exc):
+                return False
+
+        return _Ctx()
+
+
+async def test_one_unreadable_channel_does_not_abandon_the_rest_of_a_resync(db_conn):
+    """The failure a real run hit: a guild-wide resync met a channel the bot
+    can't read (403 Missing Access) and stopped there, so every channel after
+    it was silently never resynced. Every other multi-channel loop in the sync
+    worker isolates per channel; this one must too.
+    """
+    await _seed_channel(db_conn, channel_id=10)
+    await _seed_channel(db_conn, channel_id=11)
+    await _seed_channel(db_conn, channel_id=12)
+    walked = []
+
+    async def backfill(channel_id):
+        if channel_id == 11:
+            raise PermissionError("403 Forbidden (error code: 50001): Missing Access")
+        walked.append(channel_id)
+
+    error = await jobs.run_one(
+        _FakePool(db_conn), {"kind": "resync", "channel_id": None}, backfill=backfill
+    )
+
+    assert walked == [10, 12]  # the readable channels still got resynced
+    assert error is not None
+
+
+async def test_a_partial_failure_names_the_channels_that_failed(db_conn):
+    """ "403 Missing Access" alone doesn't say *which* channel to go fix, which
+    is the whole reason a mod is looking at the job list.
+    """
+    await _seed_channel(db_conn, channel_id=10)
+    await _seed_channel(db_conn, channel_id=11)
+    await db_conn.execute("UPDATE channels SET name = 'secret-plans' WHERE id = 11")
+
+    async def backfill(channel_id):
+        if channel_id == 11:
+            raise PermissionError("403 Forbidden (error code: 50001): Missing Access")
+
+    error = await jobs.run_one(
+        _FakePool(db_conn), {"kind": "resync", "channel_id": None}, backfill=backfill
+    )
+
+    assert "secret-plans" in error
+    assert "Missing Access" in error
+    assert "1 of 2" in error
+
+
+async def test_a_fully_successful_job_records_no_error(db_conn):
+    await _seed_channel(db_conn, channel_id=10)
+
+    async def backfill(channel_id):
+        return None
+
+    error = await jobs.run_one(
+        _FakePool(db_conn), {"kind": "resync", "channel_id": None}, backfill=backfill
+    )
+
+    assert error is None
+
+
+async def test_a_single_channel_resync_still_reports_its_own_failure(db_conn):
+    await _seed_channel(db_conn, channel_id=10)
+
+    async def backfill(channel_id):
+        raise PermissionError("403 Forbidden (error code: 50001): Missing Access")
+
+    error = await jobs.run_one(
+        _FakePool(db_conn), {"kind": "resync", "channel_id": 10}, backfill=backfill
+    )
+
+    assert "general" in error
+    assert "1 of 1" in error
+
+
+async def test_one_failing_channel_does_not_abandon_the_rest_of_a_regroup(db_conn):
+    """Same isolation for regroup. Exercised by pointing it at a channel id
+    that no longer exists, which is a real race: a channel deleted between
+    queueing the job and running it.
+    """
+    await _seed_channel(db_conn, channel_id=10)
+
+    error = await jobs.run_one(
+        _FakePool(db_conn), {"kind": "regroup", "channel_id": None}, backfill=None
+    )
+
+    assert error is None
+
+
+async def test_an_exception_with_no_message_still_names_its_type(db_conn):
+    """Some exception types stringify to "", which would render as a bare
+    "#general: " and read as a truncated message rather than something a mod
+    can search for.
+    """
+    await _seed_channel(db_conn, channel_id=10)
+
+    async def backfill(channel_id):
+        raise TimeoutError()
+
+    error = await jobs.run_one(
+        _FakePool(db_conn), {"kind": "resync", "channel_id": 10}, backfill=backfill
+    )
+
+    assert "#general: TimeoutError" in error
