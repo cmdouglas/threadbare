@@ -66,10 +66,18 @@ And the same `#general`, paginated, permalinked, filterable by reaction, jumpabl
 
 - Four shipped themes: subSilver-ish (the default), vBulletin dark, Terminal, and Plain — all
   user-selectable, with a mod-set default.
-- Pure CSS: every color, font, border, and radius is a custom property over stable semantic
-  markup, so a theme is a single stylesheet. Mods can upload third-party themes as `.zip`
-  bundles; see [Custom themes](./docs/self-hosting.md#custom-themes).
 - Every theme honors `prefers-contrast` and `prefers-reduced-motion`.
+- **Custom themes are a first-class feature, not an afterthought.** Threadbare renders one fixed
+  set of semantic class names and every color, font, border, and radius is a CSS custom property,
+  so a theme is a single stylesheet — no markup, no JavaScript, nothing to keep in sync with the
+  app. Mods upload a theme as a `.zip` bundle (`theme.css` plus optional images, fonts, audio, and
+  video) from the admin page, and it appears in every reader's theme switcher immediately.
+  Bundles are validated against the same `:root` contract the built-ins demonstrate, so a broken
+  theme is rejected with the problem named rather than shipped to readers.
+
+  **[`docs/theming.md`](./docs/theming.md) is the guide for writing one**; the four built-ins are
+  its worked examples, and [`theme-plain.css`](./src/threadbare/web/static/theme-plain.css) is the
+  annotated reference implementation to copy from.
 
 **Access and mod controls**
 
@@ -164,6 +172,8 @@ Playwright), the test tiers and how to run them, and how to configure a test Dis
   shipped; a nightly backup job for Threadbare's own config tables is the main open item.
 - [`DEVELOPMENT.md`](./DEVELOPMENT.md) — dev environment, test suite, test Discord bot.
 - [`docs/self-hosting.md`](./docs/self-hosting.md) — deployment, operations, and troubleshooting.
+- [`docs/theming.md`](./docs/theming.md) — writing a custom theme: the `:root` contract, the
+  bundle format, and the mistakes that have actually bitten the built-in themes.
 - [`RESOLVED_ISSUES.md`](./RESOLVED_ISSUES.md) — a log of real bugs found and fixed, kept because
   several of them are load-bearing lessons about this stack.
 - [`CLAUDE.md`](./CLAUDE.md) — repo conventions (stack choices, the theme readability bar, TDD).

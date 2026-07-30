@@ -8,6 +8,7 @@ from threadbare import theme_bundle
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PLAIN_CSS = REPO_ROOT / "src" / "threadbare" / "web" / "static" / "theme-plain.css"
+THEMING_GUIDE = REPO_ROOT / "docs" / "theming.md"
 
 
 def _valid_css() -> str:
@@ -246,3 +247,34 @@ def test_theme_plain_css_declares_nothing_undocumented():
         "theme-plain.css declares properties that are neither required nor "
         f"documented as optional: {sorted(undocumented)}"
     )
+
+
+def _properties_named_in(markdown: str) -> set[str]:
+    return set(re.findall(r"`(--[a-z0-9-]+)`", markdown))
+
+
+def test_theming_guide_documents_every_required_custom_property():
+    """docs/theming.md is what a third-party theme author reads instead of the
+    source, so a property added to the contract and not written up there is
+    invisible to exactly the audience it exists for. Same drift guard the
+    reference theme gets above, pointed at the prose.
+    """
+    documented = _properties_named_in(THEMING_GUIDE.read_text())
+
+    missing = set(theme_bundle.REQUIRED_CUSTOM_PROPERTIES) - documented
+    assert not missing, f"docs/theming.md doesn't document required properties: {sorted(missing)}"
+
+
+def test_theming_guide_invents_no_custom_properties():
+    """The other direction: a property named in the guide that the app never
+    reads is worse than an undocumented one -- an author styles it, sees no
+    effect, and distrusts the rest of the document.
+    """
+    documented = _properties_named_in(THEMING_GUIDE.read_text())
+
+    invented = (
+        documented
+        - set(theme_bundle.REQUIRED_CUSTOM_PROPERTIES)
+        - set(theme_bundle.OPTIONAL_CUSTOM_PROPERTIES)
+    )
+    assert not invented, f"docs/theming.md names properties nothing reads: {sorted(invented)}"

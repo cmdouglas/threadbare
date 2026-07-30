@@ -344,17 +344,15 @@ my-theme.zip
     └── theme-song.mp3
 ```
 
-`theme.css` references media by relative path, e.g. `background: url(assets/background.png)`. To
-get the custom-property contract right, download a built-in theme from the same page as a starting
-template — `theme.css` must define every `--color-*` / `--font-*` / `--space-*` / etc. property the
-built-ins do, or the upload is rejected with the missing ones named. The uploader also checks that
-every `url(assets/…)` reference actually resolves to a file in the bundle (so broken/misspelled
-image paths are caught up front).
+Upload it, and it appears in every reader's theme switcher. If the bundle is malformed — a missing
+custom property, a `url(assets/…)` pointing at a file that isn't there, a disallowed file type —
+the upload is rejected with the specific problem named, so a broken theme never reaches readers.
+Registering again under the same name replaces a theme in place; deleting one falls its users back
+to the default rather than leaving them on an unstyled page.
 
-Allowed asset types: images (png, jpg, gif, webp, avif), fonts (woff, woff2, ttf, otf), audio
-(mp3, ogg, wav, m4a, aac, flac), and video (mp4, webm, ogv). **SVG, HTML, and JavaScript are
-deliberately not allowed** — they can execute script from the site's own origin, so they're
-excluded for safety. There's a per-bundle size cap (tens of MB); keep large video/audio modest.
+**To write a theme, see [`theming.md`](./theming.md)** — the `:root` contract, the full bundle
+format and validation rules, and the mistakes that have actually bitten the built-in themes. The
+short version: download a built-in from the same admin page and edit it.
 
 Two operational notes:
 
