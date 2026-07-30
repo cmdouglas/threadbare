@@ -328,6 +328,47 @@ The reset itself is just a database update and finishes instantly — the actual
 on restart and re-walks the channel's *entire* history from Discord, so it's rate-limited and can
 take a while on a large channel. Existing rows are updated in place, not duplicated.
 
+## Merging consecutive posts
+
+Discord conversation is bursty: people send three short messages where a forum poster would have
+written one paragraph. **Admin → Settings → Merge consecutive posts** shows a run of messages by
+one author as a single post, so a burst takes one slot on a page instead of six. It's off by
+default, and turning it off again is instant — nothing is rewritten either way.
+
+A reply, a system message (joins, boosts, pin notices), a message carrying an attachment, or a
+silence longer than the gap you pick all start a new post. The default gap is 7 minutes, which is
+what Discord's own client uses to group messages visually.
+
+**The first time you enable it, history needs one pass to catch up.** New messages are grouped as
+they arrive, but everything already mirrored was stored before the setting existed. The admin page
+tells you how many channels are still waiting. You have three options, and they do the same work:
+
+- Do nothing — nightly reconciliation regroups them on its own.
+- Press **Regroup every channel** under *Maintenance* on the admin page.
+- Run `docker compose exec sync-worker threadbare-sync-worker --regroup-all`.
+
+On a large server that first pass touches every merged message, so give it time. Changing the gap
+later is much cheaper: only messages whose grouping actually changes get rewritten.
+
+## Resyncing a channel
+
+**Admin → Maintenance → Resync** (or the per-channel button in the channel table) re-walks a
+channel's entire history from Discord and re-applies it. Reach for it when you suspect the mirror
+has drifted in a way the nightly reconciliation sweep won't catch — reconciliation only looks at
+the last 24 hours.
+
+Two things to know before pressing it:
+
+- **It can take minutes to hours** on a large channel. Existing content stays readable the whole
+  time; the job list on the admin page shows queued, running, done, or failed with the reason.
+- **It does not delete anything first.** Messages are re-applied over what's there, so a resync
+  repairs missing or stale content rather than starting from an empty channel.
+
+The buttons queue work for the sync worker rather than doing it in the web app, so a job keeps
+running even if you close the page — and it needs no restart. The CLI equivalents
+(`--reset-channel <id>`, `--reset-all-channels`) still exist, and those *do* need a
+`docker compose restart sync-worker` afterwards to pick the work up.
+
 ## Custom themes
 
 Beyond the four built-in themes, a mod can register custom themes from the admin page

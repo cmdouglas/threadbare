@@ -40,6 +40,9 @@ And the same `#general`, paginated, permalinked, filterable by reaction, jumpabl
 - Stable permalinks for every message, plus a "view on Discord" deep link per post.
 - Per-user read markers and "jump to first unread".
 - A reply-chain tree view as an alternative to flat chronological order.
+- Optional consecutive-post merging: a run of messages by one author reads as a single post, so a
+  burst of one-liners takes one slot on a page instead of six. Mod-set, off by default, and
+  pagination counts posts rather than messages so a page break never splits a post.
 
 **Search**
 
@@ -86,6 +89,8 @@ And the same `#general`, paginated, permalinked, filterable by reaction, jumpabl
   them on Discord, and only after a mod opts that channel in.
 - Admin page for mods: per-channel indexing and visibility toggles, custom theme registration,
   sync health, and the running version/migration state.
+- Mod-triggered maintenance: resync a channel's history from Discord, or recompute post grouping,
+  queued to the sync worker with queued/running/failed status shown back on the page.
 - A `/preferences` page for theme, avatar visibility, and posts-per-page.
 
 **Setup**

@@ -126,6 +126,16 @@ Each of these was a real bug in a built-in theme.
 - **Style the preference controls.** `.theme-switcher`, `.avatar-toggle`,
   `.posts-per-page-switcher`, and `.current-option` are easy to forget and strand the reader on
   the `/preferences` page.
+- **Don't give `.post-segment` a border or a background.** When a mod enables consecutive-post
+  merging, a run of messages by one author renders as one `.post` containing several
+  `.post-segment`s. Giving a segment a box of its own rebuilds the boundary merging exists to
+  remove, and the post reads as several posts stacked inside a frame. A divider between them —
+  `.post-segment + .post-segment { border-top: ... }` — is all the separation needed, and putting
+  it on the adjacent-sibling selector keeps a stray line from appearing under the author header.
+- **Style `.post-segment-meta`, and never hide it.** It carries each message's own timestamp and
+  permalink anchor, which is the only route to a permalink for every message that isn't a post's
+  first. Merging is off by default, so a theme that skips these two rules looks fine until
+  someone turns it on.
 - **Scope row-name rules to `td`.** `.board-name` appears on `<th>` as well, so an unscoped rule
   catches the column header too.
 - **Cap media.** `.attachment-image`, `.embed-image`, and `.embed-video` carry arbitrary
