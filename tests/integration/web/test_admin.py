@@ -271,17 +271,115 @@ def test_toggle_auto_index_flips_back_to_true_on_a_second_toggle(client, web_con
     assert row["auto_index_new_channels"] is True
 
 
-def test_admin_does_not_render_a_rebackfill_trigger_control(client, web_conn):
-    # The backfill *status* column (read-only sync health) is expected and
-    # fine -- what must NOT exist is any control that triggers a new
-    # backfill, since that plumbing is explicitly deferred (ROADMAP.md §6).
+def test_admin_renders_a_resync_control_per_channel(client, web_conn):
+    """Replaces test_admin_does_not_render_a_rebackfill_trigger_control, which
+    asserted this control's *absence* for as long as the web app and sync
+    worker had no IPC between them (ROADMAP.md §6). sync_worker/jobs.py is now
+    that plumbing, so the guarantee inverts: the control must exist, and must
+    be a POST, since a resync is an expensive non-idempotent side effect no
+    prefetching browser should be able to trigger by following a link.
+    """
     run(_seed_guild(web_conn))
     run(_seed_board(web_conn, channel_id=10, name="general"))
     _make_mod(client)
 
-    resp = client.get("/admin/")
+    body = client.get("/admin/").data.decode()
 
-    body = resp.data.decode().lower()
-    assert "trigger" not in body
-    assert "re-backfill" not in body
-    assert "rebackfill" not in body
+    assert "Resync" in body
+    assert 'action="/admin/jobs"' in body
+    assert 'name="kind" value="resync"' in body
+    assert 'name="channel_id" value="10"' in body
+    assert 'method="post"' in body
+
+
+def test_enqueueing_a_job_queues_it_for_the_worker(client, web_conn):
+    run(_seed_guild(web_conn))
+    run(_seed_board(web_conn, channel_id=10, name="general"))
+    _make_mod(client)
+
+    resp = client.post("/admin/jobs", data={"kind": "resync", "channel_id": "10"})
+
+    assert resp.status_code == 302
+
+    async def _fetch():
+        async with web_conn.cursor() as cur:
+            await cur.execute("SELECT kind, channel_id, requested_by FROM sync_jobs")
+            return await cur.fetchall()
+
+    rows = run(_fetch())
+    assert [(r["kind"], r["channel_id"]) for r in rows] == [("resync", 10)]
+    assert rows[0]["requested_by"] is not None  # the mod who asked, for the audit line
+
+
+def test_enqueueing_a_job_without_a_channel_targets_every_channel(client, web_conn):
+    run(_seed_guild(web_conn))
+    _make_mod(client)
+
+    client.post("/admin/jobs", data={"kind": "regroup"})
+
+    async def _fetch():
+        async with web_conn.cursor() as cur:
+            await cur.execute("SELECT kind, channel_id FROM sync_jobs")
+            return await cur.fetchall()
+
+    assert [(r["kind"], r["channel_id"]) for r in run(_fetch())] == [("regroup", None)]
+
+
+def test_enqueueing_a_duplicate_job_is_absorbed_rather_than_erroring(client, web_conn):
+    """The button is disabled once something is pending, so this is the race
+    (a double submit, or two mods at once) rather than the normal path. A mod
+    who asked for the right thing shouldn't see a constraint violation.
+    """
+    run(_seed_guild(web_conn))
+    _make_mod(client)
+
+    client.post("/admin/jobs", data={"kind": "regroup"})
+    resp = client.post("/admin/jobs", data={"kind": "regroup"})
+
+    assert resp.status_code == 302
+
+    async def _count():
+        async with web_conn.cursor() as cur:
+            await cur.execute("SELECT count(*) AS n FROM sync_jobs")
+            return (await cur.fetchone())["n"]
+
+    assert run(_count()) == 1
+
+
+def test_enqueueing_an_unknown_job_kind_is_rejected(client, web_conn):
+    run(_seed_guild(web_conn))
+    _make_mod(client)
+
+    assert client.post("/admin/jobs", data={"kind": "drop-everything"}).status_code == 400
+
+
+def test_saving_merge_settings_bumps_the_grouping_generation(client, web_conn):
+    """The bump is the whole propagation mechanism: it's what makes every
+    channel read as stale so the nightly sweep regroups it.
+    """
+    run(_seed_guild(web_conn))
+    _make_mod(client)
+
+    client.post("/admin/settings/merge-posts", data={"enabled": "on", "gap_seconds": "180"})
+
+    async def _fetch():
+        async with web_conn.cursor() as cur:
+            await cur.execute(
+                "SELECT merge_consecutive_posts, merge_gap_seconds, grouping_generation "
+                "FROM site_settings WHERE id = true"
+            )
+            return await cur.fetchone()
+
+    row = run(_fetch())
+    assert row["merge_consecutive_posts"] is True
+    assert row["merge_gap_seconds"] == 180
+    assert row["grouping_generation"] == 1
+
+
+def test_an_unlisted_merge_gap_is_rejected(client, web_conn):
+    run(_seed_guild(web_conn))
+    _make_mod(client)
+
+    resp = client.post("/admin/settings/merge-posts", data={"enabled": "on", "gap_seconds": "7"})
+
+    assert resp.status_code == 400

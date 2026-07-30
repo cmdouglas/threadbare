@@ -18,6 +18,7 @@ from datetime import UTC, datetime, timedelta
 import psycopg
 
 from threadbare.channel_types import NON_CONTENT_TYPES
+from threadbare.db import grouping
 from threadbare.sync_worker import repository
 
 # The sync worker heartbeats every 60s (sync_worker/heartbeat.py); this
@@ -110,6 +111,60 @@ async def set_auto_index_new_channels(conn: psycopg.AsyncConnection, value: bool
         """,
         (value,),
     )
+
+
+async def get_merge_settings(conn: psycopg.AsyncConnection) -> dict:
+    """The consecutive-post merging settings (migration 0016), with migration
+    0016's own column defaults when no site_settings row exists yet -- the
+    same "no row means the default" shape every other setting here uses.
+    """
+    async with conn.cursor() as cur:
+        await cur.execute(
+            "SELECT merge_consecutive_posts, merge_gap_seconds, grouping_generation "
+            "FROM site_settings WHERE id = true"
+        )
+        row = await cur.fetchone()
+    return row or {
+        "merge_consecutive_posts": False,
+        "merge_gap_seconds": grouping.DEFAULT_GAP_SECONDS,
+        "grouping_generation": 0,
+    }
+
+
+async def set_merge_settings(
+    conn: psycopg.AsyncConnection, *, enabled: bool, gap_seconds: int
+) -> None:
+    """Write both merge settings and bump grouping_generation.
+
+    The bump is the whole propagation mechanism: every stored
+    messages.starts_group was computed under the *old* gap, so changing either
+    setting invalidates them. Channels compare their own stamp against this
+    counter, and nightly reconciliation regroups whatever is behind -- so
+    history converges even if nobody presses the Regroup button.
+
+    Bumped even when only the toggle changes, not just the gap. Enabling
+    merging on a corpus that predates the feature is exactly the case where
+    every row still needs its first real pass.
+    """
+    await conn.execute(
+        """
+        INSERT INTO site_settings (id, merge_consecutive_posts, merge_gap_seconds,
+                                   grouping_generation)
+        VALUES (true, %s, %s, 1)
+        ON CONFLICT (id) DO UPDATE SET
+            merge_consecutive_posts = EXCLUDED.merge_consecutive_posts,
+            merge_gap_seconds = EXCLUDED.merge_gap_seconds,
+            grouping_generation = site_settings.grouping_generation + 1
+        """,
+        (enabled, gap_seconds),
+    )
+
+
+async def count_channels_needing_regroup(conn: psycopg.AsyncConnection) -> int:
+    """How many channels are still on an older grouping generation -- what the
+    admin page shows so a pending regroup is visible rather than mysterious.
+    """
+    return len(await repository.get_channels_needing_regroup(conn))
 
 
 async def insert_custom_theme(

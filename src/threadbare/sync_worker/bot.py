@@ -7,7 +7,7 @@ import discord
 from psycopg_pool import AsyncConnectionPool
 
 from threadbare.sync_worker import events
-from threadbare.sync_worker.backfill import backfill_guild
+from threadbare.sync_worker.backfill import backfill_guild, backfill_one_channel
 from threadbare.sync_worker.discovery import (
     discover_active_threads,
     discover_channels,
@@ -15,6 +15,7 @@ from threadbare.sync_worker.discovery import (
     discover_roles,
 )
 from threadbare.sync_worker.heartbeat import heartbeat_loop
+from threadbare.sync_worker.jobs import job_loop
 from threadbare.sync_worker.reconciliation import reconciliation_loop
 
 logger = logging.getLogger(__name__)
@@ -105,6 +106,7 @@ class ThreadbareClient(discord.Client):
         self._reconciliation_task: asyncio.Task | None = None
         self._heartbeat_task: asyncio.Task | None = None
         self._member_role_backfill_task: asyncio.Task | None = None
+        self._job_task: asyncio.Task | None = None
 
     async def on_ready(self) -> None:
         if self.pool is None:
@@ -153,6 +155,22 @@ class ThreadbareClient(discord.Client):
             self._reconciliation_task.add_done_callback(
                 partial(_log_if_failed, name="reconciliation")
             )
+        if self._job_task is None:
+            # Mod-triggered maintenance (admin page Resync/Regroup buttons),
+            # polled from sync_jobs. Guarded against reconnect re-firing like
+            # the other loops. The resync handler re-walks history itself
+            # rather than only clearing a checkpoint, so a mod pressing the
+            # button doesn't have to restart the worker the way the CLI's
+            # --reset-channel still requires.
+            self._job_task = asyncio.create_task(
+                job_loop(
+                    self.pool,
+                    backfill=lambda channel_id: backfill_one_channel(
+                        self, self.pool, channel_id=channel_id
+                    ),
+                )
+            )
+            self._job_task.add_done_callback(partial(_log_if_failed, name="jobs"))
         if self._heartbeat_task is None:
             self._heartbeat_task = asyncio.create_task(
                 heartbeat_loop(

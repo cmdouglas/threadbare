@@ -40,6 +40,84 @@
   <form method="post" action="{{ url_for('admin.toggle_auto_index') }}">
     <button type="submit">{{ "Disable" if auto_index_new_channels else "Enable" }}</button>
   </form>
+
+  <h3>Merge consecutive posts</h3>
+  <p>
+    Show a run of messages by the same author as one post, so a burst of
+    short messages takes one slot on a page instead of six. Replies, system
+    messages, and messages with attachments always start a new post.
+  </p>
+  <form class="admin-merge-settings" method="post" action="{{ url_for('admin.set_merge_posts') }}">
+    <label>
+      <input type="checkbox" name="enabled"{{ " checked" if merge_settings.merge_consecutive_posts else "" }}>
+      Merge consecutive posts
+    </label>
+    <label>
+      Break a run after
+      <select name="gap_seconds">
+        {% for seconds in gap_choices %}
+        <option value="{{ seconds }}"{{ " selected" if seconds == merge_settings.merge_gap_seconds else "" }}>
+          {{ (seconds // 60) ~ " minute" ~ ("s" if seconds != 60 else "") }}
+        </option>
+        {% endfor %}
+      </select>
+      of silence
+    </label>
+    <button type="submit">Save</button>
+  </form>
+  {% if channels_needing_regroup %}
+  <p class="admin-regroup-pending">
+    {{ channels_needing_regroup }} channel{{ "s" if channels_needing_regroup != 1 else "" }}
+    still grouped under older settings. Nightly reconciliation will catch up on its own;
+    use Regroup below to do it now.
+  </p>
+  {% endif %}
+</section>
+
+<section class="admin-jobs">
+  <h2>Maintenance</h2>
+  <p>
+    <strong>Regroup</strong> recomputes post grouping — cheap, and only needed after
+    changing the settings above. <strong>Resync</strong> re-walks a channel's entire
+    history from Discord, which can take minutes to hours on a large channel; existing
+    content stays readable throughout.
+  </p>
+  <form class="admin-job-form" method="post" action="{{ url_for('admin.enqueue_job') }}">
+    <input type="hidden" name="kind" value="regroup">
+    <button type="submit"{{ " disabled" if ("regroup", None) in pending_jobs else "" }}>
+      Regroup every channel
+    </button>
+  </form>
+  <form class="admin-job-form" method="post" action="{{ url_for('admin.enqueue_job') }}">
+    <input type="hidden" name="kind" value="resync">
+    <button type="submit"{{ " disabled" if ("resync", None) in pending_jobs else "" }}>
+      Resync every channel
+    </button>
+  </form>
+
+  {% if recent_jobs %}
+  <table class="admin-job-list">
+    <tr><th>Job</th><th>Target</th><th>Requested</th><th>Status</th></tr>
+    {% for job in recent_jobs %}
+    <tr class="admin-job">
+      <td>{{ job.kind }}</td>
+      <td>{{ ("#" ~ job.channel_name) if job.channel_name else "every channel" }}</td>
+      <td><time datetime="{{ job.requested_at.isoformat() }}">{{ job.requested_at }}</time></td>
+      <td>
+        {% if job.error %}
+        <span class="admin-job-failed">failed: {{ job.error }}</span>
+        {% elif job.finished_at %}
+        <span class="admin-job-done">done</span>
+        {% elif job.started_at %}
+        <span class="admin-job-running">running</span>
+        {% else %}
+        <span class="admin-job-queued">queued</span>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% endif %}
 </section>
 
 <section class="admin-themes">
@@ -70,6 +148,7 @@
       <th>Backfill</th>
       <th></th>
       <th></th>
+      <th></th>
     </tr>
     {% for channel in channels %}
     <tr class="admin-channel-row{{ ' admin-channel-row-bot-blocked' if not channel.bot_can_read else '' }}">
@@ -92,6 +171,13 @@
       <td>
         <form method="post" action="{{ url_for('admin.toggle_visibility_enrolled', channel_id=channel.id) }}">
           <button type="submit">{{ "Disable" if channel.visibility_enrolled else "Enable" }}</button>
+        </form>
+      </td>
+      <td>
+        <form class="admin-job-form" method="post" action="{{ url_for('admin.enqueue_job') }}">
+          <input type="hidden" name="kind" value="resync">
+          <input type="hidden" name="channel_id" value="{{ channel.id }}">
+          <button type="submit"{{ " disabled" if ("resync", channel.id) in pending_jobs else "" }}>Resync</button>
         </form>
       </td>
     </tr>

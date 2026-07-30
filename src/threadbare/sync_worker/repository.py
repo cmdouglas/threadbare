@@ -148,6 +148,18 @@ async def stamp_grouping_generation(
     )
 
 
+async def get_thread_ids_for_channel(conn: psycopg.AsyncConnection, channel_id: int) -> list[int]:
+    """Every thread this instance knows about under a channel. Used by a
+    resync to re-walk exactly the threads whose checkpoints it just cleared,
+    and by grouping to regroup every container a channel owns.
+    """
+    async with conn.cursor() as cur:
+        await cur.execute(
+            "SELECT id FROM threads WHERE parent_channel_id = %s ORDER BY id", (channel_id,)
+        )
+        return [row["id"] for row in await cur.fetchall()]
+
+
 async def get_message_position(conn: psycopg.AsyncConnection, message_id: int) -> dict | None:
     """A message's container and timestamp -- everything grouping.regroup_around
     needs to repair the neighbourhood, and nothing else. Read *before* a delete,

@@ -364,6 +364,38 @@ async def backfill_thread(
     return total_written
 
 
+async def backfill_one_channel(
+    client: discord.Client,
+    pool,
+    *,
+    channel_id: int,
+    fetcher: HistoryFetcher | None = None,
+    batch_size: int = DEFAULT_BATCH_SIZE,
+) -> None:
+    """Backfill a single channel and its known threads, from whatever
+    checkpoint each currently holds.
+
+    The entry point for a mod-triggered resync (sync_worker/jobs.py), which
+    clears those checkpoints first so this becomes a full re-walk. Separate
+    from backfill_guild's internal _backfill_one because that one shares a
+    guild-wide semaphore and fetcher across concurrent channels; a single
+    requested channel has nothing to share with.
+
+    Threads are walked from the database rather than from Discord's thread
+    listings: a resync resets exactly the threads reset_thread_checkpoints_for_channel
+    knows about, and re-walking that same set keeps the two consistent.
+    """
+    if fetcher is None:
+        fetcher = RetryingHistoryFetcher(BoundedHistoryFetcher(DiscordHistoryFetcher(client)))
+    async with pool.connection() as conn:
+        if not await channel_should_sync(conn, channel_id):
+            return
+        sink = RepositoryBackfillSink(conn)
+        await backfill_channel(fetcher, sink, channel_id=channel_id, batch_size=batch_size)
+        for thread_id in await repository.get_thread_ids_for_channel(conn, channel_id):
+            await backfill_thread(fetcher, sink, thread_id=thread_id, batch_size=batch_size)
+
+
 async def backfill_guild(
     client: discord.Client,
     pool,
