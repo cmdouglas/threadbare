@@ -2,125 +2,171 @@
 
 A read-only, phpBB-style web interface for browsing the history of a Discord server.
 
-Discord's client is built for the present moment: reading deep history means fighting infinite scroll, lazy loading, and a search feature designed for finding one message rather than reading a conversation. Threadbare presents the same content as a classic forum instead — categories, boards, topics, numbered pages, permalinks, and real search — while staying fully compliant with Discord's Terms of Service and Developer Policy by operating exclusively through a bot account that the server's moderators approve and install.
+Discord's client is built for the present moment: reading deep history means fighting infinite
+scroll, lazy loading, and a search feature designed for finding one message rather than reading a
+conversation. Threadbare presents the same content as a classic forum instead — boards, topics,
+numbered pages, permalinks, and real search — while staying fully compliant with Discord's Terms
+of Service and Developer Policy by operating exclusively through a bot account that the server's
+moderators approve and install.
 
-Threadbare is a **cache**, not an archive. Deletions on Discord propagate to Threadbare, permissions are respected, and Discord remains the source of truth. See [`DESIGN.md`](./DESIGN.md) for the full design doc, including the migration path beyond v1.
+Threadbare is a **cache**, not an archive. Deletions on Discord propagate to Threadbare,
+permissions are mirrored per user, and Discord remains the source of truth. See
+[`DESIGN.md`](./DESIGN.md) for the full design.
 
-## Status
+## Screenshots
 
-v1 is built: sync worker, forum web app, four themes, the Discord OAuth login gate + mod
-admin page, and a guided first-run setup wizard are all in place. Docker Compose deployment,
-self-host/VPS/cloud-CDK hosting docs (see [Deployment](#deployment) below and
-[`docs/self-hosting.md`](./docs/self-hosting.md)), and a production-grade (gunicorn) web server
-are done too. See [`ROADMAP.md`](./ROADMAP.md) for exactly what's shipped, what's left (a nightly
-config-table backup job), and in what order it was built.
+*Usernames are blurred in these screenshots; nothing else is edited.*
 
-## Why
+A busy `#general` on Discord — the source material:
 
-Discord is where a lot of communities live now, but it's a bad medium for anything you'd want to go back and read — old debates, recommendation threads, a running lore doc a community built by accident. Threadbare gives that history a shape suited to reading: pages, permalinks, and search that returns a passage instead of a single line.
+[![A Discord channel view](./docs/images/discord-before.png)](./docs/images/discord-before.png)
 
-## How it works
+The same server in Threadbare: channels become boards, with post counts and last-post times.
 
-Three long-running processes plus a database:
+[![Threadbare's board index](./docs/images/forum-board-index.png)](./docs/images/forum-board-index.png)
 
-- **Sync worker** — backfills channel history, holds a live Discord gateway connection to apply new messages/edits/deletions as they happen, and runs a nightly reconciliation sweep to repair anything the gateway missed.
-- **Web app** — server-side-rendered forum pages (no SPA). Fast paint, permalinkable, works the way old forums worked.
-- **Postgres** — system of record for the mirror, with full-text search via `tsvector`/GIN.
+And the same `#general`, paginated, permalinked, filterable by reaction, jumpable by date:
 
-An attachment proxy endpoint refreshes Discord's signed, expiring CDN URLs on demand rather than mirroring files locally.
+[![Threadbare's channel view](./docs/images/forum-channel-view.png)](./docs/images/forum-channel-view.png)
 
-Full architecture, data model, and compliance rationale: [`DESIGN.md`](./DESIGN.md).
+## Features
+
+**Reading**
+
+- Board index with post counts and last-post author/time; native Discord threads become topics.
+- Paginated boards and topics (10/25/50/100 posts per page), numbered page links, jump-to-page,
+  and jump-to-date.
+- Freeform channels can be read either continuously or grouped into weekly pseudo-topics.
+- Stable permalinks for every message, plus a "view on Discord" deep link per post.
+- Per-user read markers and "jump to first unread".
+- A reply-chain tree view as an alternative to flat chronological order.
+
+**Search**
+
+- Postgres full-text search (`tsvector`/GIN, Google-style query syntax) with author, channel, and
+  date-range filters.
+- Results link into their paginated context with the post anchored — not an isolated snippet.
+- Filter any board, topic, or search by reaction ("show me everything this server 🔥'd").
+
+**Faithful rendering**
+
+- Discord-flavored markdown, custom emoji, spoilers, embeds, and attachments.
+- Mentions resolved to display names; reply chains rendered as classic forum quote blocks.
+- Reactions as aggregate counts (no per-user reactor identity is ever stored).
+- Attachments served through a proxy endpoint that refreshes Discord's signed, expiring CDN URLs
+  on demand, rather than mirroring files locally.
+
+**Sync**
+
+- Full backfill, resumable across restarts, plus a live gateway connection that applies new
+  messages, edits, and deletions within seconds.
+- A nightly reconciliation sweep repairs anything the gateway missed.
+
+**Themes**
+
+- Four shipped themes: subSilver-ish (the default), vBulletin dark, Terminal, and Plain — all
+  user-selectable, with a mod-set default.
+- Pure CSS: every color, font, border, and radius is a custom property over stable semantic
+  markup, so a theme is a single stylesheet. Mods can upload third-party themes as `.zip`
+  bundles; see [Custom themes](./docs/self-hosting.md#custom-themes).
+- Every theme honors `prefers-contrast` and `prefers-reduced-motion`.
+
+**Access and mod controls**
+
+- Discord OAuth login gate — only members of the mirrored server can read anything.
+- Per-user permission mirroring: role-gated channels are shown to exactly the people who can see
+  them on Discord, and only after a mod opts that channel in.
+- Admin page for mods: per-channel indexing and visibility toggles, custom theme registration,
+  sync health, and the running version/migration state.
+- A `/preferences` page for theme, avatar visibility, and posts-per-page.
+
+**Setup**
+
+- A first-run wizard with preflight checks: an unconfigured install serves the wizard instead of
+  the forum, so installation is a guided flow rather than an environment-variable scavenger hunt.
 
 ## Compliance posture
 
-Threadbare only ever talks to Discord as a bot, never as a user, and only accesses what the installing server's mods explicitly enable:
+Threadbare only ever talks to Discord as a bot, never as a user, and only accesses what the
+installing server's mods explicitly enable ([`DESIGN.md` §3](./DESIGN.md#3-constraints-and-compliance-requirements)):
 
-- Bot-token access only — no user tokens, ever.
-- Deletions on Discord are deleted from Threadbare, both in near-real-time (gateway events) and via nightly reconciliation.
-- v1 indexes only channels every member can already see (`@everyone`-readable), and requires server membership + login to read even that.
-- Minimal data collection: display names, avatars, and message content needed for rendering. No emails, presence, or per-user reaction identity.
-- No local backups of mirrored content — Discord is the sole source of truth, so deletion honoring is unconditional rather than "within backup retention."
+- **Bot-token access only** — no user tokens, ever.
+- **Deletions are honored unconditionally** — removed from Threadbare in near-real-time via
+  gateway events, and again via nightly reconciliation. There are no local backups of mirrored
+  content, so deletion honoring is never "within backup retention".
+- **Nothing is exposed that Discord wouldn't expose** — reading requires server membership and a
+  login, and role-gated channels are filtered per user against mirrored Discord permissions.
+- **Minimal data collection** — display names, avatars, roles, and message content needed for
+  rendering. No emails, no presence, no per-user reaction identity.
 
-## Getting started
+## Installation
 
-Runnable as a product now: `docker compose up` brings up the whole stack and serves a guided
-setup wizard that walks you through creating the Discord bot, running preflight checks, and
-choosing which channels to index (see [`DESIGN.md` §8](./DESIGN.md#8-onboarding-and-setup) for
-the full design). See **Deployment** below for the recommended path (a small VPS).
+Threadbare is three always-on processes plus Postgres — the sync worker holds a persistent
+Discord gateway connection, so this isn't a serverless-friendly app; it needs a machine that
+stays on. `docker-compose.yml` runs the whole stack: web app, sync worker, Postgres
+(internal-only, never exposed to the host), and [Caddy](https://caddyserver.com/) for automatic
+HTTPS via Let's Encrypt.
 
-To work on Threadbare itself, see [`DEVELOPMENT.md`](./DEVELOPMENT.md) for environment setup,
-running tests, and configuring a test Discord bot.
+**You'll need**: a machine that stays on (~1GB RAM idle, 2GB comfortable), Docker and the Compose
+plugin, a domain name with an `A` record pointing at the machine, and ports 80/443 free.
 
-## Deployment
+```bash
+git clone <this repo> && cd threadbare
+./scripts/install.sh     # prompts for your site's URL, writes .env, starts the stack
+```
 
-The stack is three always-on processes plus Postgres (see [How it works](#how-it-works)
-above) — the sync worker holds a persistent Discord gateway connection, so this isn't a
-serverless-friendly app; it needs a machine that stays on. `docker-compose.yml` runs the whole
-thing: web, sync worker, Postgres (internal-only, never exposed to the host), and
-[Caddy](https://caddyserver.com/) for automatic HTTPS via Let's Encrypt.
+Then open your site and follow the setup wizard — it walks you through creating the Discord bot,
+runs preflight checks, and lets you choose which channels to index. When it finishes, run
+`docker compose restart sync-worker` once.
 
-### Option B — VPS (recommended)
+Pick a hosting path:
 
-A $5–10/month instance (Hetzner, DigitalOcean, Vultr, etc.) is comfortable at 2GB RAM: provision
-an Ubuntu box, install Docker, point a DNS record at it, `docker compose up -d`, then let the
-setup wizard take it from there. This is the easiest path if you don't already have a machine
-that's always on.
+- **[Option A — your own hardware](./docs/self-hosting.md#option-a--self-host-on-your-own-hardware)**:
+  the cheapest option. Any always-on machine, down to a Raspberry Pi–class box. The extra work is
+  reachability, not resources.
+- **[Option B — a small VPS](./docs/self-hosting.md#option-b--vps-recommended)** (recommended): a
+  $5–10/month instance is comfortable at 2GB RAM, and you get a real public IP for free.
+- **[Option C — AWS via CDK](./deploy/cdk/README.md)**: a TypeScript CDK app (Fargate + ALB +
+  Postgres on an EBS-backed volume). `cdk synth` is verified; a real `cdk deploy` is **not** — no
+  AWS account was available to exercise it. The setup wizard doesn't apply on this path; see that
+  README for why.
 
-### Option A — Self-host on your own hardware
+**[`docs/self-hosting.md`](./docs/self-hosting.md)** is the step-by-step version of all of the
+above, written for admins who haven't run a server before — DNS, firewall, SSH, running at a
+subpath, forcing a re-backfill, and troubleshooting.
 
-The cheapest option: run the same `docker-compose.yml` on any machine that stays on — a desktop,
-a home server, or a Raspberry Pi–class box (the whole stack idles under 1GB RAM). The only real
-difference from Option B is *reachability* — how the outside world (or just your mod team)
-gets to a box that isn't sitting behind a real public IP and domain already.
+### Upgrading
 
-**Full step-by-step instructions for both options — including DNS, firewall, SSH, and
-troubleshooting, written for admins who haven't run a server before — are in
-[`docs/self-hosting.md`](./docs/self-hosting.md).** Once Docker's installed and the repo's
-cloned, `./scripts/install.sh` automates the rest of either option: prompts for your site's URL,
-writes `.env`, and starts the stack.
-
-### Option C — Cloud via infrastructure-as-code
-
-A TypeScript CDK app lives in [`deploy/cdk/`](./deploy/cdk/README.md): Fargate for the web app
-and sync worker, an ALB + ACM certificate for the web app only, and Postgres as a Fargate
-service with an EBS-backed volume (RDS documented as a commented-out alternative). See that
-directory's own README for setup, secrets, and — importantly — why the first-run setup wizard
-doesn't apply to this path (Fargate tasks share no filesystem for it to write `.env` to).
-
-**Verified**: `cdk synth` produces valid CloudFormation for all five stacks. **Not verified**:
-a real `cdk deploy` — no AWS account is available in this environment, so ALB reachability,
-ACM validation, and the EBS volume actually attaching are unexercised. Flagged here rather than
-assumed working; see `DESIGN.md` §10.
-
-## Upgrading
-
-The full contract any future release must honor (additive-only migrations, config
-backward-compatibility, the app refusing to boot on a stale schema rather than misbehaving) is
-in [`DESIGN.md` §7](./DESIGN.md#upgrade-contract). In practice:
-
-- **Options A/B (Docker Compose)**: `./scripts/upgrade.sh` — fetches, fast-forwards, rebuilds,
-  and restarts the stack. Migrations apply automatically (the existing `depends_on` gate
-  already runs `migrate` before `web`/`sync-worker` start on every `docker compose up`).
-- **Option C (CDK)**: `./deploy/cdk/upgrade.sh -c ...` (same context flags as `cdk deploy`) —
-  deploys every stack, then automatically runs the migrate task via the run-command CDK
-  already prints, instead of you having to copy-paste it by hand.
-
-### One-time manual step when upgrading past the 2026-07-25 audit pass
-
-`DISCORD_TEST_GUILD_ID` was renamed to `DISCORD_GUILD_ID` (nothing about a deployment's own
-guild is a test). There is deliberately **no fallback**, so this is the one upgrade that needs a
-hand edit before the stack will boot:
-
-- **Options A/B**: rename that one line in your `.env`, then upgrade as normal.
-- **Option C**: rename the `DISCORD_TEST_GUILD_ID` key to `DISCORD_GUILD_ID` inside your
-  `threadbare/app-config` Secrets Manager secret before `cdk deploy`.
-
-If you forget, the app exits with a message naming the rename rather than an opaque "required"
-error. Recorded as a deliberate departure from the upgrade contract in
+`./scripts/upgrade.sh` (Options A/B) or `./deploy/cdk/upgrade.sh` (Option C) fetches,
+fast-forwards, rebuilds, and restarts; migrations apply automatically. Afterward, check the admin
+page's **Version** section (`/admin/`) to confirm the running version and latest applied migration
+are what you expect. The contract every release honors — additive-only migrations, config
+backward-compatibility, and refusing to boot on a stale schema rather than misbehaving — is in
 [`DESIGN.md` §7](./DESIGN.md#upgrade-contract).
 
-Either way, check the admin page's **Version** section (`/admin/`) afterward to confirm the
-running version and latest applied migration match what you expect.
+> **One-time manual step when upgrading past the 2026-07-25 audit pass.**
+> `DISCORD_TEST_GUILD_ID` was renamed to `DISCORD_GUILD_ID`, deliberately with no fallback, so
+> this one upgrade needs a hand edit before the stack will boot. If you forget, the app exits with
+> a message naming the rename rather than an opaque "required" error.
+> [Instructions for both paths](./docs/self-hosting.md#upgrading-past-the-2026-07-25-audit-pass-rename-one-env-line).
+
+### Working on Threadbare itself
+
+See [`DEVELOPMENT.md`](./DEVELOPMENT.md) for environment setup (uv, Postgres via Docker,
+Playwright), the test tiers and how to run them, and how to configure a test Discord bot.
+
+## Documentation
+
+- [`DESIGN.md`](./DESIGN.md) — architecture, data model, compliance rationale, and the migration
+  path beyond v1.
+- [`ROADMAP.md`](./ROADMAP.md) — what's built and in what order. v1, role-gated channels with
+  permission mirroring (Phase 2), and the reading-experience depth features (Phase 3) are all
+  shipped; a nightly backup job for Threadbare's own config tables is the main open item.
+- [`DEVELOPMENT.md`](./DEVELOPMENT.md) — dev environment, test suite, test Discord bot.
+- [`docs/self-hosting.md`](./docs/self-hosting.md) — deployment, operations, and troubleshooting.
+- [`RESOLVED_ISSUES.md`](./RESOLVED_ISSUES.md) — a log of real bugs found and fixed, kept because
+  several of them are load-bearing lessons about this stack.
+- [`CLAUDE.md`](./CLAUDE.md) — repo conventions (stack choices, the theme readability bar, TDD).
 
 ## License
 

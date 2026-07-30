@@ -1,6 +1,6 @@
 # Self-hosting Threadbare
 
-This is the step-by-step version of [`README.md`](../README.md)'s Deployment section, written
+This is the step-by-step version of [`README.md`](../README.md)'s Installation section, written
 for admins who haven't run a server before. It covers **Option A** (your own hardware) and
 **Option B** (a small VPS — recommended for most people). If you already know your way around
 AWS, skip straight to [Option C](../deploy/cdk/README.md) instead — it isn't covered here.
