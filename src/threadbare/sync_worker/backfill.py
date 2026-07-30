@@ -11,6 +11,7 @@ from typing import Protocol
 
 import discord
 
+from threadbare.db import grouping
 from threadbare.sync_worker import repository, transform
 from threadbare.sync_worker.channel_type_sets import SKIPPED_FOR_DIRECT_HISTORY
 from threadbare.sync_worker.checkpoints import advance_backfill_progress
@@ -49,6 +50,14 @@ class BackfillSink(Protocol):
 
     async def set_checkpoint(
         self, channel_id: int, *, last_message_id: int | None, complete: bool
+    ) -> None: ...
+
+    async def regroup_batch(
+        self,
+        *,
+        channel_id: int | None = None,
+        thread_id: int | None = None,
+        since: datetime,
     ) -> None: ...
 
     async def get_thread_checkpoint(self, thread_id: int) -> int | None: ...
@@ -177,6 +186,21 @@ class RepositoryBackfillSink:
     async def get_checkpoint(self, channel_id: int) -> int | None:
         return await repository.get_backfill_checkpoint(self._conn, channel_id)
 
+    async def regroup_batch(
+        self,
+        *,
+        channel_id: int | None = None,
+        thread_id: int | None = None,
+        since: datetime,
+    ) -> None:
+        await grouping.regroup_range(
+            self._conn,
+            channel_id=channel_id,
+            thread_id=thread_id,
+            since=since,
+            gap_seconds=await repository.get_merge_gap_seconds(self._conn),
+        )
+
     async def write_users(self, authors: list) -> None:
         for author in authors:
             await repository.upsert_user(self._conn, transform.user_to_row(author))
@@ -264,6 +288,15 @@ async def backfill_channel(
             await sink.write_message(message, channel_id=channel_id)
             total_written += 1
 
+        # Post grouping, once per batch rather than once per message: a
+        # million-message backfill pays one statement per hundred messages
+        # instead of a million. Scoped from the batch's first message, and
+        # regroup_range reaches one message further back on its own, so the
+        # boundary between two batches groups exactly as if the whole history
+        # had been walked at once.
+        if batch:
+            await sink.regroup_batch(channel_id=channel_id, since=batch[0].created_at)
+
         progress = advance_backfill_progress(
             batch_message_ids=[m.id for m in batch], requested_limit=batch_size
         )
@@ -308,6 +341,12 @@ async def backfill_thread(
         for message in batch:
             await sink.write_message(message, thread_id=thread_id)
             total_written += 1
+
+        # Same per-batch grouping pass as backfill_channel, against this
+        # thread's own container -- a thread groups independently of its
+        # parent channel.
+        if batch:
+            await sink.regroup_batch(thread_id=thread_id, since=batch[0].created_at)
 
         progress = advance_backfill_progress(
             batch_message_ids=[m.id for m in batch], requested_limit=batch_size

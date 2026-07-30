@@ -6,8 +6,11 @@ recompute). No business logic lives here beyond extracting the raw @everyone
 overwrite ints discord.py's channel/category objects hold.
 """
 
+from datetime import timedelta
+
 import discord
 
+from threadbare.db import grouping
 from threadbare.sync_worker import repository, transform
 from threadbare.sync_worker.backfill import RepositoryBackfillSink
 from threadbare.sync_worker.channel_type_sets import NO_ROW
@@ -37,6 +40,18 @@ async def handle_message_create(
     await RepositoryBackfillSink(conn).write_message(
         message, channel_id=channel_id, thread_id=thread_id
     )
+    # Repair grouping around the new message. Runs *after* write_message
+    # rather than inside it because the predicate reads attachments, which
+    # write_message inserts after the message row (the FK forbids the other
+    # order). Backfill deliberately doesn't come through here -- it regroups
+    # once per batch instead, since walking history in order would otherwise
+    # pay this per message.
+    #
+    # For a live message this is nearly free: it's at the tail, so there's no
+    # successor to reconsider. It earns its keep on the edit path, where an
+    # edit that added or removed an attachment is the one edit that can change
+    # grouping at all.
+    await _regroup_around_message(conn, message)
 
 
 async def handle_message_edit(
@@ -54,12 +69,61 @@ async def handle_message_edit(
     )
 
 
+async def _regroup_around_message(conn, message: MessageLike) -> None:
+    position = await repository.get_message_position(conn, message.id)
+    if position is None:  # never indexed (e.g. a non-synced channel)
+        return
+    await grouping.regroup_around(
+        conn,
+        channel_id=position["channel_id"],
+        thread_id=position["thread_id"],
+        at=position["posted_at"],
+        gap_seconds=await repository.get_merge_gap_seconds(conn),
+    )
+
+
 async def handle_message_delete(conn, message_id: int) -> None:
+    # Located before the delete, not after: afterwards there's no row left to
+    # tell us which container to repair. A None position also means the
+    # message was never indexed, in which case the delete is a no-op and
+    # there's nothing to regroup either.
+    position = await repository.get_message_position(conn, message_id)
     await repository.delete_message(conn, message_id)
+    if position is not None:
+        await grouping.regroup_around(
+            conn,
+            channel_id=position["channel_id"],
+            thread_id=position["thread_id"],
+            at=position["posted_at"],
+            gap_seconds=await repository.get_merge_gap_seconds(conn),
+        )
 
 
 async def handle_bulk_message_delete(conn, message_ids: list[int]) -> None:
+    # One regroup per affected container spanning min..max of the deleted
+    # timestamps, rather than one per message: a bulk delete is usually a
+    # contiguous purge, and regroup_range's window already widens by the gap
+    # at both ends.
+    positions = [await repository.get_message_position(conn, mid) for mid in message_ids]
     await repository.delete_messages(conn, message_ids)
+
+    known = [p for p in positions if p is not None]
+    if not known:
+        return
+    gap_seconds = await repository.get_merge_gap_seconds(conn)
+    containers: dict[tuple[int | None, int | None], list] = {}
+    for position in known:
+        key = (position["channel_id"], position["thread_id"])
+        containers.setdefault(key, []).append(position["posted_at"])
+    for (channel_id, thread_id), timestamps in containers.items():
+        await grouping.regroup_range(
+            conn,
+            channel_id=channel_id,
+            thread_id=thread_id,
+            since=min(timestamps) - timedelta(seconds=gap_seconds + 1),
+            until=max(timestamps) + timedelta(seconds=gap_seconds + 1),
+            gap_seconds=gap_seconds,
+        )
 
 
 async def handle_member_update(conn, before: UserLike, after: UserLike) -> None:

@@ -11,6 +11,7 @@ import psycopg
 from psycopg.types.json import Json
 
 from threadbare.channel_types import NON_CONTENT_TYPES
+from threadbare.db import grouping
 
 
 async def upsert_guild(conn: psycopg.AsyncConnection, row: dict) -> None:
@@ -74,6 +75,90 @@ async def get_auto_index_new_channels(conn: psycopg.AsyncConnection) -> bool:
         await cur.execute("SELECT auto_index_new_channels FROM site_settings WHERE id = true")
         row = await cur.fetchone()
     return row["auto_index_new_channels"] if row else True
+
+
+async def get_merge_gap_seconds(conn: psycopg.AsyncConnection) -> int:
+    """The silence that breaks a run of consecutive posts by one author
+    (migration 0016). Read on the write path because messages.starts_group is
+    maintained at ingestion regardless of whether the *display* toggle is on
+    -- that's what makes flipping the toggle instant instead of a reprocessing
+    job. Falls back to the module default when no site_settings row exists
+    yet, same shape as get_auto_index_new_channels above.
+    """
+    async with conn.cursor() as cur:
+        await cur.execute("SELECT merge_gap_seconds FROM site_settings WHERE id = true")
+        row = await cur.fetchone()
+    return row["merge_gap_seconds"] if row else grouping.DEFAULT_GAP_SECONDS
+
+
+async def get_grouping_generation(conn: psycopg.AsyncConnection) -> int:
+    """The site-wide grouping generation, bumped whenever a mod changes the
+    merge toggle or the gap threshold -- both of which invalidate every stored
+    starts_group. Compared against each channel's own stamp to find work.
+    Falls back to 0 (migration 0016's column default) when no site_settings
+    row exists, same shape as get_auto_index_new_channels.
+    """
+    async with conn.cursor() as cur:
+        await cur.execute("SELECT grouping_generation FROM site_settings WHERE id = true")
+        row = await cur.fetchone()
+    return row["grouping_generation"] if row else 0
+
+
+async def get_channels_needing_regroup(conn: psycopg.AsyncConnection) -> list[int]:
+    """Content channels whose stored grouping is older than the current
+    settings generation. sync_state.grouping_generation starts at -1
+    (migration 0016), so every channel that predates the feature reads as
+    stale and gets one first real pass.
+
+    A LEFT JOIN because a channel with no sync_state row yet has never been
+    backfilled -- it has nothing to regroup, but including it keeps the stamp
+    write below idempotent rather than special-cased.
+    """
+    async with conn.cursor() as cur:
+        await cur.execute(
+            """
+            SELECT c.id
+              FROM channels c
+              LEFT JOIN sync_state s ON s.channel_id = c.id
+             WHERE c.type <> ALL(%(non_content)s)
+               AND COALESCE(s.grouping_generation, -1) <> (
+                   SELECT COALESCE(max(grouping_generation), 0) FROM site_settings WHERE id = true
+               )
+             ORDER BY c.id
+            """,
+            {"non_content": list(NON_CONTENT_TYPES)},
+        )
+        return [row["id"] for row in await cur.fetchall()]
+
+
+async def stamp_grouping_generation(
+    conn: psycopg.AsyncConnection, channel_id: int, *, generation: int
+) -> None:
+    """Record that this channel's grouping is current as of `generation`.
+    Upserts because a channel can be regrouped before its first backfill has
+    created a sync_state row.
+    """
+    await conn.execute(
+        """
+        INSERT INTO sync_state (channel_id, grouping_generation)
+        VALUES (%s, %s)
+        ON CONFLICT (channel_id) DO UPDATE SET grouping_generation = EXCLUDED.grouping_generation
+        """,
+        (channel_id, generation),
+    )
+
+
+async def get_message_position(conn: psycopg.AsyncConnection, message_id: int) -> dict | None:
+    """A message's container and timestamp -- everything grouping.regroup_around
+    needs to repair the neighbourhood, and nothing else. Read *before* a delete,
+    since afterwards there's nothing left to locate. None for a message this
+    instance never indexed, which is also the signal that no repair is needed.
+    """
+    async with conn.cursor() as cur:
+        await cur.execute(
+            "SELECT channel_id, thread_id, posted_at FROM messages WHERE id = %s", (message_id,)
+        )
+        return await cur.fetchone()
 
 
 async def insert_new_channel(conn: psycopg.AsyncConnection, row: dict) -> None:

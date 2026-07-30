@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import discord
 
@@ -214,6 +214,103 @@ async def test_handle_thread_delete_removes_the_row_and_cascades(db_conn):
 
 async def test_handle_thread_delete_is_a_no_op_for_unknown_id(db_conn):
     await events.handle_thread_delete(db_conn, 999999)  # should not raise
+
+
+async def _flags(conn, *, channel_id=10) -> dict[int, bool]:
+    async with conn.cursor() as cur:
+        await cur.execute(
+            "SELECT id, starts_group FROM messages WHERE channel_id = %s ORDER BY posted_at, id",
+            (channel_id,),
+        )
+        return {row["id"]: row["starts_group"] for row in await cur.fetchall()}
+
+
+async def test_a_live_message_joins_the_previous_post_by_the_same_author(db_conn):
+    await _seed_guild_and_channel(db_conn)
+    base = datetime(2026, 3, 1, 12, 0, tzinfo=UTC)
+    author = FakeAuthor(id=1)
+
+    await events.handle_message_create(
+        db_conn, FakeMessage(id=100, author=author, created_at=base), channel_id=10
+    )
+    await events.handle_message_create(
+        db_conn,
+        FakeMessage(id=101, author=author, created_at=base + timedelta(minutes=1)),
+        channel_id=10,
+    )
+
+    assert await _flags(db_conn) == {100: True, 101: False}
+
+
+async def test_deleting_a_separator_merges_the_posts_around_it(db_conn):
+    """The whole live delete contract in one test: the gateway removes one
+    message and the two posts either side of it become one, without anything
+    walking the container.
+    """
+    await _seed_guild_and_channel(db_conn)
+    base = datetime(2026, 3, 1, 12, 0, tzinfo=UTC)
+    alice, bob = FakeAuthor(id=1), FakeAuthor(id=2, display_name="bob")
+
+    await events.handle_message_create(
+        db_conn, FakeMessage(id=100, author=alice, created_at=base), channel_id=10
+    )
+    await events.handle_message_create(
+        db_conn,
+        FakeMessage(id=101, author=bob, created_at=base + timedelta(minutes=1)),
+        channel_id=10,
+    )
+    await events.handle_message_create(
+        db_conn,
+        FakeMessage(id=102, author=alice, created_at=base + timedelta(minutes=2)),
+        channel_id=10,
+    )
+    assert await _flags(db_conn) == {100: True, 101: True, 102: True}
+
+    await events.handle_message_delete(db_conn, 101)
+
+    assert await _flags(db_conn) == {100: True, 102: False}
+
+
+async def test_deleting_a_head_promotes_its_successor(db_conn):
+    await _seed_guild_and_channel(db_conn)
+    base = datetime(2026, 3, 1, 12, 0, tzinfo=UTC)
+    author = FakeAuthor(id=1)
+    for offset, message_id in enumerate((100, 101, 102)):
+        await events.handle_message_create(
+            db_conn,
+            FakeMessage(id=message_id, author=author, created_at=base + timedelta(minutes=offset)),
+            channel_id=10,
+        )
+
+    await events.handle_message_delete(db_conn, 100)
+
+    assert await _flags(db_conn) == {101: True, 102: False}
+
+
+async def test_a_bulk_delete_repairs_every_affected_container(db_conn):
+    await _seed_guild_and_channel(db_conn)
+    base = datetime(2026, 3, 1, 12, 0, tzinfo=UTC)
+    alice, bob = FakeAuthor(id=1), FakeAuthor(id=2, display_name="bob")
+    for offset, (message_id, author) in enumerate(
+        ((100, alice), (101, bob), (102, bob), (103, alice))
+    ):
+        await events.handle_message_create(
+            db_conn,
+            FakeMessage(id=message_id, author=author, created_at=base + timedelta(minutes=offset)),
+            channel_id=10,
+        )
+
+    await events.handle_bulk_message_delete(db_conn, [101, 102])
+
+    assert await _flags(db_conn) == {100: True, 103: False}
+
+
+async def test_deleting_a_message_that_was_never_indexed_is_still_a_no_op(db_conn):
+    await _seed_guild_and_channel(db_conn)
+
+    await events.handle_message_delete(db_conn, 999)  # no such row; must not raise
+
+    assert await _flags(db_conn) == {}
 
 
 async def test_handle_message_delete_removes_the_row(db_conn):

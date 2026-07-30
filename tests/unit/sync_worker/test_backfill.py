@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 
 from threadbare.sync_worker.backfill import backfill_channel, backfill_thread
 
@@ -42,6 +43,7 @@ class FakeSink:
         self._thread_checkpoint = initial_checkpoint
         self.complete: bool | None = None
         self.commit_count = 0
+        self.regrouped: list[dict] = []
 
     async def get_checkpoint(self, channel_id: int) -> int | None:
         return self._checkpoint
@@ -60,6 +62,12 @@ class FakeSink:
     async def set_checkpoint(self, channel_id: int, *, last_message_id, complete: bool) -> None:
         self._checkpoint = last_message_id
         self.complete = complete
+
+    async def regroup_batch(
+        self, *, channel_id: int | None = None, thread_id: int | None = None, since
+    ) -> None:
+        self.regrouped.append({"channel_id": channel_id, "thread_id": thread_id, "since": since})
+        self.events.append(("regroup", channel_id or thread_id))
 
     async def get_thread_checkpoint(self, thread_id: int) -> int | None:
         return self._thread_checkpoint
@@ -147,6 +155,68 @@ async def test_backfill_commits_once_per_batch():
     await backfill_channel(fetcher, sink, channel_id=10, batch_size=2)
 
     assert sink.commit_count == len(fetcher.calls) == 2
+
+
+async def test_backfill_regroups_once_per_batch_from_the_batch_start():
+    """Per batch, not per message: at one statement per hundred messages a
+    million-message backfill pays ten thousand of these instead of a million.
+    Scoping from the batch's own first message (rather than the whole
+    container) is what keeps each one cheap -- regroup_range reaches one
+    message further back by itself, so the seam between two batches still
+    groups as if the history had been walked in one pass.
+    """
+    author = FakeAuthor(id=1)
+    first, second = datetime(2026, 3, 1, tzinfo=UTC), datetime(2026, 3, 2, tzinfo=UTC)
+    fetcher = FakeFetcher(
+        {
+            None: [
+                FakeMessage(id=1, author=author, created_at=first),
+                FakeMessage(id=2, author=author, created_at=first),
+            ],
+            2: [FakeMessage(id=3, author=author, created_at=second)],  # partial -> done
+        }
+    )
+    sink = FakeSink()
+
+    await backfill_channel(fetcher, sink, channel_id=10, batch_size=2)
+
+    assert sink.regrouped == [
+        {"channel_id": 10, "thread_id": None, "since": first},
+        {"channel_id": 10, "thread_id": None, "since": second},
+    ]
+
+
+async def test_backfill_regroups_after_writing_the_batch_not_before():
+    """The predicate reads attachments, which are written per message, so a
+    regroup that ran first would group against a half-written batch.
+    """
+    author = FakeAuthor(id=1)
+    fetcher = FakeFetcher({None: [FakeMessage(id=1, author=author, created_at=datetime.now(UTC))]})
+    sink = FakeSink()
+
+    await backfill_channel(fetcher, sink, channel_id=10, batch_size=2)
+
+    assert sink.events == [("users", [1]), ("message", 1), ("regroup", 10)]
+
+
+async def test_backfill_skips_the_regroup_on_an_empty_batch():
+    fetcher = FakeFetcher({None: []})
+    sink = FakeSink()
+
+    await backfill_channel(fetcher, sink, channel_id=10, batch_size=2)
+
+    assert sink.regrouped == []
+
+
+async def test_backfill_thread_regroups_against_its_own_container():
+    author = FakeAuthor(id=1)
+    posted = datetime(2026, 3, 1, tzinfo=UTC)
+    fetcher = FakeFetcher({None: [FakeMessage(id=1, author=author, created_at=posted)]})
+    sink = FakeSink()
+
+    await backfill_thread(fetcher, sink, thread_id=50, batch_size=2)
+
+    assert sink.regrouped == [{"channel_id": None, "thread_id": 50, "since": posted}]
 
 
 async def test_backfill_upserts_batch_authors_sorted_by_id_before_writing_messages():

@@ -18,6 +18,7 @@ from typing import Protocol
 
 import discord
 
+from threadbare.db import grouping
 from threadbare.sync_worker import repository
 from threadbare.sync_worker.backfill import (
     DEFAULT_BATCH_SIZE,
@@ -259,6 +260,50 @@ async def reconcile_guild(
         now=now,
         fetcher=fetcher,
     )
+
+    await regroup_stale_channels(pool)
+
+
+async def regroup_stale_channels(pool) -> int:
+    """Recompute post grouping for any channel whose stamp is behind the
+    site-wide generation, then stamp it. Returns the number of channels swept.
+
+    This is what makes changing the merge toggle or gap threshold safe without
+    any IPC: the web app only bumps a counter, and the next nightly sweep
+    reconciles history to it. The admin Regroup button and the CLI flags exist
+    to skip the wait, not because anything depends on them -- the same
+    "gateway for speed, nightly sweep for correctness" split the rest of this
+    module already embodies.
+
+    One connection (and so one transaction) per channel, matching
+    reconcile_guild's own loop above: a large channel's regroup shouldn't hold
+    a transaction open across every other channel's, and a failure shouldn't
+    roll back the channels already stamped.
+    """
+    async with pool.connection() as conn:
+        generation = await repository.get_grouping_generation(conn)
+        channel_ids = await repository.get_channels_needing_regroup(conn)
+
+    for channel_id in channel_ids:
+        async with pool.connection() as conn:
+            try:
+                gap_seconds = await repository.get_merge_gap_seconds(conn)
+                changed = await grouping.regroup_channel_and_threads(
+                    conn, channel_id=channel_id, gap_seconds=gap_seconds
+                )
+                await repository.stamp_grouping_generation(conn, channel_id, generation=generation)
+                logger.info("Regrouped channel %s (%s messages changed)", channel_id, changed)
+            except Exception:
+                # Same isolation rationale as the reconcile loop above: an
+                # un-caught exception here would propagate out of
+                # reconciliation_loop's `while True` and, because bot.py only
+                # starts that task when it's None, silently end nightly
+                # reconciliation for the life of the process. Leaving the
+                # channel unstamped means the next sweep retries it.
+                logger.exception(
+                    "Regroup failed for channel %s -- other channels continue", channel_id
+                )
+    return len(channel_ids)
 
 
 async def reconcile_guild_threads(
