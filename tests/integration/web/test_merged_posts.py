@@ -5,6 +5,7 @@ its continued passing is itself the guarantee that an install which never opts
 in sees no change. These are the other half.
 """
 
+import re
 from datetime import UTC, datetime, timedelta
 
 from threadbare.db import grouping
@@ -168,3 +169,54 @@ def test_the_gap_threshold_is_honoured_from_site_settings(client, web_conn):
 
     assert body.count('class="post"') == 3
     assert "post-segment" not in body
+
+
+def test_the_board_index_page_count_matches_the_board_s_own(client, web_conn):
+    """The two pagers have to agree. The board index renders its own "Page 1 2
+    3 ..." row per freeform board, computed separately from the board page's --
+    so it was possible for the index to advertise eleven pages of messages
+    while the board itself paginated four pages of posts.
+    """
+    run(_seed_burst_channel(web_conn, bursts=12, per_burst=2))
+    run(_enable_merging(web_conn))
+
+    index = client.get("/?posts_per_page=10").data.decode()
+    board = client.get("/board/10/continuous/page/1?posts_per_page=10").data.decode()
+
+    # 24 messages in 12 posts: two pages of posts, not three of messages.
+    index_pages = re.findall(r"/board/10/continuous/page/(\d+)", index)
+    board_pages = re.findall(r"/board/10/continuous/page/(\d+)", board)
+    assert index_pages, "board index should render per-board pagination links"
+    assert max(int(p) for p in index_pages) == max(int(p) for p in board_pages) == 2
+
+
+def test_the_board_index_page_count_is_unmerged_when_merging_is_off(client, web_conn):
+    run(_seed_burst_channel(web_conn, bursts=12, per_burst=2))
+
+    index = client.get("/?posts_per_page=10").data.decode()
+
+    pages = re.findall(r"/board/10/continuous/page/(\d+)", index)
+    assert max(int(p) for p in pages) == 3  # 24 messages at 10 per page
+
+
+def test_the_board_index_unread_count_stays_in_messages(client, web_conn):
+    """The index's two totals are in different units and aren't
+    interchangeable: one paginates (posts, when merging is on) and one feeds
+    the unread count (always messages). Reusing the merged one here would
+    report "12 new messages" computed against a post count.
+    """
+    run(_seed_burst_channel(web_conn, bursts=12, per_burst=2))
+    run(_enable_merging(web_conn))
+    # The badge only shows for a *partially* read board, so mark the first
+    # message read: 23 messages remain unread, in 11 remaining posts.
+    run(
+        web_conn.execute(
+            "INSERT INTO read_markers (user_id, channel_id, last_read_message_id, "
+            "last_read_posted_at) VALUES (1, 10, 1000, %s)",
+            (BASE,),
+        )
+    )
+
+    index = client.get("/?posts_per_page=10").data.decode()
+
+    assert re.search(r'class="unread-count">\(23\)', index), "unread must count messages, not posts"

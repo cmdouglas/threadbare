@@ -45,8 +45,28 @@ async def board_index():
         for group in groups:
             for board in group["boards"]:
                 if board_view_mode(board) == "freeform":
-                    total = await queries.count_messages_before(conn, channel_id=board["id"])
-                    board_message_totals[board["id"]] = total
+                    # Two totals, in two different units, and they are not
+                    # interchangeable:
+                    #
+                    # `total` paginates, so it must match what
+                    # board.board_continuous_page counts for the same board --
+                    # posts when merging is on. These are two separate pagers
+                    # over the same content, and if only one counts posts the
+                    # index advertises pages the board doesn't have.
+                    #
+                    # board_message_totals feeds count_unread below, which
+                    # takes a *message* count -- read tracking stays in
+                    # messages everywhere (see topic.topic_page), so that one
+                    # is always unmerged. Merging them would report "12 new
+                    # messages" computed against a post count.
+                    total = await queries.count_messages_before(
+                        conn, channel_id=board["id"], merged=g.merge_posts
+                    )
+                    board_message_totals[board["id"]] = (
+                        total
+                        if not g.merge_posts
+                        else await queries.count_messages_before(conn, channel_id=board["id"])
+                    )
                     freeform_board_ids.append(board["id"])
                     board_jump_action[board["id"]] = url_for(
                         "board.board_continuous_jump_to_page", channel_id=board["id"]
