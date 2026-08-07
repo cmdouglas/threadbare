@@ -7,7 +7,7 @@ idea. They are not: there are three genuinely different questions, and having
 them side by side is the only way to see how they differ.
 
     NO_ROW              ⊂ NO_CONTENT_ROW ⊂ SKIPPED_FOR_DIRECT_HISTORY
-    voice, stage_voice    + category       + forum
+    voice, stage_voice    + category       + forum, media
 
 The int-valued equivalent of NO_CONTENT_ROW is threadbare.channel_types
 .NON_CONTENT_TYPES, which the web app and db layer use -- those read
@@ -28,7 +28,14 @@ NO_ROW = (discord.ChannelType.voice, discord.ChannelType.stage_voice)
 # their own.
 NO_CONTENT_ROW = (discord.ChannelType.category, *NO_ROW)
 
-# Never walked for top-level message history. Adds forum channels: they have
-# no direct messages by construction (every post is a thread, backfilled
-# separately), so asking Discord for their history is meaningless.
-SKIPPED_FOR_DIRECT_HISTORY = (discord.ChannelType.forum, *NO_CONTENT_ROW)
+# Never walked for top-level message history. Adds forum and media channels:
+# they have no direct messages by construction (every post is a thread,
+# backfilled separately), so asking Discord for their history is meaningless.
+# discord.py backs both channel.type values with the same ForumChannel class
+# (confirmed against the installed discord.py source), and neither has a
+# .history() method -- both belong here for that same reason.
+SKIPPED_FOR_DIRECT_HISTORY = (
+    discord.ChannelType.forum,
+    discord.ChannelType.media,
+    *NO_CONTENT_ROW,
+)

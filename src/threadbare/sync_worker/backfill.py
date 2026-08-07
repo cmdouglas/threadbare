@@ -384,6 +384,14 @@ async def backfill_one_channel(
     Threads are walked from the database rather than from Discord's thread
     listings: a resync resets exactly the threads reset_thread_checkpoints_for_channel
     knows about, and re-walking that same set keeps the two consistent.
+
+    Skips the channel's own top-level history the same way backfill_guild()
+    does for a forum/media channel (SKIPPED_CHANNEL_TYPES) -- discord.py's
+    ForumChannel (which backs both types) has no .history() method, since
+    every post is a thread rather than a top-level message. Unlike
+    backfill_guild(), which gets live channel objects for free by fetching
+    the whole guild's channel list up front, a single requested channel has
+    to resolve its own type here.
     """
     if fetcher is None:
         fetcher = RetryingHistoryFetcher(BoundedHistoryFetcher(DiscordHistoryFetcher(client)))
@@ -391,7 +399,9 @@ async def backfill_one_channel(
         if not await channel_should_sync(conn, channel_id):
             return
         sink = RepositoryBackfillSink(conn)
-        await backfill_channel(fetcher, sink, channel_id=channel_id, batch_size=batch_size)
+        channel = client.get_channel(channel_id) or await client.fetch_channel(channel_id)
+        if channel.type not in SKIPPED_CHANNEL_TYPES:
+            await backfill_channel(fetcher, sink, channel_id=channel_id, batch_size=batch_size)
         for thread_id in await repository.get_thread_ids_for_channel(conn, channel_id):
             await backfill_thread(fetcher, sink, thread_id=thread_id, batch_size=batch_size)
 
